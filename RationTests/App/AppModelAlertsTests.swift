@@ -2536,6 +2536,7 @@ final class AppModelAlertsTests: XCTestCase {
         await fixture.model.flushAlertEvaluations()
         fixture.model.snoozeAttentionDrop(fixture.model.attentionRows(now: now))
         await fixture.model.flushAlertEvaluations()
+        try await waitForSnoozeOnDisk(in: directory)
 
         let relaunch = try makeFixture(directory: directory)
         try await relaunch.model.load(startBackgroundRefresh: false)
@@ -2571,6 +2572,7 @@ final class AppModelAlertsTests: XCTestCase {
         await fixture.model.flushAlertEvaluations()
         fixture.model.snoozeAttentionDrop(fixture.model.attentionRows(now: now))
         await fixture.model.flushAlertEvaluations()
+        try await waitForSnoozeOnDisk(in: directory)
 
         // Relaunch with alerts ALREADY enabled on disk — the flag does not
         // change, so nothing about it is re-applied.
@@ -2817,13 +2819,15 @@ final class AppModelAlertsTests: XCTestCase {
     /// the next launch even for a user who denied notifications — the drop does
     /// not need authorization, so its lifecycle must not depend on it.
     ///
-    /// CAVEAT, stated so nobody trusts this further than it goes: this test
-    /// passes with OR without the `primeAllAlerts()` call in the denied branch
-    /// (verified by mutation), because some other publication happens to drive
-    /// an evaluation after settings hydrate. It pins the BEHAVIOUR, not that
-    /// call. Reproducing the ordering Codex described — the snapshot store
-    /// publishing before settings, with nothing publishing afterwards — needs
-    /// control over load ordering the fixture does not expose.
+    /// At launch the snapshot store publishes BEFORE settings hydrate, so the
+    /// evaluation sink sees the master switch off and does nothing, and with
+    /// background refresh off nothing publishes afterwards. The launch pass
+    /// priming is therefore the only thing that can observe the reset here.
+    ///
+    /// The "closed" part is real: the snooze is on disk before the reset is
+    /// written, and the reset is written through a store the first model is
+    /// not attached to. Saving it through the first model's own store lets
+    /// THAT model lift the snooze, and the relaunch then proves nothing.
     func testSnoozeLiftsOnRelaunchAfterAnOfflineResetWithNotificationsDenied() async throws {
         let directory = try Self.makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -2846,15 +2850,23 @@ final class AppModelAlertsTests: XCTestCase {
         await fixture.model.flushAlertEvaluations()
         fixture.model.snoozeAttentionDrop(fixture.model.attentionRows(now: now))
         await fixture.model.flushAlertEvaluations()
+        try await waitForSnoozeOnDisk(in: directory)
 
         // While "closed", the window resets — the snapshot on disk is already
-        // post-reset when the next launch reads it.
-        try await fixture.snapshots.save(UsageSnapshot(
+        // post-reset when the next launch reads it. Written through a separate
+        // store so the first model never observes it.
+        let offline = UsageSnapshotStore(fileURL: directory.appending(path: "snapshots.json"))
+        try await offline.load()
+        try await offline.save(UsageSnapshot(
             accountID: account.id,
             fetchedAt: now.addingTimeInterval(-30),
             fiveHour: UsageWindow(kind: .fiveHour, remainingFraction: 0.95, resetsAt: nil),
             weekly: UsageWindow(kind: .weekly, remainingFraction: 0.05, resetsAt: nil)
         ))
+        XCTAssertTrue(
+            settings.data.dropSnoozed,
+            "the first model must not have seen the reset"
+        )
 
         let denied = NotificationSchedulingSpy()
         await denied.setAuthorizationResult(false)
@@ -3076,6 +3088,29 @@ final class AppModelAlertsTests: XCTestCase {
             adapter: adapter,
             chatGPTAdapter: chatGPTAdapter
         )
+    }
+
+    /// The ✕ persists the snooze flag from a fire-and-forget task that nothing
+    /// can await, so a relaunch inside the same test can read settings before
+    /// that write lands. Waits for the FILE rather than writing the flag from
+    /// the test, which would hide a snooze that never persisted at all.
+    ///
+    /// Only ever waits for `true`: a missing or unreadable file loads as
+    /// `false`, so waiting for `false` would prove nothing. The budget is
+    /// generous because it is only spent when the write never comes.
+    private func waitForSnoozeOnDisk(
+        in directory: URL,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
+        let url = directory.appending(path: "app-settings.json")
+        for _ in 0..<1_000 {
+            let onDisk = AppSettings(fileURL: url)
+            try? await onDisk.load()
+            if onDisk.data.dropSnoozed { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("the snooze never reached disk", file: file, line: line)
     }
 
     private static func makeTempDirectory() throws -> URL {

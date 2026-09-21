@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- A dismissed attention drop now comes back right at launch after a limit
+  reset that happened while Ration was closed, even if you have not allowed
+  notifications. Before, it stayed hidden until the first refresh.
+
 ## 1.0.0
 
 First public release.

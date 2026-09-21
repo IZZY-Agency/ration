@@ -290,7 +290,7 @@ final class RationApplicationDelegateTests: XCTestCase {
     }
 
     func testOnboardingIsRefusedUntilStartupInputsHaveLoaded() throws {
-        // Codex MUST-FIX: `start()` swallows a thrown `load()` into
+        // `start()` swallows a thrown `load()` into
         // `errorMessage`, so an existing user whose accounts.json was briefly
         // unreadable presents as empty-with-clean-settings — indistinguishable
         // from a fresh install unless the model refuses to answer at all.

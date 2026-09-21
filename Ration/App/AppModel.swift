@@ -1292,12 +1292,11 @@ final class AppModel: ObservableObject {
             guard authorized else {
                 alertsActive = false
                 // Authorization gates POSTING, not evaluation. Prime anyway so
-                // alert memory still advances: without this, a reset that
-                // happened while the app was closed is never observed for a
-                // user who denied notifications, and an attention-drop snooze
-                // that the reset should have lifted stays stuck until some
-                // later refresh happens to catch one. `primeAllAlerts` posts
-                // nothing by construction, so this cannot leak a notification.
+                // alert memory has a baseline from the moment alerts are
+                // switched on, allowed to notify or not: the attention drop
+                // does not need authorization, so its lifecycle must not
+                // depend on it. `primeAllAlerts` posts nothing by
+                // construction, so this cannot leak a notification.
                 primeAllAlerts()
                 return
             }
@@ -1305,8 +1304,9 @@ final class AppModel: ObservableObject {
             alertsActive = true
 
         case .startup:
-            // I7: never writes settings. Parked converges only when moot
-            // (desired agrees with the durable published value).
+            // I7: never writes the alerts setting. Parked converges only
+            // when moot (desired agrees with the durable published value).
+            // Priming below may still persist a snooze that a reset lifted.
             guard !alertsLifecycleParked || alertsDesired == appSettings.usageAlertsEnabled else { return }
             guard desired else {
                 alertsActive = false
@@ -1317,6 +1317,14 @@ final class AppModel: ObservableObject {
             usageAlertsAuthorized = authorized
             guard authorized else {
                 alertsActive = false
+                // Same rule as the denied branch above, and this is the pass
+                // where it matters most. At launch the snapshot store has
+                // already published, while the master switch still read off,
+                // so the sink evaluated nothing. Without a prime here a reset
+                // that happened while the app was closed goes unobserved until
+                // a later refresh happens to publish, and a snooze it should
+                // have lifted stays on. Posts nothing, by construction.
+                primeAllAlerts()
                 return
             }
             // I3 defense-in-depth: reaching this line means `version ==
