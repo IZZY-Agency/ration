@@ -1,0 +1,8 @@
+.DS_Store
+.worktrees/
+DerivedData/
+build/
+Ration.xcodeproj/
+*.xcuserstate
+xcuserdata/
+# Machine-local ignores live in .git/info/exclude.

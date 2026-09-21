@@ -1,0 +1,2725 @@
+import WebKit
+import XCTest
+@testable import Ration
+
+@MainActor
+final class AppModelTests: XCTestCase {
+    func testCompletingNewSignInVerifiesAndFetchesBeforePersistingAccount() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(
+            sessionID: sessionID,
+            label: "  Personal  "
+        )
+
+        XCTAssertEqual(fixture.adapter.verifyCallCount, 1)
+        XCTAssertEqual(fixture.adapter.fetchCallCount, 1)
+        XCTAssertEqual(fixture.model.accounts.map(\.label), ["Personal"])
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        XCTAssertNotNil(fixture.model.snapshot(for: account.id))
+        XCTAssertNil(fixture.model.signInSession(for: sessionID))
+    }
+
+    /// Passkey-only accounts: pasted cookies land in the SIGN-IN SESSION's
+    /// own profile store (the exact store its fetches will read), and the web
+    /// view reloads so the page reflects the session.
+    func testPastedSessionCookiesLandInTheSessionProfileStore() async throws {
+        let fixture = try makeFixture(
+            adapters: [ProviderAdapterSpy(), ChatGPTAdapterStub()]
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .chatGPT)
+        let session = try XCTUnwrap(fixture.model.signInSession(for: sessionID))
+
+        try await fixture.model.applyPastedSessionCookies(
+            sessionID: sessionID,
+            raw: "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..fake.payload.tag"
+        )
+
+        // The cookies must land in the SESSION's store via the exact access
+        // path production uses (the spy's stable configuration makes the
+        // ephemeral store behave like production's identified ones).
+        let store = session.webView.configuration.websiteDataStore.httpCookieStore
+        var cookies: [HTTPCookie] = []
+        for _ in 0..<40 where cookies.isEmpty {
+            cookies = await store.allCookies()
+            if cookies.isEmpty { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        XCTAssertEqual(cookies.map(\.name), ["__Secure-next-auth.session-token"])
+        XCTAssertEqual(cookies.first?.domain, ".chatgpt.com")
+
+        // The page must reload so the user can SEE the pasted session before
+        // committing the account.
+        let recording = try XCTUnwrap(session.webView as? RecordingWebView)
+        XCTAssertEqual(recording.loadedRequests.last?.url, session.signInURL)
+
+        fixture.profileManager.cleanUpStores()
+    }
+
+    /// A cookie application landing while verifySession is suspended means
+    /// the verified credential state is no longer the installed one — the
+    /// commit must be refused, even though the application COMPLETED (and
+    /// removed its pending marker) before verify returned.
+    func testApplyLandingDuringVerificationRefusesCommit() async throws {
+        let stub = ChatGPTAdapterStub()
+        let fixture = try makeFixture(adapters: [ProviderAdapterSpy(), stub])
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .chatGPT)
+        let model = fixture.model
+        stub.onVerify = {
+            try? await model.applyPastedSessionCookies(
+                sessionID: sessionID,
+                raw: "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..mid.verify.tag"
+            )
+        }
+        defer { stub.onVerify = nil }   // break stub→closure→model cycle
+
+        do {
+            try await fixture.model.completeSignIn(sessionID: sessionID, label: "GPT")
+            XCTFail("expected operationInProgress")
+        } catch AccountStoreError.operationInProgress {
+            // expected — never commit a credential state verify did not see
+        }
+    }
+
+    /// The post-fetchUsage re-check is load-bearing on its own: an apply
+    /// landing during the FETCH suspension (after verify already passed)
+    /// must also refuse the commit.
+    func testApplyLandingDuringFetchRefusesCommit() async throws {
+        let stub = ChatGPTAdapterStub()
+        let fixture = try makeFixture(adapters: [ProviderAdapterSpy(), stub])
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .chatGPT)
+        let model = fixture.model
+        stub.onFetch = {
+            try? await model.applyPastedSessionCookies(
+                sessionID: sessionID,
+                raw: "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..mid.fetch.tag"
+            )
+        }
+        defer { stub.onFetch = nil }
+
+        do {
+            try await fixture.model.completeSignIn(sessionID: sessionID, label: "GPT")
+            XCTFail("expected operationInProgress")
+        } catch AccountStoreError.operationInProgress {
+            // expected — the guarantee holds right up to the commit
+        }
+    }
+
+    /// An apply that is IN FLIGHT when completeSignIn starts (its generation
+    /// bump happened at apply entry, before the snapshot) is awaited and
+    /// committed cleanly — the snapshot-before-await ordering must not
+    /// false-positive on the very application it awaits.
+    func testInFlightApplyAtCommitEntryIsAwaitedAndCommitted() async throws {
+        let fixture = try makeFixture(
+            adapters: [ProviderAdapterSpy(), ChatGPTAdapterStub()]
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .chatGPT)
+        let model = fixture.model
+
+        // Fire the apply WITHOUT awaiting its completion. One yield lets the
+        // spawned task run to its first internal suspension — its generation
+        // bump and pending registration are synchronous at entry — so
+        // completeSignIn observes an IN-FLIGHT application.
+        let apply = Task { @MainActor in
+            try await model.applyPastedSessionCookies(
+                sessionID: sessionID,
+                raw: "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..fake.payload.tag"
+            )
+        }
+        await Task.yield()
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "GPT")
+        _ = try await apply.value
+
+        XCTAssertEqual(fixture.model.accounts.map(\.label), ["GPT"])
+        fixture.profileManager.cleanUpStores()
+    }
+
+    /// The guard must not false-positive on the application completeSignIn
+    /// itself awaited: apply, then commit, succeeds cleanly.
+    func testApplyBeforeVerificationCommitsCleanly() async throws {
+        let fixture = try makeFixture(
+            adapters: [ProviderAdapterSpy(), ChatGPTAdapterStub()]
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .chatGPT)
+
+        try await fixture.model.applyPastedSessionCookies(
+            sessionID: sessionID,
+            raw: "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..fake.payload.tag"
+        )
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "GPT")
+
+        XCTAssertEqual(fixture.model.accounts.map(\.label), ["GPT"])
+        fixture.profileManager.cleanUpStores()
+    }
+
+    /// A paste with cookie pairs but WITHOUT the actual credential must fail
+    /// loudly instead of reporting success while installing no authentication.
+    func testPasteWithoutTheSessionTokenThrowsMissingSessionToken() async throws {
+        let fixture = try makeFixture(
+            adapters: [ProviderAdapterSpy(), ChatGPTAdapterStub()]
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .chatGPT)
+
+        do {
+            try await fixture.model.applyPastedSessionCookies(
+                sessionID: sessionID,
+                raw: "_account=personal"
+            )
+            XCTFail("expected missingSessionToken")
+        } catch SessionCookiePasteError.missingSessionToken {
+            // expected
+        }
+    }
+
+    func testPastedSessionCookiesRejectNonChatGPTSessions() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        do {
+            try await fixture.model.applyPastedSessionCookies(
+                sessionID: sessionID,
+                raw: "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..fake.payload.tag"
+            )
+            XCTFail("expected unsupportedProvider")
+        } catch SessionCookiePasteError.unsupportedProvider {
+            // expected — only chatgpt.com sessions accept pasted cookies
+        }
+    }
+
+    func testUnparseablePasteThrowsNothingToApply() async throws {
+        let fixture = try makeFixture(
+            adapters: [ProviderAdapterSpy(), ChatGPTAdapterStub()]
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .chatGPT)
+
+        do {
+            try await fixture.model.applyPastedSessionCookies(sessionID: sessionID, raw: "  ; ")
+            XCTFail("expected nothingToApply")
+        } catch SessionCookiePasteError.nothingToApply {
+            // expected
+        }
+    }
+
+    func testEmptyLabelDoesNotVerifyOrPersist() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        do {
+            try await fixture.model.completeSignIn(
+                sessionID: sessionID,
+                label: "   "
+            )
+            XCTFail("Expected an empty-label error")
+        } catch {
+            XCTAssertEqual(error as? AccountStoreError, .emptyLabel)
+        }
+
+        XCTAssertEqual(fixture.adapter.verifyCallCount, 0)
+        XCTAssertEqual(fixture.adapter.fetchCallCount, 0)
+        XCTAssertTrue(fixture.model.accounts.isEmpty)
+    }
+
+    func testCancellingNewSignInDeletesOnlyItsWebProfile() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        let profileID = try XCTUnwrap(
+            fixture.model.signInSession(for: sessionID)?.webProfileID
+        )
+
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+
+        XCTAssertEqual(fixture.profileManager.removedProfileIDs, [profileID])
+        XCTAssertNil(fixture.model.signInSession(for: sessionID))
+        XCTAssertTrue(fixture.model.accounts.isEmpty)
+    }
+
+    func testPreparingForTerminationCancelsActiveNewSignIn() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        let profileID = try XCTUnwrap(
+            fixture.model.signInSession(for: sessionID)?.webProfileID
+        )
+
+        XCTAssertTrue(fixture.model.requiresTerminationPreparation)
+        let canTerminate = await fixture.model.prepareForTermination()
+
+        XCTAssertTrue(canTerminate)
+        XCTAssertNil(fixture.model.signInSession(for: sessionID))
+        XCTAssertEqual(fixture.profileManager.removedProfileIDs, [profileID])
+        XCTAssertFalse(fixture.model.requiresTerminationPreparation)
+    }
+
+    func testPreparingForTerminationPausesDuringSignInCommit() async throws {
+        let gate = CommitGate()
+        let fixture = try makeFixture(
+            beforeSignInPersistence: { await gate.suspend() }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        let completion = Task { @MainActor in
+            try await fixture.model.completeSignIn(
+                sessionID: sessionID,
+                label: "Personal"
+            )
+        }
+        await gate.waitUntilStarted()
+
+        let canTerminate = await fixture.model.prepareForTermination()
+
+        XCTAssertFalse(canTerminate)
+        XCTAssertNotNil(fixture.model.signInSession(for: sessionID))
+        gate.resume()
+        try await completion.value
+        XCTAssertFalse(fixture.model.requiresTerminationPreparation)
+    }
+
+    func testCancellingDuringVerificationCannotPersistAccount() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let gate = VerificationGate()
+        fixture.adapter.verificationGate = gate
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        let completion = Task { @MainActor in
+            do {
+                try await fixture.model.completeSignIn(
+                    sessionID: sessionID,
+                    label: "Personal"
+                )
+                return nil as Error?
+            } catch {
+                return error
+            }
+        }
+        await gate.waitUntilStarted()
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+        gate.resume()
+
+        let completionError = await completion.value
+        XCTAssertTrue(completionError is CancellationError)
+        XCTAssertTrue(fixture.model.accounts.isEmpty)
+        XCTAssertEqual(fixture.adapter.fetchCallCount, 0)
+    }
+
+    func testCancellationDuringCommitCannotDeleteProfile() async throws {
+        let gate = CommitGate()
+        let fixture = try makeFixture(
+            beforeSignInPersistence: { await gate.suspend() }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        let completion = Task { @MainActor in
+            try await fixture.model.completeSignIn(
+                sessionID: sessionID,
+                label: "Personal"
+            )
+        }
+        await gate.waitUntilStarted()
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+
+        XCTAssertNotNil(fixture.model.signInSession(for: sessionID))
+        XCTAssertTrue(fixture.profileManager.removedProfileIDs.isEmpty)
+
+        gate.resume()
+        try await completion.value
+        XCTAssertEqual(fixture.model.accounts.map(\.label), ["Personal"])
+        XCTAssertTrue(fixture.profileManager.removedProfileIDs.isEmpty)
+    }
+
+    func testFailedCancelledProfileDeletionRetriesOnNextLoad() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        fixture.profileManager.removeError = TestFailure.expected
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        let profileID = try XCTUnwrap(
+            fixture.model.signInSession(for: sessionID)?.webProfileID
+        )
+
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+
+        XCTAssertEqual(fixture.pendingStore.profileIDs, Set([profileID]))
+        XCTAssertNil(fixture.model.signInSession(for: sessionID))
+
+        fixture.profileManager.removeError = nil
+        let restoredPendingStore = PendingProfileDeletionStore(
+            fileURL: fixture.directory.appending(
+                path: "pending-profile-deletions.json"
+            )
+        )
+        let restoredModel = AppModel(
+            accountStore: AccountStore(
+                fileURL: fixture.directory.appending(path: "accounts.json")
+            ),
+            snapshotStore: UsageSnapshotStore(
+                fileURL: fixture.directory.appending(path: "snapshots.json")
+            ),
+            pendingProfileDeletionStore: restoredPendingStore,
+            historyStore: UsageHistoryStore(
+                rootDirectory: fixture.directory.appending(
+                    path: "history", directoryHint: .isDirectory
+                )
+            ),
+            appSettings: AppSettings(
+                fileURL: fixture.directory.appending(path: "app-settings.json")
+            ),
+            alertStateStore: AlertStateStore(
+                fileURL: fixture.directory.appending(path: "alert-state.json")
+            ),
+            profileManager: fixture.profileManager,
+            adapterRegistry: ProviderAdapterRegistry(adapters: [fixture.adapter]),
+            systemPowerObserver: SystemPowerObserverStub()
+        )
+        try await restoredModel.load(startBackgroundRefresh: false)
+
+        XCTAssertTrue(restoredPendingStore.profileIDs.isEmpty)
+        XCTAssertEqual(fixture.profileManager.removedProfileIDs, [profileID])
+    }
+
+    func testQueueFailureStillDeletesProfileOrKeepsRetryableSession() async throws {
+        let fixture = try makeFixture(
+            savePendingProfileIDs: { _ in throw TestFailure.expected }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        fixture.profileManager.removeError = TestFailure.expected
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        let profileID = try XCTUnwrap(
+            fixture.model.signInSession(for: sessionID)?.webProfileID
+        )
+
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+
+        XCTAssertEqual(fixture.profileManager.attemptedProfileIDs, [profileID])
+        XCTAssertNotNil(fixture.model.signInSession(for: sessionID))
+        XCTAssertTrue(fixture.model.hasPendingProfileCleanup)
+
+        let canTerminateWhileRemovalFails = await fixture.model.prepareForTermination()
+        XCTAssertFalse(canTerminateWhileRemovalFails)
+
+        fixture.profileManager.removeError = nil
+        let canTerminateAfterRetry = await fixture.model.prepareForTermination()
+
+        XCTAssertTrue(canTerminateAfterRetry)
+        XCTAssertNil(fixture.model.signInSession(for: sessionID))
+        XCTAssertFalse(fixture.model.hasPendingProfileCleanup)
+        XCTAssertEqual(fixture.profileManager.removedProfileIDs, [profileID])
+        XCTAssertEqual(
+            fixture.profileManager.attemptedProfileIDs,
+            [profileID, profileID, profileID]
+        )
+    }
+
+    /// The retry control lives inside the cleanup banner, so the banner must
+    /// appear with the queued work and vanish with it — otherwise it outlives the
+    /// button it contained and a successful retry reads as a no-op.
+    func testCleanupBannerTracksTheQueue() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        fixture.profileManager.removeError = TestFailure.expected
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+
+        XCTAssertTrue(fixture.model.hasPendingProfileCleanup)
+        XCTAssertEqual(fixture.model.profileCleanupBanner, ProfileCleanupCopy.pending)
+
+        fixture.profileManager.removeError = nil
+        await fixture.model.retryProfileCleanup()
+
+        XCTAssertFalse(fixture.model.hasPendingProfileCleanup)
+        XCTAssertNil(fixture.model.profileCleanupBanner)
+    }
+
+    /// The cleanup banner and `errorMessage` share no storage, so neither can
+    /// retract or hide the other — an unrelated failure survives the queue
+    /// draining, and the cleanup banner survives an unrelated failure.
+    func testCleanupBannerAndUnrelatedErrorAreIndependent() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        fixture.profileManager.removeError = TestFailure.expected
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+        fixture.model.errorMessage = "Refresh failed for Ada."
+
+        XCTAssertEqual(fixture.model.profileCleanupBanner, ProfileCleanupCopy.pending)
+
+        fixture.profileManager.removeError = nil
+        await fixture.model.retryProfileCleanup()
+
+        XCTAssertNil(fixture.model.profileCleanupBanner)
+        XCTAssertEqual(fixture.model.errorMessage, "Refresh failed for Ada.")
+    }
+
+    /// Even a message that is character-for-character one of the cleanup strings
+    /// is untouchable when it was written as an `errorMessage`: ownership is
+    /// storage, not text.
+    func testDrainedQueueLeavesAnIdenticallyWordedErrorMessageAlone() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        fixture.profileManager.removeError = TestFailure.expected
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+        fixture.model.errorMessage = ProfileCleanupCopy.pending
+
+        fixture.profileManager.removeError = nil
+        await fixture.model.retryProfileCleanup()
+
+        XCTAssertNil(fixture.model.profileCleanupBanner)
+        XCTAssertEqual(fixture.model.errorMessage, ProfileCleanupCopy.pending)
+    }
+
+    /// "Quit is paused…" is only true while VOLATILE cleanup is holding up the
+    /// quit. Once the volatile entry lands in the durable journal instead, quit is
+    /// no longer blocked, so the banner must fall back to the plain pending copy
+    /// rather than keep claiming otherwise.
+    func testQuitBlockedBannerFallsBackWhenOnlyDurableCleanupRemains() async throws {
+        var failSave = true
+        let fixture = try makeFixture(
+            savePendingProfileIDs: { _ in
+                if failSave { throw TestFailure.expected }
+            }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        fixture.profileManager.removeError = TestFailure.expected
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        // Journalling fails, so the profile is only VOLATILE — which is what
+        // `prepareForTermination` refuses to quit on.
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+        XCTAssertTrue(fixture.model.hasVolatileProfileCleanup)
+
+        let canTerminate = await fixture.model.prepareForTermination()
+
+        XCTAssertFalse(canTerminate)
+        XCTAssertEqual(
+            fixture.model.profileCleanupBanner,
+            ProfileCleanupCopy.blockingQuit
+        )
+
+        // Journalling now succeeds while deletion still fails: the entry becomes
+        // durable-only, quit is no longer blocked by it.
+        failSave = false
+        await fixture.model.retryProfileCleanup()
+
+        XCTAssertFalse(fixture.model.hasVolatileProfileCleanup)
+        XCTAssertTrue(fixture.model.hasPendingProfileCleanup)
+        XCTAssertEqual(fixture.model.profileCleanupBanner, ProfileCleanupCopy.pending)
+    }
+
+    /// A throwing load step AFTER the queue is read must not hide the retry
+    /// control: the cleanup flags have to be published before `load()` can abort.
+    func testCleanupStateIsPublishedEvenWhenLoadAbortsLater() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        let orphan = UUID()
+        try await fixture.pendingStore.enqueue(orphan)
+        // Make `appSettings.load()` — the first throwing step AFTER the deletion
+        // queue is read — actually abort startup. Corrupt JSON will not do it:
+        // `AppSettings.load` swallows `DecodingError` and fails closed instead. A
+        // DIRECTORY where the file belongs makes `Data(contentsOf:)` throw a read
+        // error, which propagates and unwinds `load()`.
+        try FileManager.default.createDirectory(
+            at: fixture.directory.appending(path: "app-settings.json"),
+            withIntermediateDirectories: true
+        )
+
+        let restored = try makeFixture(directory: fixture.directory)
+        defer { restored.removeFiles() }
+        restored.profileManager.removeError = TestFailure.expected
+        await restored.model.start()
+
+        XCTAssertTrue(restored.model.hasPendingProfileCleanup)
+        XCTAssertEqual(restored.model.profileCleanupBanner, ProfileCleanupCopy.pending)
+    }
+
+    /// A removal whose profile deletion AND rollback both fail leaves the profile
+    /// journalled but throws straight out. The cleanup flags must still be
+    /// published on that exit — they gate the only retry control there is.
+    func testFailedRollbackStillPublishesTheOwedCleanup() async throws {
+        var accountSaveCount = 0
+        let fixture = try makeFixture(
+            saveAccounts: { _ in
+                accountSaveCount += 1
+                // 1 = the sign-in commit, 2 = `accountStore.remove`, 3 = the
+                // `accountStore.restore` rollback, which is the one that must fail.
+                if accountSaveCount == 3 {
+                    throw TestFailure.expected
+                }
+            }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        fixture.profileManager.removeError = TestFailure.expected
+
+        do {
+            try await fixture.model.removeAccount(id: account.id)
+            XCTFail("Expected the failed rollback to propagate")
+        } catch {
+            XCTAssertEqual(error as? AccountRemovalError, .rollbackFailed)
+        }
+
+        XCTAssertTrue(fixture.pendingStore.profileIDs.contains(account.webProfileID))
+        XCTAssertTrue(fixture.model.hasPendingProfileCleanup)
+        XCTAssertEqual(fixture.model.profileCleanupBanner, ProfileCleanupCopy.pending)
+    }
+
+    /// A journal entry owned by an in-flight `removeAccount` is work in progress,
+    /// not stuck cleanup. Surfacing it shows a warning plus a Retry control that
+    /// `skipOrRevokeProfileCleanup` guarantees will do nothing.
+    func testInFlightRemovalIsNotSurfacedAsStuckCleanup() async throws {
+        let saveGate = SecondSnapshotSaveGate()
+        let fixture = try makeFixture(
+            saveSnapshots: { snapshots in await saveGate.save(snapshots) }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        let removal = Task { @MainActor in
+            try await fixture.model.removeAccount(id: account.id)
+        }
+        await saveGate.waitUntilBlocked()
+
+        // Mid-removal: the profile IS journalled, and a concurrent cleanup pass
+        // publishes state — but the entry belongs to this removal.
+        XCTAssertTrue(fixture.pendingStore.profileIDs.contains(account.webProfileID))
+        await fixture.model.retryProfileCleanup()
+
+        XCTAssertFalse(fixture.model.hasPendingProfileCleanup)
+        XCTAssertNil(fixture.model.profileCleanupBanner)
+        XCTAssertTrue(fixture.profileManager.removedProfileIDs.isEmpty)
+        // The invariant that makes skipping an in-flight removal SAFE: the durable
+        // record must survive the skip. Dequeuing it here would strand this
+        // authenticated profile with no cleanup record if the app died next.
+        XCTAssertTrue(fixture.pendingStore.profileIDs.contains(account.webProfileID))
+
+        saveGate.resume()
+        try await removal.value
+
+        XCTAssertFalse(fixture.model.hasPendingProfileCleanup)
+        XCTAssertNil(fixture.model.profileCleanupBanner)
+    }
+
+    /// "Quit is paused…" belongs to the profiles that actually turned the quit
+    /// away. Unrelated volatile work arriving later must not inherit the wording —
+    /// and the volatile set is deliberately never empty at any publication here,
+    /// so an aggregate-emptiness rule cannot pass this.
+    func testQuitBlockedWordingIsNotInheritedByUnrelatedVolatileWork() async throws {
+        let fixture = try makeFixture(
+            // Journalling always fails, so every cancelled sign-in stays VOLATILE —
+            // which is the only kind of cleanup that turns a quit away.
+            savePendingProfileIDs: { _ in throw TestFailure.expected }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        fixture.profileManager.removeError = TestFailure.expected
+
+        let blockingSession = try fixture.model.beginSignIn(provider: .claude)
+        let blockingProfile = try XCTUnwrap(
+            fixture.model.signInSession(for: blockingSession)?.webProfileID
+        )
+        await fixture.model.cancelSignIn(sessionID: blockingSession)
+
+        let canTerminate = await fixture.model.prepareForTermination()
+        XCTAssertFalse(canTerminate)
+        XCTAssertEqual(
+            fixture.model.profileCleanupBanner,
+            ProfileCleanupCopy.blockingQuit
+        )
+
+        // A DIFFERENT profile joins the volatile set after the quit attempt.
+        let laterSession = try fixture.model.beginSignIn(provider: .claude)
+        let laterProfile = try XCTUnwrap(
+            fixture.model.signInSession(for: laterSession)?.webProfileID
+        )
+        XCTAssertNotEqual(blockingProfile, laterProfile)
+        await fixture.model.cancelSignIn(sessionID: laterSession)
+
+        // Now the profile that blocked the quit becomes deletable and the newcomer
+        // does not. `onRemoveProfile` runs before the spy's error check, so this
+        // decides the outcome per profile.
+        fixture.profileManager.onRemoveProfile = { profileID in
+            fixture.profileManager.removeError = profileID == laterProfile
+                ? TestFailure.expected
+                : nil
+        }
+        await fixture.model.retryProfileCleanup()
+        // Break the spy → closure → spy cycle so its `deinit` store cleanup runs.
+        fixture.profileManager.onRemoveProfile = nil
+
+        // Volatile went {blocking, later} → {later}: non-empty throughout, but the
+        // profile that owned the wording is gone.
+        XCTAssertTrue(fixture.profileManager.removedProfileIDs.contains(blockingProfile))
+        XCTAssertFalse(fixture.profileManager.removedProfileIDs.contains(laterProfile))
+        XCTAssertTrue(fixture.model.hasVolatileProfileCleanup)
+        XCTAssertEqual(fixture.model.profileCleanupBanner, ProfileCleanupCopy.pending)
+    }
+
+    /// The active-sign-in quit message must retract itself once those sessions
+    /// finish. As a written-once `errorMessage` it never did, and could later sit
+    /// beside the cleanup row falsely claiming quit was still blocked.
+    ///
+    /// A COMMITTING session is the only kind that reaches this guard —
+    /// `prepareForTermination` cancels ordinary sign-ins before it gets there.
+    func testSignInQuitPauseBannerRetractsWhenTheCommitFinishes() async throws {
+        let gate = CommitGate()
+        let fixture = try makeFixture(
+            beforeSignInPersistence: { await gate.suspend() }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        let completion = Task { @MainActor in
+            try await fixture.model.completeSignIn(
+                sessionID: sessionID,
+                label: "Personal"
+            )
+        }
+        await gate.waitUntilStarted()
+
+        let canTerminate = await fixture.model.prepareForTermination()
+        XCTAssertFalse(canTerminate)
+        XCTAssertEqual(
+            fixture.model.signInQuitPauseBanner,
+            ProfileCleanupCopy.blockingQuitOnSignIn
+        )
+        // It is NOT an `errorMessage`, so it cannot outlive its cause or collide
+        // with an unrelated failure.
+        XCTAssertNil(fixture.model.errorMessage)
+
+        gate.resume()
+        try await completion.value
+
+        XCTAssertNil(fixture.model.signInQuitPauseBanner)
+        let canTerminateAfterCommit = await fixture.model.prepareForTermination()
+        XCTAssertTrue(canTerminateAfterCommit)
+    }
+
+    /// A journal entry a LOADED account still references is an aborted pre-commit
+    /// removal, not an orphan — `skipOrRevokeProfileCleanup` revokes it rather than
+    /// deleting it. The indicator must apply that same rule, or startup warns about
+    /// a live authenticated session and offers a Retry that must never delete it.
+    func testJournalEntryOwnedByALiveAccountIsNotSurfacedAsStuckCleanup() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        // On-disk state left by a removal that rolled back but failed to dequeue:
+        // a live account whose profile is still journalled for deletion.
+        try await fixture.pendingStore.enqueue(account.webProfileID)
+        // Abort startup after the queue is read so the publication under test is
+        // the early one in `load()`, before `retryProfileCleanup` reconciles.
+        try FileManager.default.createDirectory(
+            at: fixture.directory.appending(path: "app-settings.json"),
+            withIntermediateDirectories: true
+        )
+
+        let restored = try makeFixture(directory: fixture.directory)
+        defer { restored.removeFiles() }
+        await restored.model.start()
+
+        XCTAssertTrue(restored.model.accounts.contains { $0.id == account.id })
+        XCTAssertTrue(
+            restored.pendingStore.profileIDs.contains(account.webProfileID),
+            "the journal entry must survive — only the WARNING is suppressed"
+        )
+        XCTAssertFalse(restored.model.hasPendingProfileCleanup)
+        XCTAssertNil(restored.model.profileCleanupBanner)
+    }
+
+    /// `completeSignIn` republishes on EVERY exit. On the exit where the account was
+    /// added but the snapshot save AND its rollback both failed, the account stays
+    /// live — so a journalled entry for its profile stops being actionable and must
+    /// stop being reported, even though this path throws.
+    func testCleanupStateIsPublishedOnTheCommitRollbackFailureExit() async throws {
+        var accountSaveCount = 0
+        let fixture = try makeFixture(
+            saveAccounts: { _ in
+                accountSaveCount += 1
+                // 1 = the add; 2 = the rollback of that add, which must also fail.
+                if accountSaveCount == 2 { throw TestFailure.expected }
+            },
+            saveSnapshots: { _ in throw TestFailure.expected }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        let profileID = try XCTUnwrap(
+            fixture.model.signInSession(for: sessionID)?.webProfileID
+        )
+
+        // A journalled deletion intent for the profile this sign-in is about to
+        // commit onto — the shape an interrupted earlier removal leaves behind.
+        try await fixture.pendingStore.enqueue(profileID)
+
+        // Account added, snapshot save fails, rollback of the account fails too — so
+        // it throws with the account still live.
+        do {
+            try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+            XCTFail("Expected the failed rollback to propagate")
+        } catch {
+            // The specific error is this path's business, not this test's.
+        }
+
+        XCTAssertTrue(
+            fixture.model.accounts.contains { $0.webProfileID == profileID },
+            "the failed rollback must have left the account live"
+        )
+        XCTAssertTrue(fixture.pendingStore.profileIDs.contains(profileID))
+        XCTAssertNil(
+            fixture.model.profileCleanupBanner,
+            "a live-referenced profile must not be reported, even on a throwing exit"
+        )
+    }
+
+    /// "Cleanup owns this session" must mean the same thing in
+    /// `prepareForTermination` as everywhere else. Judged on raw queue membership, a
+    /// reauth session whose profile a live account already references was left
+    /// uncancelled — cleanup only revokes such an entry, so the first Quit was
+    /// refused for work nobody was doing, and only a second Quit succeeded.
+    func testQuitCancelsAReauthSessionWhoseQueuedProfileIsLiveReferenced() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        // A stale deletion intent for a LIVE account's profile — what an aborted
+        // removal leaves when its dequeue fails.
+        try await fixture.pendingStore.enqueue(account.webProfileID)
+        _ = try fixture.model.beginReauthentication(accountID: account.id)
+        XCTAssertFalse(fixture.model.signInSessions.isEmpty)
+
+        let canTerminate = await fixture.model.prepareForTermination()
+
+        XCTAssertTrue(
+            canTerminate,
+            "the reauth session is not cleanup's business, so quit must cancel it"
+        )
+        XCTAssertTrue(fixture.model.signInSessions.isEmpty)
+    }
+
+    /// , second half: once a sign-in is past `claimCommit` it is past its last
+    /// `requireActive`, so the commit WILL land. A cleanup pass must not delete that
+    /// profile's store in the meantime, or the account commits with no cookies — and
+    /// no Retry control may be offered for it either.
+    func testCleanupDoesNotDeleteAProfileWhoseCommitIsInFlight() async throws {
+        let gate = CommitGate()
+        let fixture = try makeFixture(
+            beforeSignInPersistence: { await gate.suspend() }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        let profileID = try XCTUnwrap(
+            fixture.model.signInSession(for: sessionID)?.webProfileID
+        )
+
+        // A deletion intent already journalled for the profile this sign-in is
+        // committing onto — what an earlier interrupted pass leaves behind.
+        try await fixture.pendingStore.enqueue(profileID)
+
+        let completion = Task { @MainActor in
+            try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        }
+        // `beforeSignInPersistence` runs immediately after `claimCommit`, so the
+        // session is registered as committing while the gate holds it.
+        await gate.waitUntilStarted()
+
+        // This pass both exercises the deletion guard AND republishes, so the banner
+        // assertion below is against freshly derived state rather than a stale nil.
+        await fixture.model.retryProfileCleanup()
+
+        XCTAssertTrue(
+            fixture.profileManager.removedProfileIDs.isEmpty,
+            "cleanup must not delete the store out from under an in-flight commit"
+        )
+        XCTAssertTrue(
+            fixture.pendingStore.profileIDs.contains(profileID),
+            "and must leave the intent journalled for after the commit resolves"
+        )
+        XCTAssertNil(
+            fixture.model.profileCleanupBanner,
+            "no Retry may be offered for a profile whose commit is in flight"
+        )
+
+        gate.resume()
+        try await completion.value
+
+        // Committed: the entry is now live-referenced, so it is revoked rather than
+        // acted on, and nothing is reported.
+        XCTAssertEqual(fixture.model.accounts.first?.webProfileID, profileID)
+        XCTAssertNil(fixture.model.profileCleanupBanner)
+        await fixture.model.retryProfileCleanup()
+        XCTAssertTrue(fixture.profileManager.removedProfileIDs.isEmpty)
+        XCTAssertFalse(fixture.pendingStore.profileIDs.contains(profileID))
+    }
+
+    /// A cancelled sign-in whose cleanup could not finish keeps its session so
+    /// cleanup can retry — but it must NEVER commit. Otherwise a provider request
+    /// that returns after the cancellation creates the account the user cancelled,
+    /// onto a profile that is queued for deletion.
+    func testCancelledSignInWhoseCleanupFailedCannotCommit() async throws {
+        let fixture = try makeFixture(
+            savePendingProfileIDs: { _ in throw TestFailure.expected }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        fixture.profileManager.removeError = TestFailure.expected
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        // Journalling and deletion both fail, so the session is deliberately kept
+        // for a later cleanup retry (see testQueueFailureStillDeletes...).
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+        XCTAssertNotNil(fixture.model.signInSession(for: sessionID))
+
+        do {
+            try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+            XCTFail("A cancelled sign-in must not be able to commit")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertTrue(
+            fixture.model.accounts.isEmpty,
+            "the cancelled sign-in must not have created an account"
+        )
+    }
+
+    /// Launch purges every live profile's HTTP cache. Nothing did this before, which
+    /// is how 355 MB of `NetworkCache` accumulated for five accounts.
+    func testLaunchPurgesTheCacheOfEveryLiveProfile() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        // Relaunch over the same files.
+        let restored = try makeFixture(directory: fixture.directory)
+        defer { restored.removeFiles() }
+        try await restored.model.load(startBackgroundRefresh: false)
+
+        XCTAssertEqual(restored.profileManager.purgedProfileIDs, [account.webProfileID])
+    }
+
+    /// The sweep deletes identified stores nobody owns — the residue a force quit or
+    /// crash mid-sign-in leaves, which neither the deletion journal nor the
+    /// dedup pass can see.
+    func testLaunchSweepsStoresNoAccountOwns() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        let orphan = UUID()
+        let restored = try makeFixture(directory: fixture.directory)
+        defer { restored.removeFiles() }
+        restored.profileManager.existingIdentifiers = [account.webProfileID, orphan]
+
+        try await restored.model.load(startBackgroundRefresh: false)
+
+        XCTAssertEqual(
+            restored.profileManager.removedProfileIDs,
+            [orphan],
+            "only the store nobody owns may be deleted"
+        )
+    }
+
+    /// Every claim on a profile has to stop the sweep, including claims with no
+    /// account behind them yet. Deleting the store under an in-progress sign-in, or
+    /// one the deletion journal already owns, would be data loss.
+    func testSweepSparesEveryClaimedProfile() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        let journalled = UUID()
+        let restored = try makeFixture(directory: fixture.directory)
+        defer { restored.removeFiles() }
+        try await restored.pendingStore.enqueue(journalled)
+        // Deletion fails for the journalled profile only, so it is STILL journalled
+        // when the sweep runs — the state where an unguarded sweep would delete it
+        // behind the journal's back, leaving a stale entry.
+        restored.profileManager.onRemoveProfile = { [weak spy = restored.profileManager] id in
+            spy?.removeError = id == journalled ? TestFailure.expected : nil
+        }
+        // An in-progress sign-in: a profile with a session but no account.
+        let liveSignIn = try restored.model.beginSignIn(provider: .claude)
+        let signingInProfile = try XCTUnwrap(
+            restored.model.signInSession(for: liveSignIn)?.webProfileID
+        )
+        let orphan = UUID()
+        restored.profileManager.existingIdentifiers = [
+            account.webProfileID, journalled, signingInProfile, orphan,
+        ]
+
+        try await restored.model.load(startBackgroundRefresh: false)
+
+        restored.profileManager.onRemoveProfile = nil
+
+        XCTAssertEqual(
+            restored.profileManager.removedProfileIDs,
+            [orphan],
+            "only the store nobody claims may be deleted"
+        )
+        XCTAssertFalse(
+            restored.profileManager.removedProfileIDs.contains(signingInProfile),
+            "deleting an in-progress sign-in's store would lose the session"
+        )
+        // The cleanup pass attempted the journalled profile and failed. The sweep
+        // must not have tried again behind the journal's back.
+        XCTAssertEqual(
+            restored.profileManager.attemptedProfileIDs.filter { $0 == journalled }.count,
+            1,
+            "a journalled profile is the deletion machinery's to drive, not the sweep's"
+        )
+    }
+
+    /// With no accounts there is no live store to construct, so WebKit stays cold and
+    /// the static identifier API would trap. The sweep must simply not run.
+    func testHygieneIsSkippedEntirelyWithNoAccounts() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        fixture.profileManager.existingIdentifiers = [UUID(), UUID()]
+
+        try await fixture.model.load(startBackgroundRefresh: false)
+
+        XCTAssertTrue(fixture.profileManager.purgedProfileIDs.isEmpty)
+        XCTAssertTrue(
+            fixture.profileManager.removedProfileIDs.isEmpty,
+            "nothing may be deleted on a launch that never warmed WebKit"
+        )
+    }
+
+    /// The mid-session purge is rate-bounded, and the bound starts at the LAUNCH
+    /// purge — otherwise a sleep minutes after launch would purge a cache that was
+    /// just cleared, paying a full refetch for nothing.
+    func testMidSessionPurgeIsRateBoundedFromTheLaunchPurge() async throws {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let fixture = try makeFixture(now: { clock })
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        let restored = try makeFixture(directory: fixture.directory, now: { clock })
+        defer { restored.removeFiles() }
+        try await restored.model.load(startBackgroundRefresh: false)
+        XCTAssertEqual(restored.profileManager.purgedProfileIDs, [account.webProfileID])
+
+        // Same instant, and any point inside the window: the launch purge holds it.
+        await restored.model.purgeIdleCachesIfDue()
+        clock = clock.addingTimeInterval(23 * 60 * 60)
+        await restored.model.purgeIdleCachesIfDue()
+        XCTAssertEqual(
+            restored.profileManager.purgedProfileIDs,
+            [account.webProfileID],
+            "nothing may purge inside the window opened by the launch purge"
+        )
+
+        // Past the window: it fires once, and closes the window again.
+        clock = clock.addingTimeInterval(2 * 60 * 60)
+        await restored.model.purgeIdleCachesIfDue()
+        XCTAssertEqual(
+            restored.profileManager.purgedProfileIDs,
+            [account.webProfileID, account.webProfileID]
+        )
+        await restored.model.purgeIdleCachesIfDue()
+        XCTAssertEqual(
+            restored.profileManager.purgedProfileIDs.count,
+            2,
+            "the window must re-close behind the purge that just ran"
+        )
+    }
+
+    /// A profile backing in-flight work is skipped, not deferred — the next event
+    /// picks it up, and the rate bound means there is no hurry.
+    func testMidSessionPurgeSkipsProfilesBackingInFlightWork() async throws {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let fixture = try makeFixture(now: { clock })
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        // An open sign-in session on that account's profile marks it busy.
+        _ = try fixture.model.beginReauthentication(accountID: account.id)
+        clock = clock.addingTimeInterval(48 * 60 * 60)
+
+        await fixture.model.purgeIdleCachesIfDue()
+
+        XCTAssertTrue(
+            fixture.profileManager.purgedProfileIDs.isEmpty,
+            "a profile with an open sign-in must not have its cache pulled"
+        )
+    }
+
+    func testFailedSnapshotAndAccountRollbackKeepsProfileAttached() async throws {
+        var accountSaveCount = 0
+        let fixture = try makeFixture(
+            saveAccounts: { _ in
+                accountSaveCount += 1
+                if accountSaveCount == 2 {
+                    throw TestFailure.expected
+                }
+            },
+            saveSnapshots: { _ in throw TestFailure.expected }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+
+        do {
+            try await fixture.model.completeSignIn(
+                sessionID: sessionID,
+                label: "Personal"
+            )
+            XCTFail("Expected commit rollback to fail")
+        } catch {
+            XCTAssertTrue(error is AccountCommitError)
+        }
+        XCTAssertNil(fixture.model.signInSession(for: sessionID))
+        do {
+            try await fixture.model.completeSignIn(
+                sessionID: sessionID,
+                label: "Personal"
+            )
+            XCTFail("Expected the completed session to reject retry")
+        } catch {
+            XCTAssertEqual(fixture.model.accounts.count, 1)
+        }
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+
+        XCTAssertEqual(fixture.model.accounts.map(\.label), ["Personal"])
+        XCTAssertTrue(fixture.profileManager.removedProfileIDs.isEmpty)
+    }
+
+    func testAccountOperationsAreRejectedDuringRemoval() async throws {
+        let saveGate = SecondSnapshotSaveGate()
+        let fixture = try makeFixture(
+            saveSnapshots: { snapshots in
+                await saveGate.save(snapshots)
+            }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(
+            sessionID: sessionID,
+            label: "Personal"
+        )
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        let removal = Task { @MainActor in
+            try await fixture.model.removeAccount(id: account.id)
+        }
+        await saveGate.waitUntilBlocked()
+
+        do {
+            try await fixture.model.renameAccount(id: account.id, label: "Renamed")
+            XCTFail("Expected rename to be rejected")
+        } catch {
+            XCTAssertEqual(error as? AccountStoreError, .operationInProgress)
+        }
+        XCTAssertThrowsError(
+            try fixture.model.beginReauthentication(accountID: account.id)
+        ) { error in
+            XCTAssertEqual(error as? AccountStoreError, .operationInProgress)
+        }
+
+        saveGate.resume()
+        try await removal.value
+    }
+
+    func testReauthenticationReusesExistingSessionForAccount() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let signInID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(
+            sessionID: signInID,
+            label: "Personal"
+        )
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        let first = try fixture.model.beginReauthentication(accountID: account.id)
+        let second = try fixture.model.beginReauthentication(accountID: account.id)
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(fixture.model.signInSessions.count, 1)
+    }
+
+    func testReauthenticationCommitBlocksConcurrentRename() async throws {
+        let gate = SecondCommitGate()
+        let fixture = try makeFixture(
+            beforeSignInPersistence: { await gate.reachCommit() }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let signInID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(
+            sessionID: signInID,
+            label: "Personal"
+        )
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        let reauthenticationID = try fixture.model.beginReauthentication(
+            accountID: account.id
+        )
+
+        let completion = Task { @MainActor in
+            try await fixture.model.completeSignIn(
+                sessionID: reauthenticationID,
+                label: "Personal"
+            )
+        }
+        await gate.waitUntilSecondCommit()
+
+        do {
+            try await fixture.model.renameAccount(id: account.id, label: "Renamed")
+            XCTFail("Expected rename to be rejected during reauthentication commit")
+        } catch {
+            XCTAssertEqual(error as? AccountStoreError, .operationInProgress)
+        }
+
+        gate.resumeSecondCommit()
+        try await completion.value
+    }
+
+    func testRemovingAccountDeletesSnapshotAndMatchingWebProfile() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(
+            sessionID: sessionID,
+            label: "Personal"
+        )
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        fixture.profileManager.onRemoveProfile = { _ in
+            XCTAssertTrue(fixture.model.accounts.isEmpty)
+            XCTAssertNil(fixture.model.snapshot(for: account.id))
+        }
+        // The handler captures the fixture, which owns the spy — break the
+        // cycle after use or the spy's deinit (store cleanup) never runs.
+        defer { fixture.profileManager.onRemoveProfile = nil }
+
+        try await fixture.model.removeAccount(id: account.id)
+
+        XCTAssertTrue(fixture.model.accounts.isEmpty)
+        XCTAssertNil(fixture.model.snapshot(for: account.id))
+        XCTAssertEqual(
+            fixture.profileManager.removedProfileIDs,
+            [account.webProfileID]
+        )
+    }
+
+    func testRemovalDurablyJournalsProfileBeforeDeletingAccountRecord() async throws {
+        let removalSaveGate = RemovalAccountSaveGate()
+        let fixture = try makeFixture(
+            saveAccounts: { accounts in
+                await removalSaveGate.save(accounts)
+            }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(
+            sessionID: sessionID,
+            label: "Personal"
+        )
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        let removal = Task { @MainActor in
+            try await fixture.model.removeAccount(id: account.id)
+        }
+        await removalSaveGate.waitUntilBlocked()
+
+        // The web profile is durably journalled for deletion BEFORE the
+        // account record is removed, so a quit/crash in this exact window
+        // cannot strand its authenticated cookie store with nothing pointing
+        // at it — the next launch's cleanup drains the journal.
+        XCTAssertTrue(
+            fixture.pendingStore.profileIDs.contains(account.webProfileID)
+        )
+
+        removalSaveGate.resume()
+        try await removal.value
+
+        // A successful removal drains the journal and deletes the profile.
+        XCTAssertTrue(fixture.pendingStore.profileIDs.isEmpty)
+        XCTAssertEqual(
+            fixture.profileManager.removedProfileIDs,
+            [account.webProfileID]
+        )
+    }
+
+    func testRemovalJournaledProfileIsDeletedOnRelaunch() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        // The on-disk state a crash mid-removal leaves: a profile queued for
+        // deletion with no owning account record.
+        let orphanProfileID = UUID()
+        try await fixture.pendingStore.enqueue(orphanProfileID)
+
+        // Relaunch: a fresh model over the same directory, reusing the profile
+        // manager spy so the deletion is observable.
+        let restoredPendingStore = PendingProfileDeletionStore(
+            fileURL: fixture.directory.appending(
+                path: "pending-profile-deletions.json"
+            )
+        )
+        let restoredModel = AppModel(
+            accountStore: AccountStore(
+                fileURL: fixture.directory.appending(path: "accounts.json")
+            ),
+            snapshotStore: UsageSnapshotStore(
+                fileURL: fixture.directory.appending(path: "snapshots.json")
+            ),
+            pendingProfileDeletionStore: restoredPendingStore,
+            historyStore: UsageHistoryStore(
+                rootDirectory: fixture.directory.appending(
+                    path: "history", directoryHint: .isDirectory
+                )
+            ),
+            appSettings: AppSettings(
+                fileURL: fixture.directory.appending(path: "app-settings.json")
+            ),
+            alertStateStore: AlertStateStore(
+                fileURL: fixture.directory.appending(path: "alert-state.json")
+            ),
+            profileManager: fixture.profileManager,
+            adapterRegistry: ProviderAdapterRegistry(adapters: [fixture.adapter]),
+            systemPowerObserver: SystemPowerObserverStub()
+        )
+        try await restoredModel.load(startBackgroundRefresh: false)
+
+        XCTAssertTrue(restoredPendingStore.profileIDs.isEmpty)
+        XCTAssertEqual(
+            fixture.profileManager.removedProfileIDs,
+            [orphanProfileID]
+        )
+    }
+
+    func testPowerSignalReleasesIdleWebViewAndRecreatesOnNextUse() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        // Signing in warmed (cached) the account's WebView.
+        XCTAssertTrue(fixture.powerObserver.started, "observer should start on load")
+        XCTAssertTrue(
+            fixture.model.cachedWebViewProfileIDsForTesting().contains(account.webProfileID)
+        )
+
+        // A sleep / memory-pressure signal releases the idle WebView.
+        fixture.powerObserver.fireReleaseSignal()
+        XCTAssertFalse(
+            fixture.model.cachedWebViewProfileIDsForTesting().contains(account.webProfileID),
+            "an idle WebView should be released on the power signal"
+        )
+
+        // The cookie store survives, so the next refresh recreates the WebView
+        // and fetches successfully with no re-login.
+        await fixture.model.refreshAll()
+        XCTAssertTrue(
+            fixture.model.cachedWebViewProfileIDsForTesting().contains(account.webProfileID),
+            "a released WebView should be recreated lazily on next use"
+        )
+    }
+
+    func testPowerSignalKeepsWebViewDuringSignInCommit() async throws {
+        // A power signal firing during the sign-in commit window (session still
+        // present, account not yet persisted) must NOT release the session's
+        // WebView — it backs the visible sign-in view. Guards against a refactor
+        // that removes the session too early (busy coverage).
+        let probe = SignInReleaseProbe()
+        let fixture = try makeFixture(beforeSignInPersistence: { probe.run() })
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        probe.model = fixture.model
+        probe.powerObserver = fixture.powerObserver
+
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        probe.profileID = fixture.model.signInSession(for: sessionID)?.webProfileID
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+
+        XCTAssertEqual(
+            probe.webViewKeptDuringCommit, true,
+            "the sign-in session's WebView must not be released during the commit"
+        )
+    }
+
+    func testPowerSignalKeepsWebViewOfInFlightRefresh() async throws {
+        // Gate the fetch so a refresh stays in flight while the signal fires.
+        let fetchGate = VerificationGate()
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        fixture.adapter.fetchGate = fetchGate
+        let refresh = Task { @MainActor in await fixture.model.refreshAll() }
+        await fetchGate.waitUntilStarted()
+
+        // While the refresh is mid-fetch, a power signal must NOT release its
+        // WebView (busy guard).
+        fixture.powerObserver.fireReleaseSignal()
+        XCTAssertTrue(
+            fixture.model.cachedWebViewProfileIDsForTesting().contains(account.webProfileID),
+            "a WebView backing an in-flight refresh must not be released"
+        )
+
+        fetchGate.resume()
+        await refresh.value
+    }
+
+    func testLoadJournalsOrphanedProfileFromDroppedDuplicateRecord() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        // A mis-migrated accounts.json: two records share an id, so the second
+        // is dropped on load — but it has a DISTINCT webProfileID whose cookie
+        // store no live account references.
+        let sharedID = UUID()
+        let liveProfile = UUID()
+        let orphanProfile = UUID()
+        let kept = AccountRecord(
+            id: sharedID, provider: .claude, label: "Kept",
+            webProfileID: liveProfile, displayOrder: 0,
+            createdAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let dropped = AccountRecord(
+            id: sharedID, provider: .claude, label: "Dropped",
+            webProfileID: orphanProfile, displayOrder: 1,
+            createdAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let seedStore = JSONFileStore<[AccountRecord]>(
+            fileURL: fixture.directory.appending(path: "accounts.json"),
+            defaultValue: []
+        )
+        try await seedStore.save([kept, dropped])
+
+        try await fixture.model.load(startBackgroundRefresh: false)
+
+        // The kept account survives untouched; the dropped record's orphaned
+        // profile is journalled and deleted, so no stranded authenticated store
+        // is left on disk.
+        XCTAssertEqual(fixture.model.accounts.map(\.id), [sharedID])
+        XCTAssertEqual(fixture.profileManager.removedProfileIDs, [orphanProfile])
+        XCTAssertFalse(
+            fixture.profileManager.removedProfileIDs.contains(liveProfile)
+        )
+    }
+
+    func testLoadPreservesExistingJournalWhenAddingOrphan() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        // A pre-existing deletion entry from an interrupted account removal is
+        // already journalled on disk...
+        let existingF2Profile = UUID()
+        try await fixture.pendingStore.enqueue(existingF2Profile)
+
+        // ...and accounts.json is also mis-migrated: a dropped duplicate record
+        // leaves a distinct orphaned profile.
+        let sharedID = UUID()
+        let liveProfile = UUID()
+        let orphanProfile = UUID()
+        let seedStore = JSONFileStore<[AccountRecord]>(
+            fileURL: fixture.directory.appending(path: "accounts.json"),
+            defaultValue: []
+        )
+        try await seedStore.save([
+            AccountRecord(
+                id: sharedID, provider: .claude, label: "Kept",
+                webProfileID: liveProfile, displayOrder: 0,
+                createdAt: Date(timeIntervalSince1970: 1_000)
+            ),
+            AccountRecord(
+                id: sharedID, provider: .claude, label: "Dropped",
+                webProfileID: orphanProfile, displayOrder: 1,
+                createdAt: Date(timeIntervalSince1970: 1_000)
+            )
+        ])
+
+        // Fresh model over the same directory.
+        let restoredPending = PendingProfileDeletionStore(
+            fileURL: fixture.directory.appending(
+                path: "pending-profile-deletions.json"
+            )
+        )
+        let restoredModel = AppModel(
+            accountStore: AccountStore(
+                fileURL: fixture.directory.appending(path: "accounts.json")
+            ),
+            snapshotStore: UsageSnapshotStore(
+                fileURL: fixture.directory.appending(path: "snapshots.json")
+            ),
+            pendingProfileDeletionStore: restoredPending,
+            historyStore: UsageHistoryStore(
+                rootDirectory: fixture.directory.appending(
+                    path: "history", directoryHint: .isDirectory
+                )
+            ),
+            appSettings: AppSettings(
+                fileURL: fixture.directory.appending(path: "app-settings.json")
+            ),
+            alertStateStore: AlertStateStore(
+                fileURL: fixture.directory.appending(path: "alert-state.json")
+            ),
+            profileManager: fixture.profileManager,
+            adapterRegistry: ProviderAdapterRegistry(adapters: [fixture.adapter]),
+            systemPowerObserver: SystemPowerObserverStub()
+        )
+        try await restoredModel.load(startBackgroundRefresh: false)
+
+        // BOTH the pre-existing entry and the newly-discovered orphan are
+        // deleted — the orphan enqueue must not overwrite the loaded journal.
+        // The live account's profile is untouched.
+        XCTAssertEqual(
+            Set(fixture.profileManager.removedProfileIDs),
+            Set([existingF2Profile, orphanProfile])
+        )
+        XCTAssertFalse(
+            fixture.profileManager.removedProfileIDs.contains(liveProfile)
+        )
+        XCTAssertTrue(restoredPending.profileIDs.isEmpty)
+    }
+
+    func testCleanupRevokesJournalForStillLiveAccountOnRelaunch() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+
+        // Reconstruct the on-disk state an interruption AFTER journaling but
+        // BEFORE the account-record removal commits would leave: the account is
+        // still present in accounts.json AND its profile is journalled for
+        // deletion. A naive "delete every journal entry" cleanup would erase a
+        // live, authenticated session here.
+        let liveAccount = AccountRecord(
+            id: UUID(),
+            provider: .claude,
+            label: "Live",
+            webProfileID: UUID(),
+            displayOrder: 0,
+            createdAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let seedAccounts = AccountStore(
+            fileURL: fixture.directory.appending(path: "accounts.json")
+        )
+        try await seedAccounts.load()
+        try await seedAccounts.add(liveAccount)
+        let seedPending = PendingProfileDeletionStore(
+            fileURL: fixture.directory.appending(
+                path: "pending-profile-deletions.json"
+            )
+        )
+        try await seedPending.enqueue(liveAccount.webProfileID)
+
+        // Relaunch.
+        let restoredPendingStore = PendingProfileDeletionStore(
+            fileURL: fixture.directory.appending(
+                path: "pending-profile-deletions.json"
+            )
+        )
+        let restoredModel = AppModel(
+            accountStore: AccountStore(
+                fileURL: fixture.directory.appending(path: "accounts.json")
+            ),
+            snapshotStore: UsageSnapshotStore(
+                fileURL: fixture.directory.appending(path: "snapshots.json")
+            ),
+            pendingProfileDeletionStore: restoredPendingStore,
+            historyStore: UsageHistoryStore(
+                rootDirectory: fixture.directory.appending(
+                    path: "history", directoryHint: .isDirectory
+                )
+            ),
+            appSettings: AppSettings(
+                fileURL: fixture.directory.appending(path: "app-settings.json")
+            ),
+            alertStateStore: AlertStateStore(
+                fileURL: fixture.directory.appending(path: "alert-state.json")
+            ),
+            profileManager: fixture.profileManager,
+            adapterRegistry: ProviderAdapterRegistry(adapters: [fixture.adapter]),
+            systemPowerObserver: SystemPowerObserverStub()
+        )
+        try await restoredModel.load(startBackgroundRefresh: false)
+
+        // The live account survives, its profile is NEVER passed to
+        // removeProfile, and the stale deletion intent is revoked.
+        XCTAssertEqual(restoredModel.accounts.map(\.id), [liveAccount.id])
+        XCTAssertTrue(fixture.profileManager.removedProfileIDs.isEmpty)
+        XCTAssertTrue(restoredPendingStore.profileIDs.isEmpty)
+    }
+
+    func testRemovalAbortsIntactWhenJournalingFails() async throws {
+        let fixture = try makeFixture(
+            savePendingProfileIDs: { _ in throw TestFailure.expected }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(
+            sessionID: sessionID,
+            label: "Personal"
+        )
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        // Journaling is a hard precondition: if it fails, the
+        // removal aborts before any destructive mutation — account, snapshot,
+        // and profile all remain intact.
+        do {
+            try await fixture.model.removeAccount(id: account.id)
+            XCTFail("Expected removal to abort when journaling fails")
+        } catch {
+            XCTAssertEqual(error as? TestFailure, .expected)
+        }
+
+        XCTAssertEqual(fixture.model.accounts.map(\.id), [account.id])
+        XCTAssertNotNil(fixture.model.snapshot(for: account.id))
+        XCTAssertTrue(fixture.profileManager.removedProfileIDs.isEmpty)
+    }
+
+    func testRemovalPreservesReauthSessionWhenJournalingFails() async throws {
+        let fixture = try makeFixture(
+            savePendingProfileIDs: { _ in throw TestFailure.expected }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let signInID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(
+            sessionID: signInID,
+            label: "Personal"
+        )
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        let reauthID = try fixture.model.beginReauthentication(
+            accountID: account.id
+        )
+        XCTAssertNotNil(fixture.model.signInSession(for: reauthID))
+
+        // Journaling is the FIRST thing removal does — before refresh cancel and
+        // sign-in/reauth session teardown. When it fails, the
+        // removal aborts with the account AND its in-flight reauth session both
+        // intact and still usable.
+        do {
+            try await fixture.model.removeAccount(id: account.id)
+            XCTFail("Expected removal to abort when journaling fails")
+        } catch {
+            XCTAssertEqual(error as? TestFailure, .expected)
+        }
+
+        XCTAssertEqual(fixture.model.accounts.map(\.id), [account.id])
+        XCTAssertNotNil(fixture.model.signInSession(for: reauthID))
+    }
+
+    func testCleanupRechecksLivenessImmediatelyBeforeDeletion() async throws {
+        let profileP = UUID()
+        let restoredAccount = AccountRecord(
+            id: UUID(),
+            provider: .claude,
+            label: "Restored",
+            webProfileID: profileP,
+            displayOrder: 0,
+            createdAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let injector = CleanupRaceInjector()
+        let fixture = try makeFixture(
+            beforeProfileCleanupDeletion: { profileID in
+                await injector.inject(profileID)
+            }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+
+        // profileP looks like an orphan at cleanup start (no account references
+        // it). The injector restores an account referencing it during the
+        // interleave point — i.e. AFTER the loop-start check but BEFORE the
+        // deletion — simulating a concurrent removal rolling back mid-loop.
+        try await fixture.pendingStore.enqueue(profileP)
+        injector.configure(
+            accountStore: fixture.accountStore,
+            account: restoredAccount,
+            targetProfileID: profileP
+        )
+
+        await fixture.model.retryProfileCleanup()
+
+        // The final fresh re-check must observe the just-restored account and
+        // REVOKE the deletion — never erase the live, authenticated profile.
+        XCTAssertTrue(fixture.profileManager.removedProfileIDs.isEmpty)
+        XCTAssertTrue(fixture.pendingStore.profileIDs.isEmpty)
+        XCTAssertTrue(
+            fixture.model.accounts.contains { $0.webProfileID == profileP }
+        )
+    }
+
+    func testCorruptSettingsFailClosedInhibitsWarmUp() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        // Corrupt the settings file on disk before load.
+        let settingsURL = fixture.directory.appending(path: "app-settings.json")
+        try Data("{ not valid settings json ".utf8).write(to: settingsURL)
+
+        try await fixture.model.load(startBackgroundRefresh: false)
+
+        XCTAssertTrue(fixture.model.settings.loadFailed)
+
+        let account = AccountRecord(
+            id: UUID(),
+            provider: .claude,
+            label: "Warmable",
+            webProfileID: UUID(),
+            displayOrder: 0,
+            createdAt: Date(timeIntervalSince1970: 0),
+            autoStartFiveHour: true
+        )
+        // A fresh, unused 5h window (0% used, no reset) is normally eligible.
+        let freshWindow = UsageWindow(
+            kind: .fiveHour,
+            remainingFraction: 1.0,
+            resetsAt: nil
+        )
+        // With settings undecodable, warm-up fails CLOSED (every hour
+        // quiet) rather than trusting empty defaults as a user opt-in.
+        XCTAssertFalse(
+            AutoStartPolicy.shouldAutoStart(
+                account: account,
+                fiveHour: freshWindow,
+                now: Date(timeIntervalSince1970: 1_000),
+                schedule: fixture.model.warmUpSchedule
+            )
+        )
+
+        // Recovery: a successful settings save re-persists valid JSON, clears
+        // the flag, and re-permits warm-up.
+        try await fixture.model.setQuietHours([])
+
+        XCTAssertFalse(fixture.model.settings.loadFailed)
+        XCTAssertTrue(
+            AutoStartPolicy.shouldAutoStart(
+                account: account,
+                fiveHour: freshWindow,
+                now: Date(timeIntervalSince1970: 1_000),
+                schedule: fixture.model.warmUpSchedule
+            )
+        )
+    }
+
+    func testProfileRemovalFailureRestoresAccountAndSnapshot() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(
+            sessionID: sessionID,
+            label: "Personal"
+        )
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        fixture.profileManager.removeError = TestFailure.expected
+
+        do {
+            try await fixture.model.removeAccount(id: account.id)
+            XCTFail("Expected profile removal to fail")
+        } catch {
+            XCTAssertEqual(error as? TestFailure, .expected)
+        }
+
+        XCTAssertEqual(fixture.model.accounts.map(\.id), [account.id])
+        XCTAssertNotNil(fixture.model.snapshot(for: account.id))
+    }
+
+    func testPausedAccountIsNotRefreshed() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+
+        let firstSession = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: firstSession, label: "Active")
+        let secondSession = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: secondSession, label: "Paused")
+        let pausedID = try XCTUnwrap(
+            fixture.model.accounts.first(where: { $0.label == "Paused" })?.id
+        )
+
+        try await fixture.accountStore.setPaused(id: pausedID, paused: true)
+        let fetchesBefore = fixture.adapter.fetchCallCount
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        // Exactly one fetch: the active account. The paused one is dormant.
+        XCTAssertEqual(fixture.adapter.fetchCallCount, fetchesBefore + 1)
+        // Settings still sees both; the popover boundary sees one.
+        XCTAssertEqual(fixture.model.presentations.count, 2)
+        XCTAssertEqual(fixture.model.visibleAccounts.map(\.id).count, 1)
+    }
+
+    func testResumeTriggersImmediateRefresh() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        try await fixture.model.setPaused(accountID: account.id, paused: true)
+        let fetchesWhilePaused = fixture.adapter.fetchCallCount
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(fixture.adapter.fetchCallCount, fetchesWhilePaused, "paused account must not fetch")
+
+        try await fixture.model.setPaused(accountID: account.id, paused: false)
+        XCTAssertEqual(fixture.adapter.fetchCallCount, fetchesWhilePaused + 1, "resume must refresh immediately")
+        XCTAssertEqual(fixture.model.accounts.first?.isPaused, false)
+    }
+
+    /// Wedge regression: a bridge call that times out must not leave the
+    /// account's cached web view permanently wedged. Reproduces the real
+    /// sequence — sign-in works, a later fetch hangs and bounds out to
+    /// `.stale`, and the NEXT refresh recovers by recycling the cached view
+    /// and actually re-invoking the evaluator (not silently joining a hung
+    /// in-flight task).
+    func testHungFetchTimesOutRecyclesWebViewAndNextRefreshFetchesAgain() async throws {
+        // Evaluator: resolves normally during sign-in, hangs for every
+        // fetch afterwards. Controlled by a MainActor flag.
+        final class EvaluatorMode { var hang = false }
+        let mode = EvaluatorMode()
+        final class EvaluationCounter { var count = 0 }
+        let evaluationCounter = EvaluationCounter()
+        let client = WebUsageClient(
+            evaluator: { script, _, _ in
+                evaluationCounter.count += 1
+                if mode.hang {
+                    await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                }
+                // Successful shapes for sign-in/verify + fetch: reuse the
+                // stub payloads ClaudeProviderAdapterTests uses for a green
+                // fetch (resource path + usage envelope).
+                return Self.scriptedSuccess(for: script)
+            },
+            // When the evaluator is not hung, it is
+            // the ONLY side of the `bounded` race that can ever resolve —
+            // the timeout side must never resolve here, or it could win by
+            // scheduling luck instead of the evaluator genuinely winning.
+            // When the evaluator IS hung it can never resolve on its own,
+            // so resolving the timeout immediately is unconditionally
+            // correct. Neither branch depends on Task scheduling order.
+            sleep: { _ in
+                guard mode.hang else {
+                    await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                    return
+                }
+            }
+        )
+        let claudeAdapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
+        let fixture = try makeFixture(adapters: [claudeAdapter])
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        let viewsAfterSignIn = fixture.profileManager.madeProfileIDs.count
+
+        // Explicit first-success refresh: establishes the baseline snapshot
+        // the "worked → wedged → recovered" sequence below assumes, so the
+        // subsequent hang reads as a regression against a real prior success
+        // rather than an untested `completeSignIn` side effect.
+        mode.hang = false
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertNotNil(fixture.model.snapshot(for: account.id), "baseline refresh must produce a snapshot")
+
+        // First refresh: hang → bounded timeout → stale, NOT a wedge.
+        mode.hang = true
+        let evaluationsBeforeHang = evaluationCounter.count
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertGreaterThan(evaluationCounter.count, evaluationsBeforeHang, "first refresh must reach the evaluator")
+        // State surfaced through the presentation pipeline:
+        let state = try XCTUnwrap(
+            fixture.model.presentations.first(where: { $0.account.id == account.id })?.state
+        )
+        guard case .stale = state else {
+            return XCTFail("expected .stale after a timed-out fetch with an existing snapshot, got \(state)")
+        }
+        // The recycle must actually reap the abandoned bridge call, not just
+        // `stopLoading()` (which does not settle a pending script callback —
+        // only frame destruction does): the ORIGINAL (sign-in-time) view must
+        // have been navigated to about:blank.
+        let originalView = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+        XCTAssertTrue(
+            originalView.loadedRequests.contains { $0.url?.absoluteString == "about:blank" },
+            "timed-out fetch's recycle must navigate the dropped view to about:blank to force-settle its pending callback"
+        )
+
+        // Recycle: the cached web view was dropped, so the NEXT refresh
+        // must create a fresh one...
+        let evaluationsAfterFirst = evaluationCounter.count
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertGreaterThan(
+            fixture.profileManager.madeProfileIDs.count,
+            viewsAfterSignIn,
+            "timed-out fetch must recycle the cached web view (fresh makeWebView on next refresh)"
+        )
+        // ...and must actually invoke the evaluator again — the pre-fix bug
+        // was every later refresh silently joining the hung inFlight task.
+        XCTAssertGreaterThan(
+            evaluationCounter.count,
+            evaluationsAfterFirst,
+            "second refresh must fetch again, not join a hung in-flight task"
+        )
+    }
+
+    /// `recycleWebViewOnTimeout` must evict the
+    /// cached view only when it is still the EXACT view the timed-out call
+    /// operated on — not whatever happens to be cached under the profile ID
+    /// when the catch finally runs. The overlap this guards against (a late
+    /// timeout from an abandoned view V1 racing a view V2 a DIFFERENT,
+    /// already-completed operation freshly cached) could not be staged
+    /// through the public API alone: every current call path sharing a
+    /// profile's timeout guard is serialized by an in-flight/busy marker
+    /// (`UsageRefreshCoordinator.inFlight`, `sendingKeepAliveAccountIDs`,
+    /// `isProfileProtected`) — see `replaceWebViewForTesting`'s doc. This
+    /// drives the REAL `fetchUsage` -> `recycleWebViewOnTimeout` path (not a
+    /// reimplementation) with a deterministic gate controlling exactly when
+    /// the timeout resolves, and substitutes the cache entry — the narrower
+    /// seam — in between, to force that exact sequencing without relying on
+    /// Task scheduling luck.
+    func testLateTimeoutFromAbandonedViewDoesNotEvictAFreshlyCachedView() async throws {
+        final class EvaluatorMode { var hang = false }
+        let mode = EvaluatorMode()
+        let timeoutGate = TimeoutSleepGate()
+        let client = WebUsageClient(
+            evaluator: { script, _, _ in
+                if mode.hang {
+                    await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                }
+                return Self.scriptedSuccess(for: script)
+            },
+            sleep: { _ in
+                guard mode.hang else { return }
+                // Parks here (armed, not yet delivered) until the test
+                // explicitly releases it — after the cache swap below.
+                await timeoutGate.suspend()
+            }
+        )
+        let claudeAdapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
+        let fixture = try makeFixture(adapters: [claudeAdapter])
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        let v1 = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+        let madeCountAfterSignIn = fixture.profileManager.madeProfileIDs.count
+
+        // Op A: a fetch that hangs, then times out — but only once the gate
+        // below is released. Op A resolves `operatedView` (V1) up front,
+        // before it ever suspends.
+        mode.hang = true
+        let opA = Task { await fixture.model.refreshAll(reason: .manual) }
+        await timeoutGate.waitUntilStarted()
+
+        // While Op A's timeout is parked (armed, not yet delivered),
+        // simulate a DIFFERENT, already-completed operation having recycled
+        // V1 and cached a fresh V2 under the same profile — the exact
+        // overlap the identity guard defends against.
+        let v2 = RecordingWebView(frame: .zero)
+        fixture.model.replaceWebViewForTesting(profileID: account.webProfileID, with: v2)
+
+        // Now let Op A's timeout actually resolve.
+        timeoutGate.resume()
+        await opA.value
+
+        // V1 — the view Op A actually operated on — still gets its frame
+        // teardown, even though it is no longer cached.
+        XCTAssertTrue(
+            v1.loadedRequests.contains { $0.url?.absoluteString == "about:blank" },
+            "the timed-out call's own view must still be torn down even though it is no longer cached"
+        )
+        // V2 — freshly cached by a DIFFERENT operation — must be left
+        // completely alone: no eviction, no teardown.
+        XCTAssertFalse(
+            v2.loadedRequests.contains { $0.url?.absoluteString == "about:blank" },
+            "a freshly cached view must never be torn down by a late timeout attributed to a different, older view"
+        )
+
+        // And the cache must still hold V2: the next refresh must reuse it,
+        // not mint a fresh view.
+        mode.hang = false
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(
+            fixture.profileManager.madeProfileIDs.count,
+            madeCountAfterSignIn,
+            "a late timeout attributed to an old view must not evict a freshly cached one (no new makeWebView call)"
+        )
+    }
+
+    /// Sign-in protection: an open reauth session shares its account's
+    /// web profile AND its live web view (`beginReauthentication` reuses
+    /// `account.webProfileID`) with the user's visible login navigation. A
+    /// concurrent timer-refresh timeout must NOT recycle that view out from
+    /// under them — the profile is "protected" while the session is open.
+    func testHungFetchDuringOpenSignInSessionDoesNotRecycleProtectedProfile() async throws {
+        final class EvaluatorMode { var hang = false }
+        let mode = EvaluatorMode()
+        final class EvaluationCounter { var count = 0 }
+        let evaluationCounter = EvaluationCounter()
+        let client = WebUsageClient(
+            evaluator: { script, _, _ in
+                evaluationCounter.count += 1
+                if mode.hang {
+                    await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                }
+                return Self.scriptedSuccess(for: script)
+            },
+            // See the identical gate in
+            // testHungFetchTimesOutRecyclesWebViewAndNextRefreshFetchesAgain —
+            // makes the intended winner deterministic instead of relying on
+            // Task scheduling order.
+            sleep: { _ in
+                guard mode.hang else {
+                    await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                    return
+                }
+            }
+        )
+        let claudeAdapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
+        let fixture = try makeFixture(adapters: [claudeAdapter])
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        // Explicit first-success refresh: establishes the baseline snapshot,
+        // same as the wedge-regression test above.
+        mode.hang = false
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertNotNil(fixture.model.snapshot(for: account.id), "baseline refresh must produce a snapshot")
+
+        // Open a reauth session on the SAME account: it reuses
+        // `account.webProfileID` and the account's already-cached web view.
+        let reauthSessionID = try fixture.model.beginReauthentication(accountID: account.id)
+        XCTAssertNotNil(fixture.model.signInSession(for: reauthSessionID), "reauth session must be open")
+
+        let viewsBeforeHang = fixture.profileManager.madeProfileIDs.count
+        let protectedView = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+
+        // A concurrent timer-style refresh hangs and bounds out to `.stale`
+        // — same as the unprotected case — but must NOT touch the view the
+        // open reauth session is using.
+        mode.hang = true
+        await fixture.model.refreshAll(reason: .manual)
+        let state = try XCTUnwrap(
+            fixture.model.presentations.first(where: { $0.account.id == account.id })?.state
+        )
+        guard case .stale = state else {
+            return XCTFail("expected .stale after a timed-out fetch with an existing snapshot, got \(state)")
+        }
+
+        // No recycle: the NEXT refresh must reuse the SAME cached view
+        // (no fresh `makeWebView`), and the protected view must never have
+        // been navigated to about:blank.
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(
+            fixture.profileManager.madeProfileIDs.count,
+            viewsBeforeHang,
+            "an open sign-in session must protect its profile's web view from a timeout recycle"
+        )
+        XCTAssertFalse(
+            protectedView.loadedRequests.contains { $0.url?.absoluteString == "about:blank" },
+            "a protected profile's web view must never be navigated away by a timeout recycle"
+        )
+
+        // Closing the protected session must COMPLETE the deferred
+        // recycle — the tainted view (still hosting the abandoned bridge
+        // call from the earlier timed-out fetch) finally gets its
+        // `about:blank` teardown, and the account is no longer stuck on it.
+        await fixture.model.cancelSignIn(sessionID: reauthSessionID)
+        XCTAssertNil(
+            fixture.model.signInSession(for: reauthSessionID),
+            "the reauth session must be closed"
+        )
+        XCTAssertTrue(
+            protectedView.loadedRequests.contains { $0.url?.absoluteString == "about:blank" },
+            "closing the protected session must complete the deferred recycle (about:blank teardown)"
+        )
+
+        mode.hang = false
+        let viewsAfterSessionClosed = fixture.profileManager.madeProfileIDs.count
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertGreaterThan(
+            fixture.profileManager.madeProfileIDs.count,
+            viewsAfterSessionClosed,
+            "closing the protected session must let the next refresh recycle to a fresh view"
+        )
+    }
+
+    /// Keep-alive bound: the auto-start "keep-alive" send (a `postJSON`
+    /// call driven from `handleAutoStart` -> `AccountSessionManager.sendKeepAlive`
+    /// -> `ClaudeMessageSender.send` -> `createConversation`) hits the exact
+    /// same `bounded` race and `recycleWebViewOnTimeout` machinery as a hung
+    /// fetch (Tasks 1-3) — but through a DIFFERENT call chain than
+    /// `fetchUsage`. This pins that guarantee independently: a hung keep-alive
+    /// send bounds out, surfaces the auto-start failure banner, still leaves
+    /// the triggering snapshot saved, recycles the shared cached web view (the
+    /// account's fetch and keep-alive send share ONE cached view per profile),
+    /// and does not wedge the NEXT refresh's fetch.
+    func testHungKeepAliveSendIsBoundedAndDoesNotWedgeRefresh() async throws {
+        final class EvaluatorMode { var hangPosts = false }
+        let mode = EvaluatorMode()
+        final class EvaluationCounter { var total = 0; var posts = 0 }
+        let counter = EvaluationCounter()
+        let client = WebUsageClient(
+            evaluator: { script, arguments, _ in
+                counter.total += 1
+                // Distinctive substring of `WebUsageClient.postScript`'s actual
+                // source (`method: "POST",`) — the only one of the three
+                // scripts this test's Claude-only path can evaluate
+                // (postScript / fetchScript / resourcePathsScript) that
+                // contains it, so it uniquely identifies the keep-alive send.
+                if script.contains("method: \"POST\"") {
+                    counter.posts += 1
+                    if mode.hangPosts {
+                        await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                    }
+                    return ["status": 200, "retryAfter": NSNull(), "body": ""]
+                }
+                if script.contains("getEntriesByType") {
+                    return Self.scriptedSuccess(for: script)
+                }
+                // `fetchScript` is shared by the usage read (`ClaudeProviderAdapter
+                // .fetchUsage`) AND the auto-start model-discovery read
+                // (`ClaudeMessageSender.discoverModel`) — same script body, so
+                // disambiguate by the `path` argument instead.
+                let path = arguments["path"] as? String ?? ""
+                if path.contains("chat_conversations") {
+                    return [
+                        "status": 200,
+                        "retryAfter": NSNull(),
+                        "body": #"[{"model":"claude-test-model","uuid":"abc"}]"#
+                    ]
+                }
+                // Usage envelope: a fresh, unused 5h window (remainingFraction 1,
+                // no scheduled reset) — the "not started" state that fires
+                // auto-start (mirrors how `scriptedSuccess` encodes windows,
+                // with utilization dropped to 0 instead of 5 so it actually
+                // arms `AutoStartPolicy.shouldAutoStart`'s `>= 0.99` check).
+                return [
+                    "status": 200,
+                    "retryAfter": NSNull(),
+                    "body": """
+                    {
+                      "five_hour": { "utilization": 0, "resets_at": null },
+                      "seven_day": { "utilization": 53, "resets_at": null }
+                    }
+                    """
+                ]
+            },
+            sleep: { _ in }
+        )
+        let claudeAdapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
+        let messageSender = ClaudeMessageSender(client: client)
+        let fixture = try makeFixture(adapters: [claudeAdapter], messageSender: messageSender)
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        try await fixture.model.setAutoStart(accountID: account.id, enabled: true)
+
+        let viewsBeforeHang = fixture.profileManager.madeProfileIDs.count
+        let originalView = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+
+        // Only the keep-alive POST hangs; fetch/resource-path scripts stay green.
+        mode.hangPosts = true
+        await fixture.model.refreshAll(reason: .manual)
+
+        // Non-vacuousness: the hang must actually have been reached, or every
+        // assertion below would pass trivially without exercising the bound.
+        XCTAssertGreaterThan(
+            counter.posts, 0,
+            "the keep-alive POST must actually be attempted for this test to be meaningful"
+        )
+        // The refresh COMPLETED (we are past the await) — that alone is the
+        // wedge assertion. Pin the failure surfacing too:
+        XCTAssertNotNil(fixture.model.snapshot(for: account.id), "snapshot from the fetch must be saved")
+        XCTAssertEqual(
+            fixture.model.warmUpBanner?.severity,
+            .critical,
+            "the auto-start failure banner must surface"
+        )
+        // The keep-alive send shares its account's ONE cached web view with
+        // `fetchUsage` — the timed-out send's recycle must have force-settled
+        // the original view via `about:blank` (see the `RecordingWebView`
+        // doc: `stopLoading()` alone does not settle a pending callback).
+        XCTAssertTrue(
+            originalView.loadedRequests.contains { $0.url?.absoluteString == "about:blank" },
+            "the hung keep-alive send's recycle must navigate the dropped view to about:blank"
+        )
+
+        // And the account is not wedged: a second refresh recreates the
+        // recycled view and actually fetches again, rather than joining a
+        // hung in-flight task.
+        let evaluationsBeforeSecond = counter.total
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertGreaterThan(
+            fixture.profileManager.madeProfileIDs.count, viewsBeforeHang,
+            "a hung keep-alive send must recycle the shared web view so the next refresh gets a fresh one"
+        )
+        XCTAssertGreaterThan(
+            counter.total, evaluationsBeforeSecond,
+            "subsequent refresh must fetch again, not join a hung in-flight task"
+        )
+    }
+
+    /// Per-script green-path stub payloads, copied from
+    /// `ClaudeProviderAdapterTests.testFetchAcceptsRecognizedWindowsWithoutScheduledResets`.
+    /// `WebUsageClient`'s resource-path and fetch scripts are `private`, so
+    /// they can't be referenced directly even under `@testable import` —
+    /// distinguish them by a substring unique to each script's body instead.
+    private static let scriptedOrganizationID = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
+
+    private static func scriptedSuccess(for script: String) -> Any? {
+        if script.contains("getEntriesByType") {
+            // resourcePathsScript: resource-path listing used for org-ID discovery.
+            return ["/api/organizations/\(scriptedOrganizationID.uuidString)/usage"]
+        }
+        // fetchScript: the usage envelope.
+        return [
+            "status": 200,
+            "retryAfter": NSNull(),
+            "body": """
+            {
+              "five_hour": { "utilization": 5, "resets_at": null },
+              "seven_day": { "utilization": 53, "resets_at": null }
+            }
+            """
+        ]
+    }
+
+    private func makeFixture(
+        saveAccounts: AccountStore.SaveAccounts? = nil,
+        saveSnapshots: UsageSnapshotStore.SaveSnapshots? = nil,
+        savePendingProfileIDs: PendingProfileDeletionStore.SaveProfileIDs? = nil,
+        beforeSignInPersistence: @escaping @MainActor () async -> Void = {},
+        beforeProfileCleanupDeletion: @escaping @MainActor (UUID) async -> Void = { _ in },
+        adapters: [any ProviderAdapter]? = nil,
+        messageSender: ClaudeMessageSender = ClaudeMessageSender(),
+        // Pass an existing directory to build a SECOND model over the same files,
+        // i.e. to exercise what a relaunch sees on disk.
+        directory: URL? = nil,
+        // A movable clock, for the rate-bounded cache purge.
+        now: (@MainActor () -> Date)? = nil
+    ) throws -> Fixture {
+        let directory = directory
+            ?? FileManager.default.temporaryDirectory
+            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+
+        let accounts = AccountStore(
+            fileURL: directory.appending(path: "accounts.json"),
+            saveAccounts: saveAccounts
+        )
+        let snapshots = UsageSnapshotStore(
+            fileURL: directory.appending(path: "snapshots.json"),
+            saveSnapshots: saveSnapshots
+        )
+        let pendingStore = PendingProfileDeletionStore(
+            fileURL: directory.appending(path: "pending-profile-deletions.json"),
+            saveProfileIDs: savePendingProfileIDs
+        )
+        let historyStore = UsageHistoryStore(
+            rootDirectory: directory.appending(path: "history", directoryHint: .isDirectory)
+        )
+        let appSettings = AppSettings(
+            fileURL: directory.appending(path: "app-settings.json")
+        )
+        let alertStateStore = AlertStateStore(
+            fileURL: directory.appending(path: "alert-state.json")
+        )
+        let profileManager = WebProfileManagerSpy()
+        let adapter = ProviderAdapterSpy()
+        let powerObserver = SystemPowerObserverStub()
+        let model = AppModel(
+            accountStore: accounts,
+            snapshotStore: snapshots,
+            pendingProfileDeletionStore: pendingStore,
+            historyStore: historyStore,
+            appSettings: appSettings,
+            alertStateStore: alertStateStore,
+            profileManager: profileManager,
+            adapterRegistry: ProviderAdapterRegistry(adapters: adapters ?? [adapter]),
+            messageSender: messageSender,
+            now: now ?? { Date(timeIntervalSince1970: 1_000) },
+            beforeSignInPersistence: beforeSignInPersistence,
+            beforeProfileCleanupDeletion: beforeProfileCleanupDeletion,
+            systemPowerObserver: powerObserver
+        )
+        return Fixture(
+            directory: directory,
+            model: model,
+            accountStore: accounts,
+            pendingStore: pendingStore,
+            profileManager: profileManager,
+            adapter: adapter,
+            powerObserver: powerObserver
+        )
+    }
+}
+
+@MainActor
+private struct Fixture {
+    let directory: URL
+    let model: AppModel
+    let accountStore: AccountStore
+    let pendingStore: PendingProfileDeletionStore
+    let profileManager: WebProfileManagerSpy
+    let adapter: ProviderAdapterSpy
+    let powerObserver: SystemPowerObserverStub
+
+    nonisolated func removeFiles() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+}
+
+/// Fires a power-release signal at the sign-in commit interleave point (via
+/// `beforeSignInPersistence`) and records whether the session's WebView
+/// survived — proving the sign-in session keeps its profile busy.
+@MainActor
+private final class SignInReleaseProbe {
+    var model: AppModel?
+    var powerObserver: SystemPowerObserverStub?
+    var profileID: UUID?
+    private(set) var webViewKeptDuringCommit: Bool?
+
+    func run() {
+        guard let model, let powerObserver, let profileID else { return }
+        powerObserver.fireReleaseSignal()
+        webViewKeptDuringCommit =
+            model.cachedWebViewProfileIDsForTesting().contains(profileID)
+    }
+}
+
+@MainActor
+private final class SystemPowerObserverStub: SystemPowerObserving {
+    var onShouldReleaseIdleResources: (@MainActor () -> Void)?
+    var isLowPowerModeEnabled = false
+    private(set) var started = false
+
+    func start() { started = true }
+    func stop() {}
+
+    /// Simulate a system sleep / memory-pressure signal.
+    func fireReleaseSignal() { onShouldReleaseIdleResources?() }
+}
+
+/// Wedge-regression: records every `load(_:)` call so a test can prove
+/// the timeout recycle's `about:blank` navigation actually reached the
+/// dropped view — `stopLoading()` alone does NOT settle a pending script
+/// callback, only tearing down the frame (via a real navigation) does.
+@MainActor
+private final class RecordingWebView: WKWebView {
+    private(set) var loadedRequests: [URLRequest] = []
+    private let stableConfiguration: WKWebViewConfiguration
+
+    /// `WKWebView.configuration` normally returns a fresh COPY — and copies
+    /// of an EPHEMERAL data store do not converge on one cookie jar the way
+    /// production's identified stores do. Returning the original makes the
+    /// spy behave like production for `webView.configuration.websiteDataStore`
+    /// access paths.
+    override var configuration: WKWebViewConfiguration { stableConfiguration }
+
+    override init(frame: CGRect, configuration: WKWebViewConfiguration) {
+        stableConfiguration = configuration
+        super.init(frame: frame, configuration: configuration)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("unused") }
+
+    /// Records WITHOUT navigating: every assertion against this spy is about
+    /// what the code under test ASKED to load, and a real request from a unit
+    /// test (chatgpt.com, claude.ai) would be nondeterministic — a live site
+    /// can even clear a test-planted session cookie via its logged-out
+    /// response's Set-Cookie.
+    @discardableResult
+    override func load(_ request: URLRequest) -> WKNavigation? {
+        loadedRequests.append(request)
+        return nil
+    }
+}
+
+@MainActor
+private final class WebProfileManagerSpy: WebProfileManaging {
+    private(set) var attemptedProfileIDs: [UUID] = []
+    private(set) var removedProfileIDs: [UUID] = []
+    /// Wedge-regression test: every `makeWebView` call, in order —
+    /// proves a timed-out fetch recycled the cached view (a fresh entry
+    /// appears here on the next refresh instead of the same view being reused).
+    private(set) var madeProfileIDs: [UUID] = []
+    /// Parallel to `madeProfileIDs` — the concrete `RecordingWebView` handed
+    /// back for each `makeWebView` call, so a test can inspect what was
+    /// later (not) loaded into a specific, already-cached view.
+    private(set) var madeWebViews: [RecordingWebView] = []
+    var onRemoveProfile: ((UUID) -> Void)?
+    var removeError: Error?
+    private(set) var purgedProfileIDs: [UUID] = []
+    /// What WebKit "knows about" for the orphan sweep. Empty by default so no
+    /// existing test starts sweeping.
+    var existingIdentifiers: [UUID] = []
+
+    func makeWebView(profileID: UUID) -> WKWebView {
+        madeProfileIDs.append(profileID)
+        // Production-shaped IDENTIFIED store per view: ephemeral stores do
+        // not reliably round-trip cookies while attached to a web view on
+        // this OS, and the identified topology is what the app actually
+        // runs. `cleanUpStores()` best-effort removes them from disk.
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: profileID)
+        let webView = RecordingWebView(frame: .zero, configuration: configuration)
+        madeWebViews.append(webView)
+        return webView
+    }
+
+    /// Best-effort disk cleanup of the identified stores this spy created.
+    func cleanUpStores() {
+        let identifiers = madeProfileIDs
+        madeWebViews.removeAll()
+        Self.scheduleStoreRemoval(identifiers)
+    }
+
+    /// Every fixture's stores are cleaned up automatically when the spy dies
+    /// at test end — repeated runs must not accumulate orphaned WebKit
+    /// stores on disk.
+    deinit {
+        Self.scheduleStoreRemoval(madeProfileIDs)
+    }
+
+    private nonisolated static func scheduleStoreRemoval(_ identifiers: [UUID]) {
+        guard !identifiers.isEmpty else { return }
+        Task { @MainActor in
+            for identifier in identifiers {
+                try? await WKWebsiteDataStore.remove(forIdentifier: identifier)
+            }
+        }
+    }
+
+    func removeProfile(profileID: UUID) async throws {
+        attemptedProfileIDs.append(profileID)
+        onRemoveProfile?(profileID)
+        if let removeError {
+            throw removeError
+        }
+        removedProfileIDs.append(profileID)
+    }
+
+    func purgeDiskCache(profileID: UUID) async {
+        purgedProfileIDs.append(profileID)
+    }
+
+    func existingProfileIdentifiers() async -> [UUID] {
+        existingIdentifiers
+    }
+}
+
+private enum TestFailure: Error, Equatable {
+    case expected
+}
+
+@MainActor
+private final class ChatGPTAdapterStub: ProviderAdapter {
+    let provider = Provider.chatGPT
+    let signInURL = URL(string: "https://chatgpt.com/")!
+    /// Test interleave hooks: run INSIDE the respective suspension windows.
+    var onVerify: (@MainActor () async -> Void)?
+    var onFetch: (@MainActor () async -> Void)?
+    func verifySession(in webView: WKWebView) async throws {
+        await onVerify?()
+    }
+    func fetchUsage(accountID: UUID, in webView: WKWebView) async throws -> UsageSnapshot {
+        await onFetch?()
+        return UsageSnapshot(accountID: accountID, fetchedAt: Date(timeIntervalSince1970: 1_000), fiveHour: nil, weekly: nil)
+    }
+}
+
+private final class ProviderAdapterSpy: ProviderAdapter {
+    let provider = Provider.claude
+    let signInURL = URL(string: "https://claude.ai/")!
+    private(set) var verifyCallCount = 0
+    private(set) var fetchCallCount = 0
+    var verificationGate: VerificationGate?
+    var fetchGate: VerificationGate?
+
+    func verifySession(in webView: WKWebView) async throws {
+        verifyCallCount += 1
+        if let verificationGate {
+            await verificationGate.suspend()
+        }
+    }
+
+    func fetchUsage(
+        accountID: UUID,
+        in webView: WKWebView
+    ) async throws -> UsageSnapshot {
+        fetchCallCount += 1
+        if let fetchGate {
+            await fetchGate.suspend()
+        }
+        return UsageSnapshot(
+            accountID: accountID,
+            fetchedAt: Date(timeIntervalSince1970: 1_000),
+            fiveHour: nil,
+            weekly: nil
+        )
+    }
+}
+
+/// Parks `WebUsageClient`'s injected `sleep` at the point it would
+/// otherwise deliver `.timedOut`, so a test can deterministically control
+/// exactly when a timeout resolves relative to other actions — instead of
+/// relying on Task scheduling order.
+@MainActor
+private final class TimeoutSleepGate {
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var didStart = false
+
+    func suspend() async {
+        didStart = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilStarted() async {
+        guard !didStart else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+@MainActor
+private final class VerificationGate {
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var didStart = false
+
+    func suspend() async {
+        didStart = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilStarted() async {
+        guard !didStart else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+@MainActor
+private final class CommitGate {
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var didStart = false
+
+    func suspend() async {
+        didStart = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilStarted() async {
+        guard !didStart else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+@MainActor
+private final class SecondSnapshotSaveGate {
+    private var saveCount = 0
+    private var blockedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func save(_ snapshots: [UUID: UsageSnapshot]) async {
+        saveCount += 1
+        guard saveCount == 2 else { return }
+        blockedWaiters.forEach { $0.resume() }
+        blockedWaiters.removeAll()
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilBlocked() async {
+        guard saveCount < 2 else { return }
+        await withCheckedContinuation { blockedWaiters.append($0) }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+@MainActor
+private final class SecondCommitGate {
+    private var commitCount = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func reachCommit() async {
+        commitCount += 1
+        guard commitCount == 2 else { return }
+        waiters.forEach { $0.resume() }
+        waiters.removeAll()
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilSecondCommit() async {
+        guard commitCount < 2 else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func resumeSecondCommit() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+/// Restores an account referencing a target profile at the cleanup interleave
+/// point, exactly once, to simulate a concurrent account-removal rollback
+/// landing mid-`retryProfileCleanup` — proving the final liveness re-check
+/// revokes rather than deletes the now-live profile.
+@MainActor
+private final class CleanupRaceInjector {
+    private var accountStore: AccountStore?
+    private var account: AccountRecord?
+    private var targetProfileID: UUID?
+    private var didInject = false
+
+    func configure(
+        accountStore: AccountStore,
+        account: AccountRecord,
+        targetProfileID: UUID
+    ) {
+        self.accountStore = accountStore
+        self.account = account
+        self.targetProfileID = targetProfileID
+    }
+
+    func inject(_ profileID: UUID) async {
+        guard
+            !didInject,
+            profileID == targetProfileID,
+            let accountStore,
+            let account
+        else {
+            return
+        }
+        didInject = true
+        try? await accountStore.restore(account, at: 0)
+    }
+}
+
+/// Gates the SECOND `saveAccounts` call. Call is the account add during
+/// `completeSignIn`; call is the removal's persist of the filtered list —
+/// blocking there lets a test inspect state (e.g. the pending-deletion journal)
+/// at the precise moment the account record is about to disappear.
+@MainActor
+private final class RemovalAccountSaveGate {
+    private var saveCount = 0
+    private var blockedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func save(_ accounts: [AccountRecord]) async {
+        saveCount += 1
+        guard saveCount == 2 else { return }
+        blockedWaiters.forEach { $0.resume() }
+        blockedWaiters.removeAll()
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilBlocked() async {
+        guard saveCount < 2 else { return }
+        await withCheckedContinuation { blockedWaiters.append($0) }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
+    }
+}

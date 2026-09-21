@@ -1,0 +1,93 @@
+name: Ration
+
+options:
+  minimumXcodeGenVersion: 2.45.0
+  deploymentTarget:
+    macOS: "26.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    ENABLE_STRICT_OBJC_MSGSEND: YES
+    GCC_WARN_UNDECLARED_SELECTOR: YES
+    CLANG_WARN_DOCUMENTATION_COMMENTS: YES
+
+targets:
+  Ration:
+    type: application
+    platform: macOS
+    sources:
+      - path: Ration
+        excludes:
+          - Ration.entitlements
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        PRODUCT_BUNDLE_IDENTIFIER: agency.izzy.ration
+        PRODUCT_NAME: Ration
+        PRODUCT_MODULE_NAME: Ration
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: 62
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Ration
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 IZZY.Agency"
+        INFOPLIST_KEY_LSUIElement: YES
+        CODE_SIGN_ENTITLEMENTS: Ration/Ration.entitlements
+        CODE_SIGN_STYLE: Automatic
+        # IZZY Agency (company team). A free personal team cannot sign with a
+        # Developer ID or notarize, so this has to stay the company team.
+        DEVELOPMENT_TEAM: VHZR49D9QB
+        # Required by notarization. Nothing in the app needs an exception
+        # (no JIT, dlopen, Apple Events or third-party frameworks).
+        ENABLE_HARDENED_RUNTIME: YES
+      configs:
+        # Release archives sign straight with the Developer ID (see
+        # scripts/release.sh). Automatic signing would first demand an Apple
+        # Development cert for the team that the archive then throws away.
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Developer ID Application
+    scheme:
+      testTargets:
+        - RationTests
+        - RationUITests
+
+  RationTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: RationTests
+    dependencies:
+      - target: Ration
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: agency.izzy.ration.Tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Ration.app/Contents/MacOS/Ration"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+  RationUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: RationUITests
+    dependencies:
+      - target: Ration
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: agency.izzy.ration.UITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Ration
+
+schemes:
+  Ration:
+    build:
+      targets:
+        Ration: all
+        RationTests: [test]
+        RationUITests: [test]
+    test:
+      targets:
+        - RationTests
+        - RationUITests

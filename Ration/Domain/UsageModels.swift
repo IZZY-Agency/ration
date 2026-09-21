@@ -1,0 +1,165 @@
+import Foundation
+
+enum UsageWindowKind: String, Codable, CaseIterable, Sendable {
+    case fiveHour
+    case weekly
+    case modelWeekly
+}
+
+struct UsageWindow: Codable, Equatable, Sendable {
+    let kind: UsageWindowKind
+    let remainingFraction: Double
+    let resetsAt: Date?
+    let label: String?
+
+    init(kind: UsageWindowKind, remainingFraction: Double, resetsAt: Date?, label: String? = nil) {
+        self.kind = kind
+        self.remainingFraction = min(max(remainingFraction, 0), 1)
+        self.resetsAt = resetsAt
+        self.label = label
+    }
+
+    // Backward-compatible decode: older persisted windows have no `label`.
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decode(UsageWindowKind.self, forKey: .kind)
+        remainingFraction = min(max(try c.decode(Double.self, forKey: .remainingFraction), 0), 1)
+        resetsAt = try c.decodeIfPresent(Date.self, forKey: .resetsAt)
+        label = try c.decodeIfPresent(String.self, forKey: .label)
+    }
+
+    var usedFraction: Double {
+        1 - remainingFraction
+    }
+}
+
+enum UsageColorTier: Equatable, Sendable {
+    case blue
+    case orange
+    case red
+
+    init(usedFraction: Double) {
+        if usedFraction >= 0.75 {
+            self = .red
+        } else if usedFraction >= 0.50 {
+            self = .orange
+        } else {
+            self = .blue
+        }
+    }
+}
+
+struct UsageSnapshot: Codable, Equatable, Sendable {
+    let accountID: UUID
+    let fetchedAt: Date
+    let fiveHour: UsageWindow?
+    let weekly: UsageWindow?
+    let modelWeekly: UsageWindow?
+    let cursorSpend: CursorSpend?
+    /// The claude.ai organization this snapshot's data came from — carried
+    /// IN MEMORY ONLY so the auto-start send is structurally bound to the
+    /// exact snapshot that triggered it (no shared mutable binding to
+    /// overwrite or collide). Deliberately absent from `CodingKeys`: the org
+    /// id is never persisted to disk (privacy stance in
+    /// docs/provider-contracts/claude.md), so it decodes as nil and is
+    /// dropped on encode.
+    let organizationID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case accountID, fetchedAt, fiveHour, weekly, modelWeekly, cursorSpend
+    }
+
+    init(
+        accountID: UUID,
+        fetchedAt: Date,
+        fiveHour: UsageWindow?,
+        weekly: UsageWindow?,
+        modelWeekly: UsageWindow? = nil,
+        cursorSpend: CursorSpend? = nil,
+        organizationID: String? = nil
+    ) {
+        self.accountID = accountID
+        self.fetchedAt = fetchedAt
+        self.fiveHour = fiveHour
+        self.weekly = weekly
+        self.modelWeekly = modelWeekly
+        self.cursorSpend = cursorSpend
+        self.organizationID = organizationID
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        accountID = try c.decode(UUID.self, forKey: .accountID)
+        fetchedAt = try c.decode(Date.self, forKey: .fetchedAt)
+        fiveHour = try c.decodeIfPresent(UsageWindow.self, forKey: .fiveHour)
+        weekly = try c.decodeIfPresent(UsageWindow.self, forKey: .weekly)
+        modelWeekly = try c.decodeIfPresent(UsageWindow.self, forKey: .modelWeekly)
+        cursorSpend = try c.decodeIfPresent(CursorSpend.self, forKey: .cursorSpend)
+        organizationID = nil
+    }
+
+    func window(for kind: UsageWindowKind) -> UsageWindow? {
+        switch kind {
+        case .fiveHour: fiveHour
+        case .weekly: weekly
+        case .modelWeekly: modelWeekly
+        }
+    }
+
+    /// Every window this snapshot actually carries, in `UsageWindowKind`
+    /// declaration order. The single canonical iteration point for history
+    /// ingestion, alert evaluation, and reset summaries — hand-listing slots at
+    /// each of those call sites let a new kind be silently skipped by one
+    /// subsystem while the others handled it.
+    var allWindows: [(kind: UsageWindowKind, window: UsageWindow)] {
+        UsageWindowKind.allCases.compactMap { kind in
+            window(for: kind).map { (kind, $0) }
+        }
+    }
+}
+
+enum ProviderError: Error, Equatable, Sendable {
+    case authenticationRequired
+    case rateLimited(retryAt: Date?)
+    case server(statusCode: Int)
+    case integrationChanged
+    case offline
+    case transport
+}
+
+extension ProviderError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .authenticationRequired:
+            "Sign in again to refresh this account."
+        case .rateLimited:
+            "The provider is rate limiting usage checks. Try again later."
+        case .server:
+            "The provider could not return subscription limits right now."
+        case .integrationChanged:
+            "The provider integration needs an update."
+        case .offline:
+            "Subscription limits are unavailable while offline."
+        case .transport:
+            "The provider request could not be completed."
+        }
+    }
+}
+
+enum AccountViewState: Equatable, Sendable {
+    case loading
+    case current
+    case stale(lastError: ProviderError)
+    case reauthenticationRequired
+    case rateLimited(retryAt: Date?)
+    case integrationChanged
+    case unavailable
+}
+
+struct AccountPresentation: Identifiable, Equatable, Sendable {
+    let account: AccountRecord
+    let snapshot: UsageSnapshot?
+    let state: AccountViewState
+
+    var id: UUID { account.id }
+}

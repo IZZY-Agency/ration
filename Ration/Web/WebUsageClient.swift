@@ -1,0 +1,611 @@
+import Foundation
+import WebKit
+
+struct WebResponseEnvelope: Equatable, Sendable {
+    let status: Int
+    let retryAfter: String?
+    let body: String
+}
+
+enum WebUsageClientError: Error, Equatable {
+    case invalidResponse
+    /// A bridge evaluation outlived `WebUsageClient.evaluationTimeout`. The
+    /// hung `callAsyncJavaScript` task is abandoned (it ignores
+    /// cancellation); `AccountSessionManager` recycles the web view on this
+    /// error (unless an open sign-in session protects the profile). The
+    /// recycle's `about:blank` navigation — NOT `stopLoading()`, which does
+    /// not settle a pending callback — tears down the frame and is what
+    /// eventually, best-effort, completes and releases the abandoned call.
+    case timedOut
+}
+
+@MainActor
+final class WebUsageClient {
+    typealias Evaluator = @MainActor (
+        _ script: String,
+        _ arguments: [String: Any],
+        _ webView: WKWebView
+    ) async throws -> Any?
+
+    /// Hard bound on ANY single JS-bridge evaluation. A page that never
+    /// resolves the injected promise (interstitial/challenge, wedged
+    /// WebContent process — issue ) otherwise hangs the account forever.
+    static let evaluationTimeout: Duration = .seconds(60)
+
+    typealias Sleep = @MainActor (Duration) async throws -> Void
+
+    private let evaluator: Evaluator
+    private let sleep: Sleep
+
+    init(
+        evaluator: @escaping Evaluator = WebUsageClient.liveEvaluator,
+        sleep: @escaping Sleep = { try await Task.sleep(for: $0) }
+    ) {
+        self.evaluator = evaluator
+        self.sleep = sleep
+    }
+
+    /// Races the evaluation against the timeout using two UNSTRUCTURED tasks
+    /// and a once-guarded continuation. Deliberately NOT a task group: a
+    /// hung `callAsyncJavaScript` ignores cancellation, and a group awaits
+    /// all children — it would recreate the very hang this bounds. The
+    /// losing task is abandoned; a MainActor once-guard discards its late
+    /// result. (The abandoned task retains the web view until the recycle's
+    /// `about:blank` navigation tears down the frame and — best-effort —
+    /// settles the call; a bare `stopLoading()` does NOT settle a pending
+    /// script callback, only frame destruction does.)
+    ///
+    /// The result is stored on the `@MainActor`-isolated `Race` rather than
+    /// resumed through the continuation, so the non-`Sendable` `Any?`
+    /// payload never has to cross the continuation boundary — the
+    /// main-actor confinement is enforced by the compiler (the closures
+    /// below can only touch `race.result` because `Race` is `@MainActor`),
+    /// not by an `@unchecked Sendable` escape hatch.
+    private func bounded(
+        _ operation: @escaping @MainActor () async throws -> Any?
+    ) async throws -> Any? {
+        let sleep = self.sleep
+        @MainActor final class Race {
+            var delivered = false
+            var result: Result<Any?, any Error>?
+        }
+        let race = Race()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            @MainActor func deliver(_ result: Result<Any?, any Error>) {
+                guard !race.delivered else { return }
+                race.delivered = true
+                race.result = result
+                continuation.resume()
+            }
+            Task { @MainActor in
+                do { deliver(.success(try await operation())) }
+                catch { deliver(.failure(error)) }
+            }
+            Task { @MainActor in
+                try? await sleep(Self.evaluationTimeout)
+                deliver(.failure(WebUsageClientError.timedOut))
+            }
+        }
+        guard let result = race.result else { throw WebUsageClientError.timedOut }
+        // The loser — typically the `evaluationTimeout`
+        // sleep, still suspended when the operation wins — keeps `race` alive
+        // for as long as it remains suspended, which would otherwise retain an
+        // accepted response body (up to `maxResponseBytes`) for the rest of
+        // that window. Clear it immediately once copied to a local so the
+        // payload can be released the moment the winner is known.
+        race.result = nil
+        return try result.get()
+    }
+
+    /// Same-origin authenticated GET. `expectedOrigin` is enforced INSIDE the
+    /// evaluated script (not just by the caller's page-readiness check) so a
+    /// navigation that lands the web view on a foreign origin between the
+    /// readiness check and this evaluation cannot issue a credentialed request
+    /// to another site. Mirrors the guard already baked into `postScript` /
+    /// `chatGPTFetchScript`.
+    func fetch(
+        path: String,
+        expectedOrigin: String,
+        in webView: WKWebView
+    ) async throws -> WebResponseEnvelope {
+        let result = try await bounded { [evaluator] in
+            try await evaluator(
+                Self.fetchScript,
+                ["path": path, "expectedOrigin": expectedOrigin],
+                webView
+            )
+        }
+
+        return try Self.envelope(from: result)
+    }
+
+    func fetchChatGPT(in webView: WKWebView) async throws -> WebResponseEnvelope {
+        let result = try await bounded { [evaluator] in
+            try await evaluator(
+                Self.chatGPTFetchScript,
+                [:],
+                webView
+            )
+        }
+
+        return try Self.envelope(from: result)
+    }
+
+    /// Same-origin `https://cursor.com` multi-fetch that collapses the Cursor
+    /// dashboard's spend model (plan tier + billing-cycle boundary + per-event
+    /// charged cents) into the compact payload `CursorProviderAdapter.parse`
+    /// decodes. Origin-guarded and bounded exactly like `chatGPTFetchScript`.
+    func fetchCursor(in webView: WKWebView) async throws -> WebResponseEnvelope {
+        let result = try await bounded { [evaluator] in
+            try await evaluator(
+                Self.cursorFetchScript,
+                [:],
+                webView
+            )
+        }
+
+        return try Self.envelope(from: result)
+    }
+
+    /// Same-origin JSON POST used for the auto-start keep-alive send. The
+    /// completion endpoint streams Server-Sent Events, so the body is cancelled
+    /// immediately after the status line — only acceptance (2xx) matters.
+    func postJSON(
+        path: String,
+        bodyJSON: String,
+        in webView: WKWebView
+    ) async throws -> WebResponseEnvelope {
+        let result = try await bounded { [evaluator] in
+            try await evaluator(
+                Self.postScript,
+                ["path": path, "bodyJSON": bodyJSON],
+                webView
+            )
+        }
+        return try Self.envelope(from: result)
+    }
+
+    /// Hard ceiling on a provider response body. Legitimate usage/
+    /// conversation payloads are a few KB; 1 MB is far above any real capture
+    /// while bounding the memory/main-actor cost of a changed or hostile
+    /// endpoint returning an enormous body every poll. Enforced BOTH inside the
+    /// evaluated JS (so the oversized body is never fully materialized in the
+    /// page) AND here natively (defense-in-depth if the script is bypassed).
+    static let maxResponseBytes = 1_048_576
+
+    /// Bounded streaming body read, shared by the Claude and ChatGPT usage
+    /// scripts. Reads at most `maxResponseBytes`, cancelling the stream and
+    /// returning `null` on overflow (or an oversized declared `Content-Length`)
+    /// so the caller surfaces a transient status 0 instead of allocating the
+    /// whole payload.
+    private static let boundedReadJS = """
+    async function __readBounded(response) {
+        const MAX = \(maxResponseBytes);
+        const declared = parseInt(response.headers.get("Content-Length") || "", 10);
+        if (Number.isFinite(declared) && declared > MAX) {
+            try { if (response.body) { await response.body.cancel(); } } catch {}
+            return null;
+        }
+        if (response.body && response.body.getReader) {
+            const reader = response.body.getReader();
+            const chunks = [];
+            let received = 0;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                received += value.byteLength;
+                if (received > MAX) {
+                    try { await reader.cancel(); } catch {}
+                    return null;
+                }
+                chunks.push(value);
+            }
+            const merged = new Uint8Array(received);
+            let offset = 0;
+            for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.byteLength; }
+            return new TextDecoder().decode(merged);
+        }
+        const text = await response.text();
+        return text.length > MAX ? null : text;
+    }
+    """
+
+    private static func envelope(from result: Any?) throws -> WebResponseEnvelope {
+        guard
+            let dictionary = result as? [String: Any],
+            let status = Self.integer(from: dictionary["status"]),
+            let body = dictionary["body"] as? String,
+            // Native cap: reject an over-large body even if the in-page
+            // guard was bypassed or altered.
+            body.utf8.count <= maxResponseBytes
+        else {
+            throw WebUsageClientError.invalidResponse
+        }
+
+        return WebResponseEnvelope(
+            status: status,
+            retryAfter: dictionary["retryAfter"] as? String,
+            body: body
+        )
+    }
+
+    /// Reads the `lastActiveOrg` cookie — claude.ai's own record of the active
+    /// organization (verified non-httpOnly 2026-08-13). Origin-guarded like
+    /// every other bridge script. Returns nil when absent/unreadable; the
+    /// caller decides how to fall back.
+    func lastActiveOrganizationCookie(
+        expectedOrigin: String,
+        in webView: WKWebView
+    ) async throws -> String? {
+        let result = try await bounded { [evaluator] in
+            try await evaluator(
+                Self.lastActiveOrganizationScript,
+                ["expectedOrigin": expectedOrigin],
+                webView
+            )
+        }
+        guard let value = result as? String, !value.isEmpty else { return nil }
+        return value
+    }
+
+    private static let lastActiveOrganizationScript = """
+    if (location.origin !== expectedOrigin) {
+        return null;
+    }
+    const match = document.cookie.match(/(?:^|;\\s*)lastActiveOrg=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+    """
+
+    func resourcePaths(
+        expectedOrigin: String,
+        in webView: WKWebView
+    ) async throws -> [String] {
+        let result = try await bounded { [evaluator] in
+            try await evaluator(
+                Self.resourcePathsScript,
+                ["expectedOrigin": expectedOrigin],
+                webView
+            )
+        }
+        guard
+            let paths = result as? [String],
+            paths.count <= 1_000
+        else {
+            throw WebUsageClientError.invalidResponse
+        }
+        return paths
+    }
+
+    private static let postScript = """
+    if (location.origin !== "https://claude.ai") {
+        return { status: 0, retryAfter: null, body: "" };
+    }
+    const response = await fetch(path, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream, application/json"
+        },
+        body: bodyJSON
+    });
+    try {
+        if (response.body) { await response.body.cancel(); }
+    } catch {}
+    return {
+        status: response.status,
+        retryAfter: response.headers.get("Retry-After"),
+        body: ""
+    };
+    """
+
+    private static let fetchScript = """
+    if (location.origin !== expectedOrigin) {
+        return { status: 0, retryAfter: null, body: "" };
+    }
+    \(boundedReadJS)
+    const response = await fetch(path, {
+        credentials: "include",
+        headers: { "Accept": "application/json" }
+    });
+    const body = await __readBounded(response);
+    if (body === null) {
+        return { status: 0, retryAfter: response.headers.get("Retry-After"), body: "" };
+    }
+    return {
+        status: response.status,
+        retryAfter: response.headers.get("Retry-After"),
+        body
+    };
+    """
+
+    private static let chatGPTFetchScript = """
+    if (location.origin !== "https://chatgpt.com") {
+        return null;
+    }
+    \(boundedReadJS)
+
+    const sessionResponse = await fetch("/api/auth/session", {
+        credentials: "include",
+        headers: { "Accept": "application/json" }
+    });
+    if (!sessionResponse.ok) {
+        return {
+            status: sessionResponse.status,
+            retryAfter: null,
+            body: ""
+        };
+    }
+
+    // Bound the auth-session read too — a changed/compromised same-origin
+    // endpoint could otherwise return an unbounded body on every poll.
+    const sessionText = await __readBounded(sessionResponse);
+    if (sessionText === null) {
+        return { status: 0, retryAfter: null, body: "" };
+    }
+    let session;
+    try {
+        session = JSON.parse(sessionText);
+    } catch {
+        return { status: 0, retryAfter: null, body: "" };
+    }
+    const accessToken = session?.accessToken;
+    if (typeof accessToken !== "string" || accessToken.length === 0) {
+        return { status: 401, retryAfter: null, body: "" };
+    }
+
+    let accountID = session?.account?.id;
+    if (typeof accountID !== "string" || accountID.length === 0) {
+        try {
+            const segment = accessToken.split(".")[1]
+                .replaceAll("-", "+")
+                .replaceAll("_", "/");
+            const padded = segment.padEnd(Math.ceil(segment.length / 4) * 4, "=");
+            const claims = JSON.parse(atob(padded));
+            accountID = claims?.["https://api.openai.com/auth"]
+                ?.chatgpt_account_id;
+        } catch {}
+    }
+
+    const headers = {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${accessToken}`,
+        "OpenAI-Beta": "codex-1"
+    };
+    if (typeof accountID === "string" && accountID.length > 0) {
+        headers["ChatGPT-Account-ID"] = accountID;
+    }
+
+    const response = await fetch("/backend-api/wham/usage", {
+        credentials: "include",
+        headers
+    });
+    const body = await __readBounded(response);
+    if (body === null) {
+        return { status: 0, retryAfter: response.headers.get("Retry-After"), body: "" };
+    }
+    return {
+        status: response.status,
+        retryAfter: response.headers.get("Retry-After"),
+        body
+    };
+    """
+
+    private static let cursorFetchScript = """
+    if (location.origin !== "https://cursor.com") {
+        return null;
+    }
+    \(boundedReadJS)
+
+    // Signal "the integration changed" by returning a 200 whose body the native
+    // `CursorProviderAdapter.parse` cannot decode. This indirection is
+    // load-bearing: cursor.com is an SPA whose catch-all serves ~1.16 MB of HTML
+    // with HTTP **200** for a path that no longer exists (live-verified
+    // 2026-07-28 against `get-user-usage-summary` / `get-monthly-spend`), so
+    // `!response.ok` can NEVER detect a removed endpoint. Validating the decoded
+    // shape is the only reliable change signal.
+    const CHANGED = { status: 200, retryAfter: null, body: "" };
+
+    function __httpFailure(response) {
+        return {
+            status: response.status,
+            retryAfter: response.headers.get("Retry-After"),
+            body: ""
+        };
+    }
+
+    // 1) Plan tier (same-origin, cookie session). An absent or non-string
+    // `membershipType` is a changed integration, not a blank label.
+    const stripeResponse = await fetch("/api/auth/stripe", {
+        credentials: "include",
+        headers: { "Accept": "application/json" }
+    });
+    if (!stripeResponse.ok) { return __httpFailure(stripeResponse); }
+    const stripeText = await __readBounded(stripeResponse);
+    if (stripeText === null) { return CHANGED; }
+    let stripe;
+    try { stripe = JSON.parse(stripeText); } catch { return CHANGED; }
+    const membershipType = stripe.membershipType;
+    if (typeof membershipType !== "string" || membershipType.length === 0) {
+        return CHANGED;
+    }
+    const isYearlyPlan = stripe.isYearlyPlan === true;
+
+    // 2) Billing-cycle boundaries. `month` is ZERO-INDEXED — live-pinned
+    // 2026-07-28: {month:6, year:2026} → 2026-07-01…2026-08-01, while
+    // {month:7} → 2026-08-01…2026-09-01. `includeUsageEvents` is IGNORED (the
+    // response carries only pricingDescription/periodStartMs/periodEndMs and
+    // NEVER an events array), so events are fetched separately below. Both
+    // period fields are top-level STRINGS.
+    // ONE timestamp for both the month derivation and the containment assert
+    // below, so the two can never disagree with each other.
+    const nowMs = Date.now();
+    const nowDate = new Date(nowMs);
+    const invoiceResponse = await fetch("/api/dashboard/get-monthly-invoice", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+            month: nowDate.getUTCMonth(),
+            year: nowDate.getUTCFullYear()
+        })
+    });
+    if (!invoiceResponse.ok) { return __httpFailure(invoiceResponse); }
+    const invoiceText = await __readBounded(invoiceResponse);
+    if (invoiceText === null) { return CHANGED; }
+    let invoice;
+    try { invoice = JSON.parse(invoiceText); } catch { return CHANGED; }
+    const periodStartMs = Number.parseInt(String(invoice.periodStartMs), 10);
+    const periodEndMs = Number.parseInt(String(invoice.periodEndMs), 10);
+    if (
+        !Number.isFinite(periodStartMs) ||
+        !Number.isFinite(periodEndMs) ||
+        periodEndMs <= periodStartMs
+    ) {
+        return CHANGED;
+    }
+    // The 0-indexed `month` is an ASSUMPTION about a provider we do not control.
+    // Assert the returned invoice is the calendar month asked for — its start
+    // lies in that UTC month and is not in the future — so a re-indexing on
+    // Cursor's side (or any other interval regression) fails closed instead of
+    // publishing a different cycle's spend. Deliberately NOT `now < periodEndMs`:
+    // live-observed 2026-08-27, the open invoice reports `periodEndMs` as the
+    // server's "now", so that bound holds only by the request's own latency.
+    const periodStart = new Date(periodStartMs);
+    if (
+        periodStartMs > nowMs ||
+        periodStart.getUTCFullYear() !== nowDate.getUTCFullYear() ||
+        periodStart.getUTCMonth() !== nowDate.getUTCMonth()
+    ) {
+        return CHANGED;
+    }
+
+    // 3) Sum chargeable spend WITHIN [periodStartMs, periodEndMs).
+    // There is NO server-side date filter (live-pinned: {startDate, endDate}
+    // returns an empty object; {startDateMs, endDateMs} and {month, year} are
+    // silently ignored and byte-identical to {}), so the cycle bound is applied
+    // HERE — an unfiltered sum would report arbitrary historical spend. Events
+    // arrive DESCENDING by timestamp and `page`/`pageSize` compose (1-based),
+    // so the walk stops at the first event older than the cycle start.
+    // `chargedCents` is FRACTIONAL — accumulate, then round once.
+    //
+    // Every field the total DEPENDS on is validated, because a silently
+    // undercounted total is indistinguishable from real thrift: a renamed
+    // `timestamp`/`isChargeable`/`chargedCents`, or a page that contradicts the
+    // declared count, reports `integrationChanged` rather than a smaller number.
+    const PAGE_SIZE = 250;
+    const MAX_PAGES = 20;
+    let spentCents = 0;
+    let cycleFullyCovered = false;
+    let consumed = 0;
+    let declaredTotal = null;
+    let previousTimestamp = Infinity;
+    for (let page = 1; page <= MAX_PAGES && !cycleFullyCovered; page++) {
+        const eventsResponse = await fetch("/api/dashboard/get-filtered-usage-events", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify({ page, pageSize: PAGE_SIZE })
+        });
+        if (!eventsResponse.ok) { return __httpFailure(eventsResponse); }
+        const eventsText = await __readBounded(eventsResponse);
+        if (eventsText === null) { return CHANGED; }
+        let eventsPayload;
+        try { eventsPayload = JSON.parse(eventsText); } catch { return CHANGED; }
+        const events = eventsPayload.usageEventsDisplay;
+        if (!Array.isArray(events)) { return CHANGED; }
+
+        // `totalUsageEventsCount` is the completeness authority. It must be
+        // present, and stable across the walk — a total that moves mid-walk means
+        // the underlying list mutated and offset pages can no longer be trusted
+        // to tile it exactly.
+        const pageTotal = Number(eventsPayload.totalUsageEventsCount);
+        if (!Number.isFinite(pageTotal) || pageTotal < 0) { return CHANGED; }
+        if (declaredTotal === null) { declaredTotal = pageTotal; }
+        if (pageTotal !== declaredTotal) { return CHANGED; }
+        consumed += events.length;
+
+        for (const event of events) {
+            if (!event || typeof event !== "object") { return CHANGED; }
+            const timestamp = Number(event.timestamp);
+            if (!Number.isFinite(timestamp)) { return CHANGED; }
+            // Descending order is what makes the early exit sound. Validate it
+            // across page boundaries too, not just within a page.
+            if (timestamp > previousTimestamp) { return CHANGED; }
+            previousTimestamp = timestamp;
+
+            if (timestamp < periodStartMs) { cycleFullyCovered = true; continue; }
+            if (timestamp >= periodEndMs) { continue; }
+            // In-cycle: this event can move the total, so its shape must be exact.
+            if (typeof event.isChargeable !== "boolean") { return CHANGED; }
+            if (!event.isChargeable) { continue; }
+            const cents = Number(event.chargedCents);
+            if (!Number.isFinite(cents)) { return CHANGED; }
+            spentCents += cents;
+        }
+
+        // A short page means the history is exhausted — which is only coherent if
+        // the walk consumed EXACTLY the declared total. `{count: 518, events: []}`
+        // would otherwise read as "no spend" instead of a changed integration.
+        if (events.length < PAGE_SIZE) {
+            if (consumed !== declaredTotal) { return CHANGED; }
+            cycleFullyCovered = true;
+        }
+    }
+    // Never report a total that might be missing cycle events: silently
+    // understating spend would be fabricated data.
+    if (!cycleFullyCovered) { return CHANGED; }
+
+    const result = JSON.stringify({
+        membershipType,
+        isYearlyPlan,
+        periodStartMs,
+        periodEndMs,
+        spentCents: Math.round(spentCents)
+    });
+    return { status: 200, retryAfter: null, body: result };
+    """
+
+    private static let resourcePathsScript = """
+    if (location.origin !== expectedOrigin) {
+        return [];
+    }
+    return performance.getEntriesByType("resource").map(entry => {
+        try {
+            const url = new URL(entry.name);
+            return url.origin === location.origin ? url.pathname : null;
+        } catch {
+            return null;
+        }
+    }).filter(path => path !== null);
+    """
+
+    private static func liveEvaluator(
+        script: String,
+        arguments: [String: Any],
+        webView: WKWebView
+    ) async throws -> Any? {
+        // `.defaultClient`, not `.page`: run the app's bridge scripts in an
+        // isolated content world so page-owned globals (a monkey-patched
+        // `fetch`, `performance`, `JSON`, `atob`) cannot tamper with what the
+        // app observes or sends. Cookies are per-origin, not per-world, so
+        // `credentials: "include"` still authenticates. (Apple's recommended
+        // isolation; see WKContentWorld docs.)
+        try await webView.callAsyncJavaScript(
+            script,
+            arguments: arguments,
+            in: nil,
+            contentWorld: .defaultClient
+        )
+    }
+
+    private static func integer(from value: Any?) -> Int? {
+        if let integer = value as? Int {
+            return integer
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        return nil
+    }
+}

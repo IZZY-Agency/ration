@@ -1,0 +1,190 @@
+import SwiftUI
+
+struct AccountCardView: View {
+    let presentation: AccountPresentation
+    let onReauthenticate: () -> Void
+    var samples: (UsageWindowKind) -> [UsageHistorySample] = { _ in [] }
+    var projection: (UsageWindowKind) -> Date? = { _ in nil }
+    var activeUsage: ActiveUsage? = nil
+    var now: Date = .now
+
+    /// Identity accent for the provider dot only. The in-use frame and pill
+    /// use `Theme.active` — state and identity are separate color channels.
+    private var accent: Color { presentation.account.provider.markAccent }
+
+    var body: some View {
+        TimelineView(.periodic(from: now, by: 60)) { context in
+            card(relativeTo: context.date)
+        }
+    }
+
+    static func isHighlighted(phase: InUsePhase) -> Bool { phase != .none }
+
+    /// Frame color for the activity highlight: the SAME `Theme.active` green
+    /// as the menu-bar dot and the IN USE pill — one pattern across surfaces.
+    /// Full green while in use; the last-used tail dims the same hue so
+    /// intensity encodes recency without introducing a second color.
+    static func highlightStroke(phase: InUsePhase) -> Color {
+        switch phase {
+        case .inUse: Theme.active
+        case .lastUsed: Theme.active.opacity(0.35)
+        case .none: .clear
+        }
+    }
+
+    private func card(relativeTo currentDate: Date) -> some View {
+        let phase = InUsePhase.classify(activeUsage, now: currentDate)
+        let highlighted = Self.isHighlighted(phase: phase)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(accent)
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+
+                Text(presentation.account.label)
+                    .font(Theme.display(15, .semibold))
+                    .foregroundStyle(Theme.cream)
+                    .lineLimit(1)
+                    .accessibilityLabel(
+                        "\(presentation.account.label), "
+                            + presentation.account.provider.displayName
+                    )
+
+                Text(presentation.account.provider.rawValue)
+                    .font(Theme.mono(9))
+                    .tracking(0.8)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.gold)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Theme.goldSoft, lineWidth: 1)
+                    )
+                    .accessibilityHidden(true)
+
+                Spacer(minLength: 8)
+                AccountStateBadge(
+                    state: presentation.state,
+                    style: .compact,
+                    now: currentDate,
+                    onReauthenticate: onReauthenticate
+                )
+            }
+
+            InUseMarkerContent(
+                phase: phase,
+                date: currentDate,
+                style: .full
+            )
+
+            if presentation.account.provider == .cursor {
+                CursorSpendRowView(spend: presentation.snapshot?.cursorSpend, now: currentDate)
+            } else {
+                let kinds = AccountLimitLayout.kinds(
+                    for: presentation.account.provider,
+                    snapshot: presentation.snapshot
+                )
+                HStack(alignment: .top, spacing: 14) {
+                    ForEach(kinds, id: \.self) { kind in
+                        let window = presentation.snapshot?.window(for: kind)
+                        // Evaluate the (potentially time-dependent) suppliers once
+                        // so the visibility gate and the sparkline it feeds see an
+                        // identical snapshot — projection() reads `.now` and can
+                        // cross the projector's freshness cutoff between calls.
+                        let windowSamples = samples(kind)
+                        let windowProjection = projection(kind)
+                        VStack(alignment: .leading, spacing: 4) {
+                            LimitRowView(
+                                title: AccountLimitLayout.title(for: kind, snapshot: presentation.snapshot),
+                                window: window,
+                                now: currentDate
+                            )
+                            // Only add the sparkline subview when there's a
+                            // meaningful trend to show — a flat window's row
+                            // stays exactly as tall as it was before sparklines
+                            // existed, with no reserved gap or stray rule.
+                            if SparklineVisibility.hasMeaningfulTrend(
+                                samples: windowSamples,
+                                projection: windowProjection
+                            ) {
+                                UsageSparkline(
+                                    samples: windowSamples,
+                                    projection: windowProjection,
+                                    tierUsedFraction: window?.usedFraction ?? 0,
+                                    now: currentDate
+                                )
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 9)
+        .padding(.horizontal, AccountListMetrics.cardInset)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(highlighted ? Theme.active.opacity(0.05) : Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Self.highlightStroke(phase: phase), lineWidth: 1)
+                )
+        )
+    }
+}
+
+enum AccountListMetrics {
+    /// How many account cards the popover shows before it scrolls.
+    static let maxVisibleCards = 4
+    /// Names the scroll content's coordinate space, so cards can report where
+    /// they end relative to the top of the list.
+    static let coordinateSpace = "accountList"
+    /// Fallback cap, used until the first cards have measured themselves and
+    /// whenever there are few enough that no cap applies.
+    static let maxListHeight: CGFloat = 520
+
+    /// Horizontal inset moved from the list onto each card so the highlighted
+    /// card can draw a rounded container without shifting any content.
+    static let cardInset: CGFloat = 10
+    static let listInset: CGFloat = 3
+}
+
+enum AccountLimitLayout {
+    static func kinds(
+        for provider: Provider,
+        snapshot: UsageSnapshot?
+    ) -> [UsageWindowKind] {
+        switch provider {
+        case .claude:
+            // Fable (the flagship-model weekly limit) leads when present — it is
+            // the scarcest limit, so it earns the first column. Max-only presence
+            // gate: absent for non-Max accounts, which then show just 5h + weekly.
+            if snapshot?.modelWeekly != nil {
+                return [.modelWeekly, .fiveHour, .weekly]
+            }
+            return [.fiveHour, .weekly]
+        case .chatGPT:
+            // modelWeekly (Fable) is a Claude Max-only concept; ChatGPT never
+            // surfaces it even if a snapshot somehow carried one.
+            guard let snapshot else { return [.weekly] }
+            let available: [UsageWindowKind] = [.fiveHour, .weekly]
+                .filter { snapshot.window(for: $0) != nil }
+            return available.isEmpty ? [.weekly] : available
+        case .cursor:
+            // Cursor's dollars-based card path is introduced in a later task;
+            // until then it contributes no rolling-window columns.
+            return []
+        }
+    }
+
+    static func title(for kind: UsageWindowKind, snapshot: UsageSnapshot?) -> String {
+        switch kind {
+        case .fiveHour: "5h"
+        case .weekly: "wk"
+        case .modelWeekly: snapshot?.modelWeekly?.label ?? "Fable"
+        }
+    }
+}
