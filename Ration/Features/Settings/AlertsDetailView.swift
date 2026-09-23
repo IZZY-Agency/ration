@@ -75,6 +75,7 @@ struct AlertsDetailView: View {
     let onSetSpendCriticalCents: (Int?) async throws -> Void
     let onSetDropEnabled: (Bool, String) async throws -> Void
     let onSetNotificationEnabled: (Bool, String) async throws -> Void
+    let onSetResetLeadDays: (Int, Provider) async throws -> Void
     let onError: (Error) -> Void
 
     private var rowsByProvider: [(Provider, [AlertsGridRow])] {
@@ -109,6 +110,18 @@ struct AlertsDetailView: View {
                             onError: onError
                         )
                         .id(row.id)
+                    }
+
+                    if provider != .cursor {
+                        ResetCreditsSettingsRow(
+                            provider: provider,
+                            leadDays: settings.data.resetExpiryLeadDays(provider: provider),
+                            channels: settings.data.channels(forKey: AppSettingsData.resetCreditsKey(provider: provider)),
+                            onSetLeadDays: onSetResetLeadDays,
+                            onSetDropEnabled: onSetDropEnabled,
+                            onSetNotificationEnabled: onSetNotificationEnabled,
+                            onError: onError
+                        )
                     }
                 }
             }
@@ -284,6 +297,42 @@ private struct ThresholdFieldsRow: View {
                 try await onSetCriticalPercent(value, row.provider, row.window)
             } catch {
                 onError(error)
+            }
+        }
+    }
+}
+
+/// "Resets" row: channels for the reset alerts plus how early to warn before
+/// a reset expires.
+private struct ResetCreditsSettingsRow: View {
+    let provider: Provider
+    let leadDays: Int
+    let channels: AlertChannels
+    let onSetLeadDays: (Int, Provider) async throws -> Void
+    let onSetDropEnabled: (Bool, String) async throws -> Void
+    let onSetNotificationEnabled: (Bool, String) async throws -> Void
+    let onError: (Error) -> Void
+
+    var body: some View {
+        LabeledContent("Resets") {
+            HStack(spacing: 4) {
+                Stepper(
+                    "Warn \(leadDays) day\(leadDays == 1 ? "" : "s") before expiry",
+                    value: Binding(
+                        get: { leadDays },
+                        set: { value in Task { do { try await onSetLeadDays(value, provider) } catch { onError(error) } } }
+                    ),
+                    in: AppSettingsData.resetExpiryLeadDaysRange
+                )
+                .font(Theme.mono(10))
+                .accessibilityIdentifier("resetLeadDaysStepper.\(provider.rawValue)")
+                ChannelToggles(
+                    channels: channels,
+                    key: AppSettingsData.resetCreditsKey(provider: provider),
+                    onSetDropEnabled: onSetDropEnabled,
+                    onSetNotificationEnabled: onSetNotificationEnabled,
+                    onError: onError
+                )
             }
         }
     }

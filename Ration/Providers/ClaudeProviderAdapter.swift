@@ -80,13 +80,15 @@ struct ClaudeProviderAdapter: ProviderAdapter {
         // it is excluded from persistence). Auto-start reads it straight off
         // the triggering snapshot, so no shared mutable binding exists to be
         // overwritten or collided by a concurrent fetch.
+        let fetchedAt = now()
         return UsageSnapshot(
             accountID: accountID,
-            fetchedAt: now(),
+            fetchedAt: fetchedAt,
             fiveHour: fiveHour,
             weekly: weekly,
             modelWeekly: modelWeekly,
-            organizationID: organizationID
+            organizationID: organizationID,
+            resetCredits: Self.resetCredits(from: payload, fetchedAt: fetchedAt)
         )
     }
 
@@ -169,7 +171,9 @@ struct ClaudeProviderAdapter: ProviderAdapter {
     ) async throws -> WebResponseEnvelope {
         do {
             return try await client.fetch(
-                path: "/api/organizations/\(organizationID)/usage",
+                // cedar_ember=1 is the flag claude.ai's own settings page sends
+                // to include usage-limit resets; without it the key is null.
+                path: "/api/organizations/\(organizationID)/usage?cedar_ember=1",
                 expectedOrigin: Provider.claude.webOrigin,
                 in: webView
             )
@@ -256,6 +260,30 @@ struct ClaudeProviderAdapter: ProviderAdapter {
         )
     }
 
+    /// `nil` = not read this fetch (the store carries the previous list).
+    /// A grant missing its id/count/expiry, or with an unparseable expiry, is
+    /// skipped and marks the list incomplete.
+    static func resetCredits(from payload: ClaudeUsagePayload, fetchedAt: Date) -> ResetCredits? {
+        guard let grants = payload.cedarEmber?.grants else { return nil }
+        var complete = true
+        var items: [ResetCredit] = []
+        for grant in grants {
+            guard let grant, let expiresAt = parseISO8601(grant.endsAt), grant.resetsLeft >= 0 else {
+                complete = false
+                continue
+            }
+            guard grant.resetsLeft > 0 else { continue }
+            items.append(ResetCredit(
+                id: grant.id,
+                title: grant.label,
+                count: grant.resetsLeft,
+                expiresAt: expiresAt,
+                usableNow: grant.usableNow
+            ))
+        }
+        return ResetCredits(fetchedAt: fetchedAt, items: items, complete: complete)
+    }
+
     private static func parseISO8601(_ value: String) -> Date? {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -277,15 +305,53 @@ private struct FailableLimit: Decodable {
     init(from decoder: any Decoder) throws { value = try? ClaudeLimitPayload(from: decoder) }
 }
 
+struct ClaudeCedarEmberPayload: Decodable, Sendable {
+    /// nil = no `grants` array at all → the list was not read.
+    let grants: [ClaudeGrantPayload?]?
+
+    enum CodingKeys: String, CodingKey { case grants }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let wrapped = try? c.decodeIfPresent([FailableGrant].self, forKey: .grants) {
+            grants = wrapped.map(\.value)
+        } else {
+            grants = nil
+        }
+    }
+}
+
+private struct FailableGrant: Decodable {
+    let value: ClaudeGrantPayload?
+    init(from decoder: any Decoder) throws { value = try? ClaudeGrantPayload(from: decoder) }
+}
+
+struct ClaudeGrantPayload: Decodable, Sendable {
+    let id: String
+    let label: String?
+    let resetsLeft: Int
+    let endsAt: String
+    let usableNow: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id, label
+        case resetsLeft = "resets_left"
+        case endsAt = "ends_at"
+        case usableNow = "usable_now"
+    }
+}
+
 struct ClaudeUsagePayload: Decodable, Sendable {
     let fiveHour: ClaudeUsageWindowPayload?
     let sevenDay: ClaudeUsageWindowPayload?
     let limits: [ClaudeLimitPayload]?
+    let cedarEmber: ClaudeCedarEmberPayload?
 
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case limits
+        case cedarEmber = "cedar_ember"
     }
 
     init(from decoder: any Decoder) throws {
@@ -301,6 +367,9 @@ struct ClaudeUsagePayload: Decodable, Sendable {
         } else {
             limits = nil
         }
+        // Lenient: resets are a side channel — a wrong shape means "not read",
+        // never a failed usage decode.
+        cedarEmber = (try? c.decodeIfPresent(ClaudeCedarEmberPayload.self, forKey: .cedarEmber)) ?? nil
     }
 }
 

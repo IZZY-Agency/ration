@@ -115,13 +115,13 @@ final class AttentionDropModelTests: XCTestCase {
             accountID: accountID, accountLabel: "Personal", provider: .claude,
             subject: .window(.weekly), tier: .warning,
             usedPercent: 80, spentCents: nil, thresholdPercent: 75,
-            thresholdCents: nil, resetsAt: nil
+            thresholdCents: nil, resetsAt: nil, resetCount: nil, resetCreditIDs: []
         )
         let critical = AttentionRow(
             accountID: accountID, accountLabel: "Personal", provider: .claude,
             subject: .window(.weekly), tier: .critical,
             usedPercent: 95, spentCents: nil, thresholdPercent: 90,
-            thresholdCents: nil, resetsAt: nil
+            thresholdCents: nil, resetsAt: nil, resetCount: nil, resetCreditIDs: []
         )
         XCTAssertEqual(warning.id, critical.id)
         XCTAssertNotEqual(warning, critical)
@@ -513,5 +513,132 @@ final class AttentionDropModelTests: XCTestCase {
             [first, second, first, second],
             "within a tier, rows must follow discovery order — account, then window"
         )
+    }
+
+    // MARK: - Condition 8: reset rows
+
+    func testActiveResetRowShowsAfterThresholdRowsAndHonoursChannelAndDismissal() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let account = AccountRecord(id: UUID(), provider: .claude, label: "Work", webProfileID: UUID(), displayOrder: 0, createdAt: now)
+        let credit = ResetCredit(id: "c1", title: "Launch", count: 2, expiresAt: now.addingTimeInterval(86_400 * 30), usableNow: true)
+        let snapshot = UsageSnapshot(accountID: account.id, fetchedAt: now, fiveHour: UsageWindow(kind: .fiveHour, remainingFraction: 0.05, resetsAt: nil), weekly: nil,
+                                     resetCredits: ResetCredits(fetchedAt: now, items: [credit], complete: true))
+        var memory = AccountAlertState()
+        memory.resetCredits["c1"] = ResetCreditAlertMemory(lastSeenCount: 2, availableRow: .active, expiryHandled: false, expiringRow: .inactive)
+        var settings = AppSettingsData(usageAlertsEnabled: true)
+        let presentations = [AccountPresentation(account: account, snapshot: snapshot, state: .current)]
+
+        var rows = AttentionDropModel.rows(presentations: presentations, settings: settings, alertStates: [account.id: memory], schedule: WarmUpQuietSchedule(quietCells: [], holidays: []), now: now)
+        XCTAssertEqual(rows.map(\.subject), [.window(.fiveHour), .resetCredit(id: "c1", kind: .available)])
+        XCTAssertEqual(rows.last?.resetCount, 2)
+        XCTAssertEqual(rows.last?.resetsAt, credit.expiresAt)
+
+        settings.alertChannels[AppSettingsData.resetCreditsKey(provider: .claude)] = .notificationOnly
+        rows = AttentionDropModel.rows(presentations: presentations, settings: settings, alertStates: [account.id: memory], schedule: WarmUpQuietSchedule(quietCells: [], holidays: []), now: now)
+        XCTAssertFalse(rows.contains { $0.isResetCredit })
+
+        settings.alertChannels = [:]
+        memory.resetCredits["c1"]?.availableRow = .dismissed
+        rows = AttentionDropModel.rows(presentations: presentations, settings: settings, alertStates: [account.id: memory], schedule: WarmUpQuietSchedule(quietCells: [], holidays: []), now: now)
+        XCTAssertFalse(rows.contains { $0.isResetCredit })
+    }
+
+    private func resetFixture(items: [ResetCredit], memory entry: ResetCreditAlertMemory, now: Date)
+        -> (presentations: [AccountPresentation], states: [UUID: AccountAlertState]) {
+        let account = AccountRecord(id: UUID(), provider: .claude, label: "Work", webProfileID: UUID(), displayOrder: 0, createdAt: now)
+        let snapshot = UsageSnapshot(accountID: account.id, fetchedAt: now, fiveHour: nil, weekly: nil,
+                                     resetCredits: ResetCredits(fetchedAt: now, items: items, complete: true))
+        var state = AccountAlertState()
+        state.resetCredits["c1"] = entry
+        return ([AccountPresentation(account: account, snapshot: snapshot, state: .current)], [account.id: state])
+    }
+
+    /// ChatGPT is one credit per entry, so a multi-credit
+    /// grant would otherwise show N drop rows. Group ACTIVE credits for the
+    /// same account and kind into one row.
+    func testTwoActiveAvailableCreditsGroupIntoOneRow() throws {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let account = AccountRecord(id: UUID(), provider: .claude, label: "Work", webProfileID: UUID(), displayOrder: 0, createdAt: now)
+        let a = ResetCredit(id: "a", title: nil, count: 1, expiresAt: now.addingTimeInterval(20 * 86_400), usableNow: true)
+        let b = ResetCredit(id: "b", title: nil, count: 3, expiresAt: now.addingTimeInterval(10 * 86_400), usableNow: true)
+        let snapshot = UsageSnapshot(
+            accountID: account.id, fetchedAt: now, fiveHour: nil, weekly: nil,
+            resetCredits: ResetCredits(fetchedAt: now, items: [a, b], complete: true)
+        )
+        var state = AccountAlertState()
+        state.resetCredits["a"] = ResetCreditAlertMemory(lastSeenCount: 1, availableRow: .active, expiryHandled: false, expiringRow: .inactive)
+        state.resetCredits["b"] = ResetCreditAlertMemory(lastSeenCount: 3, availableRow: .active, expiryHandled: false, expiringRow: .inactive)
+        let presentations = [AccountPresentation(account: account, snapshot: snapshot, state: .current)]
+        let settings = AppSettingsData(usageAlertsEnabled: true)
+
+        let rows = AttentionDropModel.rows(presentations: presentations, settings: settings, alertStates: [account.id: state], schedule: WarmUpQuietSchedule(quietCells: [], holidays: []), now: now)
+        XCTAssertEqual(rows.count, 1, "one row, not two")
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(row.subject, .resetCredit(id: "b", kind: .available), "soonest-expiring member's id")
+        XCTAssertEqual(row.resetCount, 4, "sum of counts")
+        XCTAssertEqual(row.resetsAt, b.expiresAt, "soonest expiry")
+        XCTAssertEqual(Set(row.resetCreditIDs), ["a", "b"])
+    }
+
+    /// Only ACTIVE members are counted/listed — a per-row dismissal on one
+    /// credit must shrink the group, not vanish or leave a stale count.
+    func testGroupedRowOnlyCountsActiveMembers() throws {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let account = AccountRecord(id: UUID(), provider: .claude, label: "Work", webProfileID: UUID(), displayOrder: 0, createdAt: now)
+        let a = ResetCredit(id: "a", title: nil, count: 1, expiresAt: now.addingTimeInterval(20 * 86_400), usableNow: true)
+        let b = ResetCredit(id: "b", title: nil, count: 3, expiresAt: now.addingTimeInterval(10 * 86_400), usableNow: true)
+        let snapshot = UsageSnapshot(
+            accountID: account.id, fetchedAt: now, fiveHour: nil, weekly: nil,
+            resetCredits: ResetCredits(fetchedAt: now, items: [a, b], complete: true)
+        )
+        var state = AccountAlertState()
+        state.resetCredits["a"] = ResetCreditAlertMemory(lastSeenCount: 1, availableRow: .active, expiryHandled: false, expiringRow: .inactive)
+        // "b" was dismissed — must not be counted or listed.
+        state.resetCredits["b"] = ResetCreditAlertMemory(lastSeenCount: 3, availableRow: .dismissed, expiryHandled: false, expiringRow: .inactive)
+        let presentations = [AccountPresentation(account: account, snapshot: snapshot, state: .current)]
+        let settings = AppSettingsData(usageAlertsEnabled: true)
+
+        let rows = AttentionDropModel.rows(presentations: presentations, settings: settings, alertStates: [account.id: state], schedule: WarmUpQuietSchedule(quietCells: [], holidays: []), now: now)
+        XCTAssertEqual(rows.count, 1)
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(row.subject, .resetCredit(id: "a", kind: .available), "only the active member")
+        XCTAssertEqual(row.resetCount, 1)
+        XCTAssertEqual(row.resetCreditIDs, ["a"])
+    }
+
+    /// Every existing construction (including non-reset rows) carries the new
+    /// field — `[]` for a subject that isn't a reset.
+    func testNonResetRowsCarryAnEmptyResetCreditIDsList() {
+        let result = rows()
+        XCTAssertEqual(result.first?.resetCreditIDs, [])
+    }
+
+    func testResetRowDisappearsWhenCreditGoneOrExpired() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let active = ResetCreditAlertMemory(lastSeenCount: 1, availableRow: .active, expiryHandled: false, expiringRow: .inactive)
+        let settings = AppSettingsData(usageAlertsEnabled: true)
+
+        let gone = resetFixture(items: [], memory: active, now: now)
+        XCTAssertTrue(AttentionDropModel.rows(presentations: gone.presentations, settings: settings, alertStates: gone.states, schedule: WarmUpQuietSchedule(quietCells: [], holidays: []), now: now).isEmpty)
+
+        let expired = ResetCredit(id: "c1", title: nil, count: 1, expiresAt: now, usableNow: nil)
+        let past = resetFixture(items: [expired], memory: active, now: now)
+        XCTAssertTrue(AttentionDropModel.rows(presentations: past.presentations, settings: settings, alertStates: past.states, schedule: WarmUpQuietSchedule(quietCells: [], holidays: []), now: now).isEmpty)
+    }
+
+    func testReplenishmentReactivatesDismissedRow() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let credit = ResetCredit(id: "c1", title: nil, count: 3, expiresAt: now.addingTimeInterval(86_400 * 30), usableNow: nil)
+        var memory: [String: ResetCreditAlertMemory] = [
+            "c1": ResetCreditAlertMemory(lastSeenCount: 2, availableRow: .dismissed, expiryHandled: false, expiringRow: .inactive)
+        ]
+        var events: [AlertEvent] = []
+        ResetCreditPolicy.evaluate(
+            ResetCreditAlertInput(credits: ResetCredits(fetchedAt: now, items: [credit], complete: true), leadDays: 1, now: now),
+            memory: &memory, events: &events
+        )
+        let fixture = resetFixture(items: [credit], memory: memory["c1"]!, now: now)
+        let rows = AttentionDropModel.rows(presentations: fixture.presentations, settings: AppSettingsData(usageAlertsEnabled: true), alertStates: fixture.states, schedule: WarmUpQuietSchedule(quietCells: [], holidays: []), now: now)
+        XCTAssertEqual(rows.map(\.subject), [.resetCredit(id: "c1", kind: .available)])
     }
 }

@@ -7,6 +7,8 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
     weak var launchAtLogin: LaunchAtLoginController?
     private var hotKeyRegistrar: (any GlobalHotKeyRegistering)?
+    /// Dock + ⌘-Tab presence while any Ration window is open — see `DockPresence`.
+    private let dockPresence = DockPresenceController()
     /// Outstanding `.terminateLater` decisions. A COUNT, not a flag: quits can
     /// overlap, and one aborted quit must not declare the app safe while
     /// another decision is still pending.
@@ -89,6 +91,7 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
         // izzy Terminal Ledger is dark-only: force a dark appearance regardless
         // of the system theme so the palette renders as designed.
         NSApp.appearance = NSAppearance(named: .darkAqua)
+        dockPresence.start()
         startMenuBarIfReady()
     }
 
@@ -118,8 +121,20 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
-        menuBarController?.showFallbackWindow()
-        return false
+        let windows = DockPresence.realWindows()
+        switch DockPresence.reopenAction(
+            hasVisibleWindows: flag,
+            hasMiniaturizedWindow: windows.contains(where: \.isMiniaturized)
+        ) {
+        case .bringExistingForward:
+            return true
+        case .deminiaturize:
+            windows.first(where: \.isMiniaturized)?.deminiaturize(nil)
+            return false
+        case .showFallback:
+            menuBarController?.showFallbackWindow()
+            return false
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -297,6 +312,12 @@ struct MenuBarContent: View {
     // popover is already open.
     @ObservedObject var history: UsageHistoryStore
     @ObservedObject var pinSnapshot: AccountPinSnapshot
+    // `AppSettings` is its own `ObservableObject` (see the same trap
+    // documented at `MenuBarController.updateGauges`'s subscription):
+    // `model`'s own `objectWillChange` never fires for a settings-only
+    // change like `resetExpiryLeadDays`, so `resetLeadDaysByProvider` below
+    // must be computed from an observed `settings`, not `model.settings`.
+    @ObservedObject var settings: AppSettings
     let onAddAccount: () -> Void
     let onSettings: () -> Void
     let onAbout: () -> Void
@@ -366,6 +387,11 @@ struct MenuBarContent: View {
                 )
             },
             orderingPinByProvider: pinSnapshot.orderingPinByProvider,
+            resetLeadDaysByProvider: Dictionary(
+                uniqueKeysWithValues: Provider.allCases.map {
+                    ($0, settings.data.resetExpiryLeadDays(provider: $0))
+                }
+            ),
             onOpenSetupGuide: onOpenSetupGuide
         )
         .tint(Theme.gold)
@@ -420,6 +446,7 @@ private struct MenuBarSceneContent: View {
             model: model,
             history: model.history,
             pinSnapshot: pinSnapshot,
+            settings: model.settings,
             onAddAccount: {
                 NSApplication.shared.activate()
                 openWindow(id: "add-account")

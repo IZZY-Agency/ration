@@ -46,8 +46,12 @@ struct AttentionDropView: View {
     private func onDismissAll() { model.onDismissAll() }
     private func onSelect(_ row: AttentionRow) { model.onSelect(row) }
 
-    private var criticalCount: Int { rows.filter { $0.tier == .critical }.count }
-    private var warningCount: Int { rows.filter { $0.tier == .warning }.count }
+    /// Threshold-crossing rows — everything except reset rows, which carry no
+    /// limit tier and are counted separately.
+    private var limitRows: [AttentionRow] { rows.filter { !$0.isResetCredit } }
+    private var criticalCount: Int { limitRows.filter { $0.tier == .critical }.count }
+    private var warningCount: Int { limitRows.filter { $0.tier == .warning }.count }
+    private var resetRowCount: Int { rows.count - limitRows.count }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
@@ -109,7 +113,7 @@ struct AttentionDropView: View {
 
     private var header: some View {
         HStack(spacing: 7) {
-            Text("NEARING LIMITS")
+            Text(limitRows.isEmpty ? "RESETS" : "NEARING LIMITS")
                 .font(Theme.mono(9))
                 .tracking(1.2)
                 .foregroundStyle(Theme.creamFaint)
@@ -128,6 +132,13 @@ struct AttentionDropView: View {
                     .font(Theme.mono(9))
                     .tracking(1.2)
                     .foregroundStyle(Theme.warn)
+            }
+            if resetRowCount > 0 && !limitRows.isEmpty {
+                Text("·").font(Theme.mono(9)).foregroundStyle(Theme.creamFaint)
+                Text("\(resetRowCount) RESET")
+                    .font(Theme.mono(9))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.resetAccent)
             }
 
             Spacer(minLength: 8)
@@ -172,7 +183,12 @@ private struct AttentionDropRowView: View {
 
     @State private var isHovering = false
 
-    private var tint: Color { row.tier == .critical ? Theme.crit : Theme.warn }
+    private var tint: Color {
+        if case .resetCredit(_, let kind) = row.subject {
+            return kind == .expiring ? Theme.warn : Theme.resetAccent
+        }
+        return row.tier == .critical ? Theme.crit : Theme.warn
+    }
 
     var body: some View {
         Button(action: onSelect) {
@@ -253,10 +269,13 @@ private struct AttentionDropRowView: View {
         case .window(.weekly): "WK"
         case .window(.modelWeekly): "Fable"
         case .cursorSpend: "spend"
+        case .resetCredit(_, .available): "reset"
+        case .resetCredit(_, .expiring): "expires"
         }
     }
 
     private var valueLabel: String {
+        if let count = row.resetCount { return "×\(count)" }
         if let percent = row.usedPercent { return "\(percent)%" }
         if let cents = row.spentCents { return AlertMessage.dollars(cents) }
         return "—"
@@ -264,10 +283,21 @@ private struct AttentionDropRowView: View {
 
     private var resetLabel: String {
         guard let resetsAt = row.resetsAt else { return "" }
-        return UsageFormatters.remainingUntilReset(resetsAt, relativeTo: now)
+        // Reset-credit rows use the coarser day/hour formatting — a reset
+        // lives for weeks, and the fine-grained "29d 7h" both reads as noise
+        // and truncates in the drop's fixed-width column. Window rows keep
+        // the finer `remainingUntilReset`.
+        return row.isResetCredit
+            ? UsageFormatters.resetCreditRemaining(resetsAt, relativeTo: now)
+            : UsageFormatters.remainingUntilReset(resetsAt, relativeTo: now)
     }
 
     private var accessibilityLabel: String {
+        if case .resetCredit(_, let kind) = row.subject {
+            let count = row.resetCount ?? 1
+            let expires = row.resetsAt.map { "expires in \(UsageFormatters.resetCreditRemaining($0, relativeTo: now))" } ?? ""
+            return "\(row.accountLabel), \(count) usage-limit reset\(count == 1 ? "" : "s") \(kind == .expiring ? "expiring" : "available"), \(expires)"
+        }
         let tierWord = row.tier == .critical ? "critical" : "warning"
         let value = row.usedPercent.map { "\($0) percent used" }
             ?? row.spentCents.map { "\(AlertMessage.dollars($0)) spent" }

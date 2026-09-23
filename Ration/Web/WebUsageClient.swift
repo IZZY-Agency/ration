@@ -7,6 +7,13 @@ struct WebResponseEnvelope: Equatable, Sendable {
     let body: String
 }
 
+/// `wham/usage` plus the optional reset-credit read from the same evaluation.
+struct ChatGPTFetchResult: Equatable, Sendable {
+    let usage: WebResponseEnvelope
+    /// nil = not read (non-2xx usage, abort, oversized, or wrong shape).
+    let resetCredits: WebResponseEnvelope?
+}
+
 enum WebUsageClientError: Error, Equatable {
     case invalidResponse
     /// A bridge evaluation outlived `WebUsageClient.evaluationTimeout`. The
@@ -119,17 +126,20 @@ final class WebUsageClient {
         return try Self.envelope(from: result)
     }
 
-    func fetchChatGPT(in webView: WKWebView) async throws -> WebResponseEnvelope {
+    func fetchChatGPT(in webView: WKWebView) async throws -> ChatGPTFetchResult {
         let result = try await bounded { [evaluator] in
-            try await evaluator(
-                Self.chatGPTFetchScript,
-                [:],
-                webView
-            )
+            try await evaluator(Self.chatGPTFetchScript, [:], webView)
         }
-
-        return try Self.envelope(from: result)
+        let usage = try Self.envelope(from: result)
+        // Lenient on purpose: a bad side-channel value is "not read", never a
+        // failed usage fetch.
+        let resetCredits = (result as? [String: Any]).flatMap { try? Self.envelope(from: $0["resetCredits"]) }
+        return ChatGPTFetchResult(usage: usage, resetCredits: resetCredits)
     }
+
+    #if DEBUG
+    static var chatGPTFetchScriptForTesting: String { chatGPTFetchScript }
+    #endif
 
     /// Same-origin `https://cursor.com` multi-fetch that collapses the Cursor
     /// dashboard's spend model (plan tier + billing-cycle boundary + per-event
@@ -323,6 +333,7 @@ final class WebUsageClient {
     if (location.origin !== "https://chatgpt.com") {
         return null;
     }
+    const __started = Date.now();
     \(boundedReadJS)
 
     const sessionResponse = await fetch("/api/auth/session", {
@@ -382,12 +393,52 @@ final class WebUsageClient {
     });
     const body = await __readBounded(response);
     if (body === null) {
-        return { status: 0, retryAfter: response.headers.get("Retry-After"), body: "" };
+        return { status: 0, retryAfter: response.headers.get("Retry-After"), body: "", resetCredits: null };
+    }
+
+    // Usage-limit resets. Same auth, same page, same bridge evaluation — a
+    // second evaluation would add a second hang surface to the fetch-hang
+    // machinery. Bounded in-page instead: the abort also cancels a stalled
+    // body read, so this can never hold the bridge past its own budget.
+    //
+    // The abort timer is capped at 10s but SHRUNK under time pressure: a
+    // slow session+usage read stacked with a fixed 10s reset timer could
+    // otherwise push this WHOLE evaluation past
+    // `WebUsageClient.evaluationTimeout` (60s) — which discards the
+    // already-successful usage read too, not just the reset read. 50000 =
+    // that 60000ms Swift-side timeout minus a 10s return margin (time for
+    // the response to actually come back up through the bridge). Under 1s
+    // of that budget left, the reset fetch isn't attempted at all.
+    let resetCredits = null;
+    if (response.ok) {
+        const remaining = 50000 - (Date.now() - __started);
+        if (remaining < 1000) {
+            resetCredits = null;
+        } else {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), Math.min(10000, remaining));
+            try {
+                const creditsResponse = await fetch("/backend-api/wham/rate-limit-reset-credits", {
+                    credentials: "include",
+                    headers,
+                    signal: controller.signal
+                });
+                const creditsBody = await __readBounded(creditsResponse);
+                if (creditsBody !== null) {
+                    resetCredits = { status: creditsResponse.status, body: creditsBody };
+                }
+            } catch {
+                resetCredits = null;
+            } finally {
+                clearTimeout(timer);
+            }
+        }
     }
     return {
         status: response.status,
         retryAfter: response.headers.get("Retry-After"),
-        body
+        body,
+        resetCredits
     };
     """
 

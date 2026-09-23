@@ -24,7 +24,7 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
 
     func verifySession(in webView: WKWebView) async throws {
         try await prepareWebView(webView)
-        _ = try await usageWindows(in: webView)
+        _ = try await usageRead(in: webView)
     }
 
     func fetchUsage(
@@ -32,20 +32,29 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
         in webView: WKWebView
     ) async throws -> UsageSnapshot {
         try await prepareWebView(webView)
-        let windows = try await usageWindows(in: webView)
-
+        let read = try await usageRead(in: webView)
+        let fetchedAt = now()
         return UsageSnapshot(
             accountID: accountID,
-            fetchedAt: now(),
-            fiveHour: windows.fiveHour,
-            weekly: windows.weekly
+            fetchedAt: fetchedAt,
+            fiveHour: read.fiveHour,
+            weekly: read.weekly,
+            resetCredits: Self.resetCredits(
+                from: read.resetCredits,
+                fetchedAt: fetchedAt
+            )
         )
     }
 
-    private func usageWindows(
+    private func usageRead(
         in webView: WKWebView
-    ) async throws -> (fiveHour: UsageWindow?, weekly: UsageWindow?) {
-        let body = try await responseBody(in: webView)
+    ) async throws -> (
+        fiveHour: UsageWindow?,
+        weekly: UsageWindow?,
+        payload: ChatGPTUsagePayload,
+        resetCredits: WebResponseEnvelope?
+    ) {
+        let (body, resetCredits) = try await fetchResult(in: webView)
         let payload: ChatGPTUsagePayload = try await decode(body)
         let primary = try usageWindow(
             from: payload.rateLimit?.primaryWindow,
@@ -67,13 +76,16 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
         guard fiveHour != nil || weekly != nil else {
             throw ProviderError.integrationChanged
         }
-        return (fiveHour, weekly)
+        return (fiveHour, weekly, payload, resetCredits)
     }
 
-    private func responseBody(in webView: WKWebView) async throws -> String {
+    private func fetchResult(
+        in webView: WKWebView
+    ) async throws -> (body: String, resetCredits: WebResponseEnvelope?) {
         do {
-            let envelope = try await client.fetchChatGPT(in: webView)
-            return try ProviderResponseValidator.body(from: envelope, now: now())
+            let result = try await client.fetchChatGPT(in: webView)
+            let body = try ProviderResponseValidator.body(from: result.usage, now: now())
+            return (body, result.resetCredits)
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as ProviderError {
@@ -136,6 +148,34 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
             resetsAt: Date(timeIntervalSince1970: resetTimestamp)
         )
     }
+
+    /// `nil` = not read this fetch (non-2xx usage, abort, oversized, or wrong
+    /// shape on the side-channel fetch) — the store carries the previous list.
+    /// A credit missing its id/status/expiry, or with an unparseable expiry,
+    /// is skipped and marks the list incomplete.
+    static func resetCredits(
+        from envelope: WebResponseEnvelope?,
+        fetchedAt: Date
+    ) -> ResetCredits? {
+        guard
+            let envelope, (200..<300).contains(envelope.status),
+            let payload = try? JSONDecoder().decode(ChatGPTResetCreditsPayload.self, from: Data(envelope.body.utf8))
+        else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let whole = ISO8601DateFormatter()
+        var complete = true
+        var items: [ResetCredit] = []
+        for credit in payload.credits {
+            guard
+                let credit,
+                let expiresAt = fractional.date(from: credit.expiresAt) ?? whole.date(from: credit.expiresAt)
+            else { complete = false; continue }
+            guard credit.status == "available" else { continue }
+            items.append(ResetCredit(id: credit.id, title: credit.title, count: 1, expiresAt: expiresAt, usableNow: credit.isSupportedByPlan))
+        }
+        return ResetCredits(fetchedAt: fetchedAt, items: items, complete: complete)
+    }
 }
 
 private struct ChatGPTUsagePayload: Decodable, Sendable {
@@ -143,6 +183,38 @@ private struct ChatGPTUsagePayload: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case rateLimit = "rate_limit"
+    }
+}
+
+private struct ChatGPTResetCreditsPayload: Decodable {
+    let credits: [ChatGPTCreditPayload?]
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        credits = try c.decode([FailableCredit].self, forKey: .credits).map(\.value)
+    }
+    enum CodingKeys: String, CodingKey { case credits }
+}
+
+private struct FailableCredit: Decodable {
+    let value: ChatGPTCreditPayload?
+    init(from decoder: any Decoder) throws { value = try? ChatGPTCreditPayload(from: decoder) }
+}
+
+private struct ChatGPTCreditPayload: Decodable {
+    let id: String
+    let status: String
+    let expiresAt: String
+    let title: String?
+    /// Per-credit — verified live 2026-09-23: chatgpt.com's own bundle
+    /// disables the "Use reset" button only on this flag (or a pending
+    /// redeem), never on the usage endpoint's aggregate
+    /// `applicable_available_count`. `nil` when the provider doesn't say.
+    let isSupportedByPlan: Bool?
+    enum CodingKeys: String, CodingKey {
+        case id, status, title
+        case expiresAt = "expires_at"
+        case isSupportedByPlan = "is_supported_by_plan"
     }
 }
 

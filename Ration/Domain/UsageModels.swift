@@ -56,6 +56,7 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
     let weekly: UsageWindow?
     let modelWeekly: UsageWindow?
     let cursorSpend: CursorSpend?
+    let resetCredits: ResetCredits?
     /// The claude.ai organization this snapshot's data came from — carried
     /// IN MEMORY ONLY so the auto-start send is structurally bound to the
     /// exact snapshot that triggered it (no shared mutable binding to
@@ -66,7 +67,7 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
     let organizationID: String?
 
     enum CodingKeys: String, CodingKey {
-        case accountID, fetchedAt, fiveHour, weekly, modelWeekly, cursorSpend
+        case accountID, fetchedAt, fiveHour, weekly, modelWeekly, cursorSpend, resetCredits
     }
 
     init(
@@ -76,7 +77,8 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         weekly: UsageWindow?,
         modelWeekly: UsageWindow? = nil,
         cursorSpend: CursorSpend? = nil,
-        organizationID: String? = nil
+        organizationID: String? = nil,
+        resetCredits: ResetCredits? = nil
     ) {
         self.accountID = accountID
         self.fetchedAt = fetchedAt
@@ -85,6 +87,7 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         self.modelWeekly = modelWeekly
         self.cursorSpend = cursorSpend
         self.organizationID = organizationID
+        self.resetCredits = resetCredits
     }
 
     init(from decoder: any Decoder) throws {
@@ -95,6 +98,8 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         weekly = try c.decodeIfPresent(UsageWindow.self, forKey: .weekly)
         modelWeekly = try c.decodeIfPresent(UsageWindow.self, forKey: .modelWeekly)
         cursorSpend = try c.decodeIfPresent(CursorSpend.self, forKey: .cursorSpend)
+        // Lossy: a malformed list must never cost the account its snapshot.
+        resetCredits = try? c.decodeIfPresent(ResetCredits.self, forKey: .resetCredits)
         organizationID = nil
     }
 
@@ -115,6 +120,20 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         UsageWindowKind.allCases.compactMap { kind in
             window(for: kind).map { (kind, $0) }
         }
+    }
+
+    /// Same snapshot, different reset list — the store's carry-forward uses it.
+    func replacingResetCredits(_ credits: ResetCredits?) -> UsageSnapshot {
+        UsageSnapshot(
+            accountID: accountID,
+            fetchedAt: fetchedAt,
+            fiveHour: fiveHour,
+            weekly: weekly,
+            modelWeekly: modelWeekly,
+            cursorSpend: cursorSpend,
+            organizationID: organizationID,
+            resetCredits: credits
+        )
     }
 }
 

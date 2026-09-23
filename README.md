@@ -24,6 +24,10 @@ shows, from your own signed-in session, on your Mac.
   to a small panel that drops from the menu bar, or both. It fires once per
   crossing and re-arms when the window resets. Privacy mode keeps account
   labels and exact usage out of notifications.
+- **Usage-limit resets.** The free resets Claude and Codex give you, with
+  their expiry, on each account card. An alert when one arrives and again a
+  set number of days before it expires. Ration only shows them: you use them
+  on the provider's own page.
 - **History.** Daily burn for one account or all of them overlaid, an
   hour-of-day heatmap, and a burn-rate projection.
 - **Billing-cycle utilisation.** How much of the plan you used since your
@@ -31,9 +35,10 @@ shows, from your own signed-in session, on your Mac.
   watched.
 - **Several accounts per provider**, grouped, with pause and resume that keeps
   the sign-in, and optional sorting by soonest reset.
-- **Claude warm-up.** Optionally start the 5-hour window the moment it resets,
-  except during the hours and holidays you mark quiet, and never when the
-  weekly allowance is already spent.
+- **Claude warm-up.** Start the 5-hour window the moment it resets, except
+  during the hours and holidays you mark quiet, and never when the weekly
+  allowance is already spent. On by default for newly added Claude accounts;
+  switch it off per account.
 
 ## Privacy
 

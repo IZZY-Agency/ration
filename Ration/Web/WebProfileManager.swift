@@ -45,6 +45,16 @@ final class WebProfileManager: WebProfileManaging {
         onContractRecordingError: @escaping (String) -> Void = { _ in },
         removePersistentStore: @escaping @MainActor (UUID) async throws -> Void = {
             profileID in
+            // Warm WebKit first. The static identifier APIs SEGFAULT in a process
+            // where no store has been constructed yet (EXC_BAD_ACCESS in
+            // os_unfair_lock_lock under WTF::RunLoop::dispatch) — and launch
+            // cleanup of the pending-deletion journal can reach here before
+            // anything else has touched WebKit, which crashed the app on every
+            // launch once an abandoned sign-in had queued its profile for deletion.
+            // Probed 2026-09-23: cold remove exits 139; constructing and
+            // releasing a handle for the same identifier first, clean. The
+            // handle is scoped so it is released before the removal below.
+            do { _ = WKWebsiteDataStore(forIdentifier: profileID) }
             // WebKit finalizes a profile's network process asynchronously after the
             // last WKWebView is released. Give that teardown one run-loop window.
             try await Task.sleep(for: .milliseconds(100))

@@ -45,6 +45,42 @@ final class AlertStateStoreTests: XCTestCase {
         XCTAssertEqual(restored.state(for: accountID).weekly.lastRemaining, 0.87)
     }
 
+    /// `AccountAlertState.init(from:)` decodes
+    /// `resetCredits` entry-by-entry through a type-erased wrapper so one
+    /// malformed entry can't cost the others. `JSONFileStore` (which this
+    /// store is built on) encodes/decodes with `.iso8601` dates — the
+    /// wrapper must re-decode each entry with THAT SAME strategy, or a
+    /// perfectly well-formed `lastSeenExpiresAt` silently becomes nil on
+    /// every relaunch, breaking the re-grant re-arm across restarts.
+    func testResetCreditLastSeenExpiresAtSurvivesRoundTripThroughAlertStateStore() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appending(path: "alert-state.json")
+        let accountID = UUID(uuidString: "00000000-0000-0000-0000-000000000013")!
+        var state = AccountAlertState()
+        state.resetCredits["c1"] = ResetCreditAlertMemory(
+            lastSeenCount: 1,
+            availableRow: .active,
+            expiryHandled: true,
+            expiringRow: .active,
+            lastSeenExpiresAt: Date(timeIntervalSince1970: 1_790_500_000)
+        )
+        let store = AlertStateStore(fileURL: fileURL)
+
+        try await store.load()
+        try await store.save(state, for: accountID)
+
+        let restored = AlertStateStore(fileURL: fileURL)
+        try await restored.load()
+
+        XCTAssertEqual(restored.state(for: accountID), state)
+        XCTAssertEqual(
+            restored.state(for: accountID).resetCredits["c1"]?.lastSeenExpiresAt,
+            Date(timeIntervalSince1970: 1_790_500_000),
+            "the ISO-8601 date must decode with JSONFileStore's own strategy, not a default JSONDecoder"
+        )
+    }
+
     func testRemoveDropsStateAndPersistsDeletion() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

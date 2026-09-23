@@ -122,8 +122,9 @@ final class WebUsageClientTests: XCTestCase {
 
         let response = try await client.fetchChatGPT(in: webView)
 
-        XCTAssertEqual(response.status, 200)
-        XCTAssertEqual(response.body, "{}")
+        XCTAssertEqual(response.usage.status, 200)
+        XCTAssertEqual(response.usage.body, "{}")
+        XCTAssertNil(response.resetCredits)
     }
 
     @MainActor

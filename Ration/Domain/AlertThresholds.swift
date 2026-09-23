@@ -150,6 +150,19 @@ struct AnyCodable: Decodable {
     }
 }
 
+/// Decodes to nil instead of throwing, using the CALLER's decoder (and so its
+/// date strategy) — unlike `AnyCodable`, which re-decodes each entry with a
+/// brand-new default `JSONDecoder()`. That matters for any `Value` with a
+/// `Date` field: `JSONFileStore` decodes with `.iso8601`, and a fresh default
+/// decoder does not — so `AnyCodable.decode(as:)` silently turns a
+/// perfectly well-formed ISO-8601 date into nil. Use this wrapper instead of
+/// `AnyCodable` for a per-entry lossy dictionary decode whenever `Value`
+/// carries a `Date`.
+struct FailableDecodable<Value: Decodable>: Decodable {
+    let value: Value?
+    init(from decoder: any Decoder) throws { value = try? Value(from: decoder) }
+}
+
 /// A structural JSON value — enough to round-trip an arbitrary entry.
 private enum JSONValue: Codable {
     case null
@@ -189,11 +202,13 @@ private enum JSONValue: Codable {
 
 /// Which delivery-channel cell an alert event belongs to, if any.
 ///
-/// Only THRESHOLD crossings are governed by the per-cell channels — they are
-/// what the user configured a threshold for. Reset, reauth and rate-limit
-/// events have no cell and are never suppressed by one: silencing a window's
-/// notifications must not also silence "sign in again", which is actionable
-/// and unrelated to how close that window is to its limit.
+/// THRESHOLD crossings and Cursor's spend ladder are governed by the
+/// per-cell channels the user configured. Reset-credit events
+/// (`.resetCreditAvailable`/`.resetCreditExpiring`) are governed too — their
+/// own per-provider "Resets" row. Window `.reset`, `.reauthRequired` and
+/// `.rateLimited` have no cell and are never suppressed by one: silencing a
+/// window's notifications must not also silence "sign in again", which is
+/// actionable and unrelated to how close that window is to its limit.
 enum AlertChannelKey {
     /// `nil` means "no cell governs this event" — deliver it.
     static func forEvent(_ event: AlertEvent, provider: Provider) -> String? {
@@ -202,6 +217,8 @@ enum AlertChannelKey {
             AppSettingsData.thresholdKey(provider: provider, window: kind)
         case .spendThreshold:
             AppSettingsData.cursorSpendKey
+        case .resetCreditAvailable, .resetCreditExpiring:
+            AppSettingsData.resetCreditsKey(provider: provider)
         case .reset, .reauthRequired, .rateLimited:
             nil
         }

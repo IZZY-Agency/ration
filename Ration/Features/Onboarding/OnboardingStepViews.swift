@@ -18,7 +18,8 @@ struct OnboardingProviderGuide {
                 hint: """
                     If you sign in with a magic link, paste the link from your \
                     email into the field at the top of the sign-in window. \
-                    Opening it in Safari signs in your browser, not Ration.
+                    Opening it in Safari signs in your browser, not Ration. \
+                    \(WarmUpDefaults.newClaudeAccountDisclosure)
                     """
             )
         case .chatGPT:

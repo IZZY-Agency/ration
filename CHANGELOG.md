@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.0
+
+- Usage-limit resets. Claude and Codex now give free resets; each account card
+  shows how many you have and when the next one expires, and the account's
+  settings list them all. Ration only shows resets — use them on the
+  provider's usage page.
+- Ration tells you (notification and menu-bar drop) when a new reset arrives,
+  and again when one is about to expire. How early is set per provider in
+  Settings → Alerts (1 day by default).
+- Warm-up is now on by default for newly added Claude accounts. Existing
+  accounts keep their setting; turn it off per account under Auto-start 5h
+  window.
+- While a Ration window is open (sign-in, Settings, History), Ration shows
+  in the Dock and in Cmd-Tab, so you can switch to your mail for a sign-in
+  link and come back. It goes back to menu-bar-only when you close it.
+
 ## 1.0.1
 
 - A dismissed attention drop now comes back right at launch after a limit

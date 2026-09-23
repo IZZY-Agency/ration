@@ -185,6 +185,9 @@ struct SettingsView: View {
                 onSetNotificationEnabled: { enabled, key in
                     try await model.setNotificationEnabled(enabled, forKey: key)
                 },
+                onSetResetLeadDays: { days, provider in
+                    try await model.setResetExpiryLeadDays(days, provider: provider)
+                },
                 onError: { errorMessage = $0.localizedDescription }
             )
         case nil:

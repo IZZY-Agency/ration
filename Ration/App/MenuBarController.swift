@@ -782,6 +782,7 @@ final class MenuBarController: NSObject {
             model: model,
             history: model.history,
             pinSnapshot: pinSnapshot,
+            settings: model.settings,
             onAddAccount: { [weak self] in
                 self?.showAddAccount()
             },

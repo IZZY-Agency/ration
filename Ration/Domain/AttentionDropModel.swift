@@ -10,6 +10,7 @@ struct AttentionRow: Equatable, Identifiable, Sendable {
     enum Subject: Equatable, Hashable, Sendable {
         case window(UsageWindowKind)
         case cursorSpend
+        case resetCredit(id: String, kind: ResetCreditRowKind)
     }
 
     /// Identity deliberately EXCLUDES the tier: a warning escalating to
@@ -35,9 +36,23 @@ struct AttentionRow: Equatable, Identifiable, Sendable {
     let thresholdPercent: Int?
     let thresholdCents: Int?
     let resetsAt: Date?
+    /// Resets available, for a reset row. `nil` otherwise.
+    let resetCount: Int?
+    /// Every credit id folded into this row — a reset row groups ALL of an
+    /// account's ACTIVE credits for one kind (available/expiring) into a
+    /// single row (ChatGPT is one credit per entry, so a multi-credit grant
+    /// would otherwise show N rows). `subject`'s `id` is just the
+    /// soonest-expiring member; dismissing the row must act on every id
+    /// here. `[]` for a non-reset row.
+    let resetCreditIDs: [String]
 
     var id: ID { ID(accountID: accountID, subject: subject) }
+    var isResetCredit: Bool { if case .resetCredit = subject { true } else { false } }
 }
+
+/// Which side of a reset row's lifecycle a `.resetCredit` subject shows: newly
+/// granted resets, or resets about to expire unused.
+enum ResetCreditRowKind: String, Hashable, Sendable { case available, expiring }
 
 /// Derives the attention drop's contents from live state.
 ///
@@ -56,7 +71,9 @@ enum AttentionDropModel {
     /// 4. the cell's channels include `.drop`;
     /// 5. usage (or spend) is at or above a configured tier;
     /// 6. that tier has not been dismissed;
-    /// 7. `now` is not inside a quiet cell or holiday.
+    /// 7. `now` is not inside a quiet cell or holiday;
+    /// 8. reset rows: row state active, credit unexpired, the provider's
+    ///    Resets drop channel on.
     ///
     /// `AccountViewState` is deliberately NOT a condition. Snapshot age, not
     /// view state, is the authority on whether a number still speaks for the
@@ -79,6 +96,7 @@ enum AttentionDropModel {
         guard !schedule.isQuiet(at: now, calendar: calendar) else { return [] }
 
         var rows: [AttentionRow] = []
+        var resetRows: [AttentionRow] = []
         for presentation in AccountVisibility.visible(presentations) {  // (2)
             guard let snapshot = presentation.snapshot else { continue }
             let account = presentation.account
@@ -121,7 +139,9 @@ enum AttentionDropModel {
                             ? thresholds.criticalPercent
                             : thresholds.warningPercent,
                         thresholdCents: nil,
-                        resetsAt: window.resetsAt
+                        resetsAt: window.resetsAt,
+                        resetCount: nil,
+                        resetCreditIDs: []
                     )
                 )
             }
@@ -155,9 +175,49 @@ enum AttentionDropModel {
                         spentCents: spend.spentCents,
                         thresholdPercent: nil,
                         thresholdCents: crossing.thresholdCents,
-                        resetsAt: spend.futureReset(relativeTo: now)
+                        resetsAt: spend.futureReset(relativeTo: now),
+                        resetCount: nil,
+                        resetCreditIDs: []
                     )
                 )
+            }
+
+            // Reset rows. Shown from the alert that activated them until the
+            // user clicks them away or the reset is gone (used or expired).
+            // Deliberately NOT gated on `UsageEvidence`: a carried list is
+            // still the best knowledge of what the account holds, and rows are
+            // only ever ACTIVATED from fresh evidence (see ResetCreditPolicy).
+            //
+            // GROUPED per account AND kind into at most one row each: ChatGPT
+            // is one credit per entry, so a multi-credit grant would
+            // otherwise show N rows. Only ACTIVE members are counted/listed —
+            // a per-row dismissal on one credit shrinks the group rather than
+            // leaving a stale member behind. `.expiring` before `.available`
+            // matches the loop order below and the ordering this function's
+            // doc promises.
+            if settings.channels(forKey: AppSettingsData.resetCreditsKey(provider: account.provider)).drop {
+                let unexpired = snapshot.resetCredits?.unexpired(at: now) ?? []
+                for kind in [ResetCreditRowKind.expiring, .available] {
+                    let active = unexpired.filter { credit in
+                        guard let entry = memory.resetCredits[credit.id] else { return false }
+                        return (kind == .expiring ? entry.expiringRow : entry.availableRow) == .active
+                    }
+                    guard let soonest = active.min(by: { $0.expiresAt < $1.expiresAt }) else { continue }
+                    resetRows.append(AttentionRow(
+                        accountID: account.id,
+                        accountLabel: account.label,
+                        provider: account.provider,
+                        subject: .resetCredit(id: soonest.id, kind: kind),
+                        tier: .warning,   // not a limit tier; header/tint ignore it for reset rows
+                        usedPercent: nil,
+                        spentCents: nil,
+                        thresholdPercent: nil,
+                        thresholdCents: nil,
+                        resetsAt: soonest.expiresAt,
+                        resetCount: active.reduce(0) { $0 + $1.count },
+                        resetCreditIDs: active.map(\.id)
+                    ))
+                }
             }
         }
 
@@ -177,7 +237,12 @@ enum AttentionDropModel {
         // input it returns a fixed order and a stability bug is invisible from
         // outside. Do not "simplify" this back to a tier-only comparison
         // because the suite stays green — it will.
-        return rows
+        //
+        // Reset rows are appended after the sorted threshold rows rather than
+        // folded into that sort: they carry no limit tier to rank by, and
+        // belong at the end regardless of severity. They keep account
+        // (presentation) order, expiring before available within an account.
+        let sortedThresholdRows = rows
             .enumerated()
             .sorted { lhs, rhs in
                 lhs.element.tier == rhs.element.tier
@@ -185,6 +250,7 @@ enum AttentionDropModel {
                     : lhs.element.tier > rhs.element.tier
             }
             .map(\.element)
+        return sortedThresholdRows + resetRows
     }
 
     /// A dismissal covers its own tier AND everything below it: dismissing a

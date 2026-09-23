@@ -1150,6 +1150,13 @@ final class AppModel: ObservableObject {
         evaluateAlertsAfterThresholdChange()
     }
 
+    func setResetExpiryLeadDays(_ days: Int, provider: Provider) async throws {
+        try await appSettings.setResetExpiryLeadDays(days, provider: provider)
+        // A longer lead can put a stored, still-current list inside the
+        // window right now.
+        evaluateAlertsAfterThresholdChange()
+    }
+
     func setSpendWarningCents(_ value: Int?) async throws {
         try await appSettings.setSpendWarningCents(value)
         evaluateAlertsAfterThresholdChange()
@@ -1497,12 +1504,22 @@ final class AppModel: ObservableObject {
         // between this read and the commit below (see this function's doc:
         // the whole read-evaluate-persist ordering guarantee depends on it).
         let settings = appSettings.data
+        // Resets: never while priming (a primed baseline would mark a reset
+        // "handled" without the user having been told — e.g. one that entered
+        // its expiry window while Ration was closed), and only on a list the
+        // snapshot's own fetch read. See `ResetCreditPolicy.input`.
+        let resetInput = prime ? nil : ResetCreditPolicy.input(
+            snapshot: snapshot,
+            leadDays: settings.resetExpiryLeadDays(provider: provider),
+            now: now()
+        )
         let (events, next) = AlertPolicy.evaluate(
             previous: previous,
             snapshot: snapshot,
             state: state,
             thresholds: { window in settings.thresholds(provider: provider, window: window) },
-            spendThresholds: settings.cursorSpend
+            spendThresholds: settings.cursorSpend,
+            resetCredits: resetInput
         )
         // Authoritative commit — synchronous, no suspension before or after
         // this line within this function.
@@ -1510,7 +1527,7 @@ final class AppModel: ObservableObject {
         // Checked against `events`, not the returned value: priming returns []
         // but still observes a reset, and a reset that happened while the app
         // was closed must lift the snooze on the next launch.
-        endAttentionSnoozeIfNeeded(events: events, previous: previous, next: next)
+        endAttentionSnoozeIfNeeded(events: events, previous: previous, next: next, provider: provider)
         return (prime ? [] : events, next != previous)
     }
 
@@ -1561,39 +1578,60 @@ final class AppModel: ObservableObject {
     /// (`critical > warning`) still raises a fresh row.
     /// The ✕: stop showing the drop until something actually changes.
     ///
-    /// Deliberately NOT "hide these rows". Per-row dismissal alone let the
-    /// panel come back minutes later the moment a different window crossed —
-    /// which reads as the ✕ not working. A snooze is global and is lifted only
+    /// Deliberately NOT "hide these rows" for LIMIT rows (window/Cursor
+    /// spend). Per-row dismissal alone let the panel come back minutes later
+    /// the moment a different window crossed — which reads as the ✕ not
+    /// working. Those stay governed purely by the global snooze, lifted only
     /// by a reset on any window of any account, which is the point at which
     /// the picture is genuinely different.
+    ///
+    /// Reset-credit rows are the deliberate exception: they ARE acknowledged
+    /// per-row here (by reusing `dismissAttentionRows`), because they are
+    /// informational rather than a limit. Left ungoverned, a dismissed reset
+    /// row would come straight back the instant ANY window on ANY account
+    /// reset — which happens routinely — and would keep coming back for as
+    /// long as ~30 days, until the credit itself expires or is used. A later
+    /// count increase or the expiring alert still re-activates the row, same
+    /// as any other dismissal (see `ResetCreditPolicy.evaluate`).
     ///
     /// The flag is committed to the in-memory settings snapshot SYNCHRONOUSLY
     /// so the panel closes on this turn of the run loop; the persist is the
     /// usual best-effort side effect.
     func snoozeAttentionDrop(_ rows: [AttentionRow]) {
-        // Deliberately does NOT record per-row dismissals. If it did, lifting
-        // the snooze would still leave those rows hidden by their own
-        // `dismissedTier` — the reset would end the snooze and change nothing
-        // on screen, which is the opposite of what the ✕ promises. `rows` is
-        // accepted so the call site reads as "dismiss what is showing" and so
-        // this can carry per-row state later without changing callers.
-        _ = rows
+        dismissAttentionRows(rows.filter(\.isResetCredit))
         appSettings.setDropSnoozedInMemory(true)
         Task { [weak self] in
             try? await self?.appSettings.setDropSnoozed()
         }
     }
 
-    /// Lifts the snooze. Called when any account reports a window reset.
+    /// Lifts the snooze. Called when any account reports a window reset or a
+    /// new/expiring usage-limit reset — genuinely new information.
+    ///
+    /// A window `.reset` always qualifies: it has no delivery-channel cell
+    /// (see `AlertChannelKey`) and the ✕ contract already promises it ends
+    /// the snooze unconditionally. A `.resetCreditAvailable`/
+    /// `.resetCreditExpiring` event, though, IS governed by a cell — this
+    /// account's provider's "Resets" drop channel — so it may only lift the
+    /// snooze when that channel is on; otherwise a user who silenced resets
+    /// on the drop would see their ✕ undone by an event they asked not to
+    /// hear about on the drop at all.
     private func endAttentionSnoozeIfNeeded(
         events: [AlertEvent],
         previous: AccountAlertState,
-        next: AccountAlertState
+        next: AccountAlertState,
+        provider: Provider
     ) {
         guard appSettings.data.dropSnoozed else { return }
-        let windowReset = events.contains { event in
-            if case .reset = event { return true }
-            return false
+        let resetCreditsDropOn = appSettings.data.channels(
+            forKey: AppSettingsData.resetCreditsKey(provider: provider)
+        ).drop
+        let somethingNew = events.contains { event in
+            switch event {
+            case .reset: true
+            case .resetCreditAvailable, .resetCreditExpiring: resetCreditsDropOn
+            default: false
+            }
         }
         // Cursor has no rate window and emits no `.reset` — its rollover only
         // clears spend memory. Without this a spend-only user could dismiss the
@@ -1605,7 +1643,7 @@ final class AppModel: ObservableObject {
             from: previous.spend,
             toStart: next.spend.periodStart
         )
-        guard windowReset || spendRollover else { return }
+        guard somethingNew || spendRollover else { return }
         appSettings.setDropSnoozedInMemory(false)
         Task { [weak self] in
             try? await self?.appSettings.setDropSnoozed()
@@ -1622,6 +1660,21 @@ final class AppModel: ObservableObject {
             case .window(.weekly): state.weekly.dismissedTier = row.tier
             case .window(.modelWeekly): state.modelWeekly.dismissedTier = row.tier
             case .cursorSpend: state.spend.dismissedTier = row.tier
+            case let .resetCredit(id, kind):
+                // A grouped row (see `AttentionDropModel.rows`) folds several
+                // credits into one; `subject`'s id is only the soonest-
+                // expiring MEMBER. Acknowledge every id the row actually
+                // shows, falling back to the subject id for a row built
+                // directly with an empty list (the pre-grouping shape).
+                let ids = row.resetCreditIDs.isEmpty ? [id] : row.resetCreditIDs
+                for creditID in ids {
+                    guard var entry = state.resetCredits[creditID] else { continue }
+                    switch kind {
+                    case .available: entry.availableRow = .dismissed
+                    case .expiring: entry.expiringRow = .dismissed
+                    }
+                    state.resetCredits[creditID] = entry
+                }
             }
             alertStates[row.accountID] = state
             touched.insert(row.accountID)
@@ -2164,7 +2217,9 @@ final class AppModel: ObservableObject {
             label: trimmedLabel,
             webProfileID: session.webProfileID,
             displayOrder: session.isNewAccount ? accounts.count : existingOrder(session),
-            createdAt: session.isNewAccount ? now() : existingCreatedAt(session)
+            createdAt: session.isNewAccount ? now() : existingCreatedAt(session),
+            autoStartFiveHour: session.isNewAccount
+                && WarmUpDefaults.autoStartForNewAccount(provider: session.provider)
         )
         let snapshot = try await sessionManager.fetchUsage(for: account)
         try requireActive(session)

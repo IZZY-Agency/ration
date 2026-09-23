@@ -49,6 +49,38 @@ enum AlertMessage {
                 "\(accountLabel): Cursor spend \(verb) \(limit)",
                 "\(accountLabel) has spent \(spent) this billing cycle, \(verb) your \(limit) alert."
             )
+        case .resetCreditAvailable(let credit, let expiringSoon):
+            let what = credit.count > 1 ? "\(credit.count) resets available" : "reset available"
+            let expiry = Self.expiryText(credit.expiresAt)
+            // The real rule is on `count`, not on where the count came
+            // from: whenever `count > 1` the body says how many, generically
+            // — dropping any title. This covers a COLLAPSED multi-credit
+            // event (`ResetCreditPolicy.evaluate`'s merge, when several
+            // credits fire together — those never carry a single title to
+            // name in the first place) AND a single provider-reported credit
+            // whose own `count` is > 1 (e.g. Claude's `resets_left`) that
+            // happens to carry a title — naming the title there would
+            // contradict the title line just above it, which already says
+            // "N resets available". Only an untitled OR titled credit with
+            // `count == 1` uses the singular, title-aware wording.
+            let body = credit.count > 1
+                ? "\(credit.count) usage-limit resets are available for \(accountLabel) until \(expiry)."
+                : "\(credit.title ?? "A usage-limit reset") is available for \(accountLabel) until \(expiry)."
+            return (
+                expiringSoon ? "\(accountLabel): \(what) — expires soon" : "\(accountLabel): \(what)",
+                body
+            )
+        case .resetCreditExpiring(let credit):
+            let expiry = Self.expiryText(credit.expiresAt)
+            // See `.resetCreditAvailable` above: the plural, title-less body
+            // applies whenever `count > 1`, titled or not.
+            let body = credit.count > 1
+                ? "\(credit.count) usage-limit resets for \(accountLabel) expire \(expiry). Use them before then or they're lost."
+                : "\(credit.title ?? "A usage-limit reset") for \(accountLabel) expires \(expiry). Use it before then or it's lost."
+            return (
+                "\(accountLabel): reset expires soon",
+                body
+            )
         }
     }
 
@@ -67,6 +99,10 @@ enum AlertMessage {
             return ("Ration", "An account is being rate-limited.")
         case .spendThreshold:
             return ("Ration", "An account is nearing a spend limit.")
+        case .resetCreditAvailable:
+            return ("Ration", "An account has a usage-limit reset available.")
+        case .resetCreditExpiring:
+            return ("Ration", "An account's usage-limit reset expires soon.")
         }
     }
 
@@ -83,6 +119,10 @@ enum AlertMessage {
             return "\(base).rateLimited"
         case .spendThreshold(let tier, _, _):
             return "\(base).spend.\(tier.token)"
+        case .resetCreditAvailable(let credit, _):
+            return "\(base).resetCredit.\(credit.id).available"
+        case .resetCreditExpiring(let credit):
+            return "\(base).resetCredit.\(credit.id).expiring"
         }
     }
 
@@ -123,6 +163,14 @@ enum AlertMessage {
         formatter.maximumFractionDigits = cents % 100 == 0 ? 0 : 2
         return formatter.string(from: NSNumber(value: Double(cents) / 100))
             ?? "$\(Double(cents) / 100)"
+    }
+
+    /// "Oct 22, 18:00" in the reader's locale. `locale`/`timeZone` injectable for tests.
+    static func expiryText(_ date: Date, locale: Locale = .autoupdatingCurrent, timeZone: TimeZone = .autoupdatingCurrent) -> String {
+        var style = Date.FormatStyle(date: .abbreviated, time: .shortened)
+        style.locale = locale
+        style.timeZone = timeZone
+        return date.formatted(style)
     }
 }
 

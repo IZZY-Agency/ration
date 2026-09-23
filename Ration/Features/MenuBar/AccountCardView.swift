@@ -7,6 +7,7 @@ struct AccountCardView: View {
     var projection: (UsageWindowKind) -> Date? = { _ in nil }
     var activeUsage: ActiveUsage? = nil
     var now: Date = .now
+    var resetLeadDays: Int = 1
 
     /// Identity accent for the provider dot only. The in-use frame and pill
     /// use `Theme.active` — state and identity are separate color channels.
@@ -120,6 +121,14 @@ struct AccountCardView: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
+                }
+
+                if let summary = ResetCreditsSummary.make(
+                    credits: presentation.snapshot?.resetCredits,
+                    leadDays: resetLeadDays,
+                    now: currentDate
+                ) {
+                    ResetCreditsLineView(summary: summary, now: currentDate)
                 }
             }
         }

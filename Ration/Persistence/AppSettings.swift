@@ -50,6 +50,10 @@ struct AppSettingsData: Codable, Equatable, Sendable {
     /// Cursor's spend thresholds. Cursor has no rate window, so it is keyed
     /// by nothing — there is one Cursor spend ladder.
     var cursorSpend: SpendThresholds
+    /// Days before a reset expires to warn, keyed by `Provider.rawValue`.
+    /// Missing → 1; clamped so a hand-edited value can never disable or flood
+    /// the alert.
+    var resetExpiryLeadDays: [String: Int]
 
     static let cellRange = 0...167
 
@@ -68,6 +72,21 @@ struct AppSettingsData: Codable, Equatable, Sendable {
     }
 
     static let cursorSpendKey = "cursor.spend"
+
+    /// Delivery-channel cell for a provider's reset-credit alerts (the
+    /// Settings → Alerts "Resets" row). Mirrors `thresholdKey`'s pattern.
+    static func resetCreditsKey(provider: Provider) -> String {
+        "\(provider.rawValue).resetCredits"
+    }
+
+    static let resetExpiryLeadDaysRange = 1...7
+
+    /// Days before a reset expires to warn. Missing → 1; clamped so a
+    /// hand-edited value can never disable or flood the alert.
+    func resetExpiryLeadDays(provider: Provider) -> Int {
+        let raw = resetExpiryLeadDays[provider.rawValue] ?? 1
+        return min(max(raw, Self.resetExpiryLeadDaysRange.lowerBound), Self.resetExpiryLeadDaysRange.upperBound)
+    }
 
     func thresholds(provider: Provider, window: UsageWindowKind) -> ThresholdPair {
         alertThresholds[Self.thresholdKey(provider: provider, window: window)] ?? .default
@@ -90,7 +109,8 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         menuBarDisplaysRemaining: Bool = false,
         alertThresholds: [String: ThresholdPair] = [:],
         alertChannels: [String: AlertChannels] = [:],
-        cursorSpend: SpendThresholds = .off
+        cursorSpend: SpendThresholds = .off,
+        resetExpiryLeadDays: [String: Int] = [:]
     ) {
         self.sortByWeeklyReset = sortByWeeklyReset
         self.usageAlertsEnabled = usageAlertsEnabled
@@ -105,6 +125,7 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         self.alertThresholds = alertThresholds
         self.alertChannels = alertChannels
         self.cursorSpend = cursorSpend
+        self.resetExpiryLeadDays = resetExpiryLeadDays
     }
 
     static func canonical(_ cells: [Int]) -> [Int] {
@@ -125,6 +146,7 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         case alertThresholds
         case alertChannels
         case cursorSpend
+        case resetExpiryLeadDays
     }
 
     init(from decoder: Decoder) throws {
@@ -170,6 +192,7 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         alertChannels = Self.lossyDecode(container, forKey: .alertChannels)
         cursorSpend = (try? container.decodeIfPresent(SpendThresholds.self, forKey: .cursorSpend))
             ?? .off
+        resetExpiryLeadDays = Self.lossyDecode(container, forKey: .resetExpiryLeadDays)
     }
 
     /// Decodes a `[String: Value]` entry by entry, DROPPING malformed entries
@@ -213,6 +236,7 @@ final class AppSettings: ObservableObject {
     @Published private(set) var alertThresholds: [String: ThresholdPair] = [:]
     @Published private(set) var alertChannels: [String: AlertChannels] = [:]
     @Published private(set) var cursorSpend: SpendThresholds = .off
+    @Published private(set) var resetExpiryLeadDays: [String: Int] = [:]
     /// `true` when the persisted settings file failed to decode and defaults
     /// were substituted. Consumers that fail *closed* on unknown config (the
     /// warm-up inhibition schedule) read this to avoid trusting the empty
@@ -236,7 +260,8 @@ final class AppSettings: ObservableObject {
             menuBarDisplaysRemaining: menuBarDisplaysRemaining,
             alertThresholds: alertThresholds,
             alertChannels: alertChannels,
-            cursorSpend: cursorSpend
+            cursorSpend: cursorSpend,
+            resetExpiryLeadDays: resetExpiryLeadDays
         )
     }
 
@@ -402,6 +427,11 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    func setResetExpiryLeadDays(_ days: Int, provider: Provider) async throws {
+        let clamped = min(max(days, AppSettingsData.resetExpiryLeadDaysRange.lowerBound), AppSettingsData.resetExpiryLeadDaysRange.upperBound)
+        try await mutate { $0.resetExpiryLeadDays[provider.rawValue] = clamped }
+    }
+
     func setCursorSpend(_ value: SpendThresholds) async throws {
         try await mutate { $0.cursorSpend = value }
     }
@@ -557,6 +587,9 @@ final class AppSettings: ObservableObject {
         }
         if cursorSpend != data.cursorSpend {
             cursorSpend = data.cursorSpend
+        }
+        if resetExpiryLeadDays != data.resetExpiryLeadDays {
+            resetExpiryLeadDays = data.resetExpiryLeadDays
         }
     }
 }

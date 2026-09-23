@@ -111,6 +111,29 @@ struct AccountDetailView: View {
                 }
             }
 
+            if account.provider != .cursor,
+               let items = presentation.snapshot?.resetCredits?.unexpired(at: now), !items.isEmpty {
+                Section("RESETS") {
+                    ForEach(items, id: \.id) { credit in
+                        LabeledContent(credit.title ?? "Usage-limit reset") {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("×\(credit.count) · expires \(credit.expiresAt.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(Theme.mono(10))
+                                    .monospacedDigit()
+                                if let usable = credit.usableNow {
+                                    Text(usable ? "usable now" : "not usable yet")
+                                        .font(Theme.mono(9))
+                                        .foregroundStyle(Theme.creamDim)
+                                }
+                            }
+                        }
+                    }
+                    Text("Use a reset on the provider's usage page. Ration only shows them.")
+                        .font(Theme.mono(10))
+                        .foregroundStyle(Theme.creamDim)
+                }
+            }
+
             // Hidden for providers the Billing-cycle window excludes: Cursor
             // reports its cycle natively on the account card, so a renewal day
             // entered here would feed nothing. Any value already stored on such

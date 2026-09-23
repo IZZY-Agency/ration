@@ -84,7 +84,7 @@ final class ClaudeProviderAdapterTests: XCTestCase {
             if script.contains("lastActiveOrg") {
                 return organizationID
             }
-            if arguments["path"] as? String == "/api/organizations/\(organizationID)/usage" {
+            if (arguments["path"] as? String)?.hasPrefix("/api/organizations/\(organizationID)/usage") == true {
                 return [
                     "status": 200,
                     "retryAfter": NSNull(),
@@ -134,7 +134,7 @@ final class ClaudeProviderAdapterTests: XCTestCase {
             if script.contains("lastActiveOrg") { return onlyOrg }
             if script.contains("getEntriesByType") { return [String]() }
             if let path = arguments["path"] as? String {
-                if path.hasSuffix("/usage") {
+                if path.contains("/usage") {
                     usageCalls += 1
                     return ["status": 404, "retryAfter": NSNull(), "body": ""]
                 }
@@ -174,7 +174,7 @@ final class ClaudeProviderAdapterTests: XCTestCase {
                 throw ScrapeDown()
             }
             if let path = arguments["path"] as? String {
-                if path.hasSuffix("/usage") {
+                if path.contains("/usage") {
                     usageCalls += 1
                     return ["status": 404, "retryAfter": NSNull(), "body": ""]
                 }
@@ -277,7 +277,7 @@ final class ClaudeProviderAdapterTests: XCTestCase {
                 return ["/api/organizations/\(scrapeOrg)/usage"]
             }
             if let path = arguments["path"] as? String {
-                if path.hasSuffix("/usage") {
+                if path.contains("/usage") {
                     usageNotFoundCalls += 1
                     return ["status": 404, "retryAfter": NSNull(), "body": ""]
                 }

@@ -33,6 +33,12 @@ struct AddAccountView: View {
                             Text("Connect another \(provider.displayName) subscription")
                                 .font(Theme.mono(9))
                                 .foregroundStyle(Theme.creamDim)
+                            if provider == .claude {
+                                Text(WarmUpDefaults.newClaudeAccountDisclosure)
+                                    .font(Theme.mono(9))
+                                    .foregroundStyle(Theme.creamDim)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         Spacer()
                         Image(systemName: "chevron.right")

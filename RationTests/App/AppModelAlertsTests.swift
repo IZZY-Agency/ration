@@ -20,7 +20,7 @@ import XCTest
 @MainActor
 final class AppModelAlertsTests: XCTestCase {
     func testRedactedNotificationOmitsLabelAndPercentThroughAppModel() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -56,7 +56,7 @@ final class AppModelAlertsTests: XCTestCase {
     }
 
     func testEnabledAndAuthorizedFiresCriticalThresholdOnceAtNinetyPercentUsed() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -114,7 +114,7 @@ final class AppModelAlertsTests: XCTestCase {
     // `resetsAt` with flat `remainingFraction` must NOT post a reset
     // notification, and only an actual freed-capacity jump does.
     func testWindowResetFiresResetNotificationOnlyOnFreedCapacityNotOnResetsAtDrift() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -199,7 +199,7 @@ final class AppModelAlertsTests: XCTestCase {
     }
 
     func testDisabledAlertsNeverPostEvenAtCriticalUsage() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -228,7 +228,7 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - Removal: tombstone makes resurrection structurally impossible
 
     func testRemovingAccountClearsPersistedAlertStateAndTombstonesAgainstResurrection() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -289,7 +289,7 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - Corrupt alert-state load must not abort startup
 
     func testCorruptAlertStateFileDoesNotPreventLoad() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
         // A directory at the alert-state path forces a non-decoding read
@@ -301,7 +301,7 @@ final class AppModelAlertsTests: XCTestCase {
             withIntermediateDirectories: true
         )
 
-        let fixture = try makeFixture(directory: directory)
+        let fixture = try makeAlertsFixture(directory: directory)
         // Must not throw: startup proceeds regardless of the corrupt file.
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -315,13 +315,13 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - Authorization is queried fresh on load (relaunch)
 
     func testRelaunchQueriesAuthorizationStatusOnLoadAndAllowsPostAfterward() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
         // First "launch": create the account and enable alerts, persisting
         // `usageAlertsEnabled` to disk.
         let firstScheduler = NotificationSchedulingSpy()
-        let firstFixture = try makeFixture(directory: directory, scheduler: firstScheduler)
+        let firstFixture = try makeAlertsFixture(directory: directory, scheduler: firstScheduler)
         try await firstFixture.model.load(startBackgroundRefresh: false)
         let sessionID = try firstFixture.model.beginSignIn(provider: .claude)
         try await firstFixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
@@ -335,7 +335,7 @@ final class AppModelAlertsTests: XCTestCase {
         // `alertStates` starts empty until `load()` seeds it from the store.
         let secondScheduler = NotificationSchedulingSpy()
         await secondScheduler.setAuthorizationStatusResult(true)
-        let secondFixture = try makeFixture(directory: directory, scheduler: secondScheduler)
+        let secondFixture = try makeAlertsFixture(directory: directory, scheduler: secondScheduler)
         XCTAssertFalse(secondFixture.model.usageAlertsAuthorized)
 
         try await secondFixture.model.load(startBackgroundRefresh: false)
@@ -371,7 +371,7 @@ final class AppModelAlertsTests: XCTestCase {
     private struct InjectedSaveFailure: Error {}
 
     func testSaveFailureDoesNotCauseRePostBecauseStateIsAuthoritativeInMemory() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
         // EVERY save to the alert-state file fails. Under the old
@@ -383,7 +383,7 @@ final class AppModelAlertsTests: XCTestCase {
             fileURL: directory.appending(path: "alert-state.json"),
             saveStates: { _ in throw InjectedSaveFailure() }
         )
-        let fixture = try makeFixture(directory: directory, alertStateStore: alertStateStore)
+        let fixture = try makeAlertsFixture(directory: directory, alertStateStore: alertStateStore)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -436,7 +436,7 @@ final class AppModelAlertsTests: XCTestCase {
     }
 
     func testConcurrentEmissionsForSameCrossingPostExactlyOnce() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -479,7 +479,7 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - Enabling seeds the baseline without posting
 
     func testEnablingPrimesExistingCrossingWithoutPostingThenHigherTierPosts() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -567,7 +567,7 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - AlertsActive re-checked at post EXECUTION time, not enqueue time
 
     func testDisablingBeforeFlushSkipsAlreadyEnqueuedPost() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -621,7 +621,7 @@ final class AppModelAlertsTests: XCTestCase {
     }
 
     func testRemovingAccountBeforeFlushSkipsAlreadyEnqueuedPost() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -659,7 +659,7 @@ final class AppModelAlertsTests: XCTestCase {
     }
 
     func testPausingAccountBeforeFlushSkipsAlreadyEnqueuedPost() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -701,7 +701,7 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - Disable then re-enable never replays a pre-enable crossing
 
     func testDisableThenReenableDoesNotReplayPreEnableCrossingButHigherTierPosts() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -783,7 +783,7 @@ final class AppModelAlertsTests: XCTestCase {
     // resurrect `alertsActive` after a newer disable has already completed.
 
     func testStaleEnableContinuationDoesNotReactivateAfterNewerDisableCompletes() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -866,7 +866,7 @@ final class AppModelAlertsTests: XCTestCase {
     /// awaiting a later call to completion before releasing the gate would
     /// deadlock — only its synchronous claim (I4) is observable before that.
     func testRapidEnableDisableCyclesEndInStateMatchingTheLastCall() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -923,9 +923,9 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - FIFO save-before-remove — persisted entry cannot be resurrected
 
     func testRemovalAfterEnqueuedSaveLeavesNoPersistedAlertStateOnReload() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let fixture = try makeFixture(directory: directory)
+        let fixture = try makeAlertsFixture(directory: directory)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -967,7 +967,7 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - The processor stays deterministic and reusable across cycles
 
     func testRepeatedEvaluateFlushCyclesRemainDeterministicAndProcessorIsReusable() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -1012,7 +1012,7 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - Steady-state no-change emissions enqueue no save
 
     func testSteadyStateNoChangeEmissionDoesNotEnqueueASave() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let saveCounter = SaveCallCounter()
@@ -1027,7 +1027,7 @@ final class AppModelAlertsTests: XCTestCase {
                 try await fileStore.save(states)
             }
         )
-        let fixture = try makeFixture(directory: directory, alertStateStore: alertStateStore)
+        let fixture = try makeAlertsFixture(directory: directory, alertStateStore: alertStateStore)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -1105,7 +1105,7 @@ final class AppModelAlertsTests: XCTestCase {
     /// crossing, though a later, genuinely NEW higher-tier crossing still
     /// posts normally.
     func testLaunchRaceEnableDuringHydrationDoesNotReplayPreExistingCrossing() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
         // "Prior session": create the account, persist a WARNING-tier
@@ -1115,7 +1115,7 @@ final class AppModelAlertsTests: XCTestCase {
         // primed). This reproduces the worst case for the race: the
         // setting says "on," a crossing is already on disk, but nothing
         // has baselined it yet.
-        let setupFixture = try makeFixture(directory: directory)
+        let setupFixture = try makeAlertsFixture(directory: directory)
         try await setupFixture.model.load(startBackgroundRefresh: false)
         let sessionID = try setupFixture.model.beginSignIn(provider: .claude)
         try await setupFixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
@@ -1138,7 +1138,7 @@ final class AppModelAlertsTests: XCTestCase {
         hydrationGate.arm()
         let scheduler = NotificationSchedulingSpy()
         await scheduler.setAuthorizationStatusResult(true)
-        let relaunchFixture = try makeFixture(
+        let relaunchFixture = try makeAlertsFixture(
             directory: directory,
             scheduler: scheduler,
             hydrationGate: hydrationGate
@@ -1206,13 +1206,13 @@ final class AppModelAlertsTests: XCTestCase {
     /// launch-race test above: here the persisted setting starts OFF, and
     /// the interleaved enable is itself what turns it on mid-hydration.
     func testEnableDuringLoadDefersActivationToLoadsPostHydrationTail() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
         // "Prior session": account + a WARNING-tier snapshot on disk, but
         // `usageAlertsEnabled` is still OFF (default) — the upcoming
         // enable is what turns it on.
-        let setupFixture = try makeFixture(directory: directory)
+        let setupFixture = try makeAlertsFixture(directory: directory)
         try await setupFixture.model.load(startBackgroundRefresh: false)
         let sessionID = try setupFixture.model.beginSignIn(provider: .claude)
         try await setupFixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
@@ -1229,7 +1229,7 @@ final class AppModelAlertsTests: XCTestCase {
         hydrationGate.arm()
         let scheduler = NotificationSchedulingSpy()
         await scheduler.setAuthorizationStatusResult(true)
-        let relaunchFixture = try makeFixture(
+        let relaunchFixture = try makeAlertsFixture(
             directory: directory,
             scheduler: scheduler,
             hydrationGate: hydrationGate
@@ -1276,10 +1276,10 @@ final class AppModelAlertsTests: XCTestCase {
     /// once `load()` completes, with no posts — ever, including for a
     /// crossing that would otherwise post.
     func testDisableDuringLoadStillWinsOverPersistedEnable() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let setupFixture = try makeFixture(directory: directory)
+        let setupFixture = try makeAlertsFixture(directory: directory)
         try await setupFixture.model.load(startBackgroundRefresh: false)
         let sessionID = try setupFixture.model.beginSignIn(provider: .claude)
         try await setupFixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
@@ -1299,7 +1299,7 @@ final class AppModelAlertsTests: XCTestCase {
         hydrationGate.arm()
         let scheduler = NotificationSchedulingSpy()
         await scheduler.setAuthorizationStatusResult(true)
-        let relaunchFixture = try makeFixture(
+        let relaunchFixture = try makeAlertsFixture(
             directory: directory,
             scheduler: scheduler,
             hydrationGate: hydrationGate
@@ -1352,7 +1352,7 @@ final class AppModelAlertsTests: XCTestCase {
     func testColdStartEnableConvergesViaStartupPass() async throws {
         let scheduler = NotificationSchedulingSpy()
         let hydrationGate = HydrationGate()
-        let fixture = try makeFixture(scheduler: scheduler, hydrationGate: hydrationGate)
+        let fixture = try makeAlertsFixture(scheduler: scheduler, hydrationGate: hydrationGate)
         defer { fixture.removeFiles() }
 
         hydrationGate.arm()
@@ -1417,13 +1417,13 @@ final class AppModelAlertsTests: XCTestCase {
         let scheduler = NotificationSchedulingSpy()
         let saveGate = SettingsSaveGate()
         let hydrationGate = HydrationGate()
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         try seedUsageAlertsEnabled(in: directory)
         let settings = AppSettings(
             fileURL: directory.appending(path: "app-settings.json"),
             saveSettings: { data in try await saveGate.gate(data) }
         )
-        let fixture = try makeFixture(
+        let fixture = try makeAlertsFixture(
             directory: directory,
             scheduler: scheduler,
             hydrationGate: hydrationGate,
@@ -1471,9 +1471,9 @@ final class AppModelAlertsTests: XCTestCase {
     /// wins once the gate releases.
     func testDisableEnableDuringStartupQuery_FinalEnableWins() async throws {
         let scheduler = NotificationSchedulingSpy()
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         try seedUsageAlertsEnabled(in: directory)
-        let fixture = try makeFixture(directory: directory, scheduler: scheduler)
+        let fixture = try makeAlertsFixture(directory: directory, scheduler: scheduler)
         defer { fixture.removeFiles() }
 
         await scheduler.armStatusGate()
@@ -1505,9 +1505,9 @@ final class AppModelAlertsTests: XCTestCase {
     /// rather than relying on the startup pass to converge it.
     func testEnableDuringStartupQueryConvergesViaUserRequestPass() async throws {
         let scheduler = NotificationSchedulingSpy()
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         try seedUsageAlertsEnabled(in: directory)
-        let fixture = try makeFixture(directory: directory, scheduler: scheduler)
+        let fixture = try makeAlertsFixture(directory: directory, scheduler: scheduler)
         defer { fixture.removeFiles() }
 
         await scheduler.armStatusGate()
@@ -1566,13 +1566,13 @@ final class AppModelAlertsTests: XCTestCase {
     func testDisableDuringStartupQueryStaleStartupNeverActivates() async throws {
         let scheduler = NotificationSchedulingSpy()
         let saveGate = SettingsSaveGate()
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         try seedUsageAlertsEnabled(in: directory)
         let settings = AppSettings(
             fileURL: directory.appending(path: "app-settings.json"),
             saveSettings: { data in try await saveGate.gate(data) }
         )
-        let fixture = try makeFixture(
+        let fixture = try makeAlertsFixture(
             directory: directory, scheduler: scheduler, appSettings: settings
         )
         defer { fixture.removeFiles() }
@@ -1665,9 +1665,9 @@ final class AppModelAlertsTests: XCTestCase {
     /// that chain.
     func testConcurrentLoadIsSingleFlight() async throws {
         let scheduler = NotificationSchedulingSpy()
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         try seedUsageAlertsEnabled(in: directory)
-        let fixture = try makeFixture(directory: directory, scheduler: scheduler)
+        let fixture = try makeAlertsFixture(directory: directory, scheduler: scheduler)
         defer { fixture.removeFiles() }
 
         await scheduler.armStatusGate()
@@ -1696,12 +1696,12 @@ final class AppModelAlertsTests: XCTestCase {
         let scheduler = NotificationSchedulingSpy()
         let saveGate = SettingsSaveGate()
         let hydrationGate = HydrationGate()
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         let settings = AppSettings(
             fileURL: directory.appending(path: "app-settings.json"),
             saveSettings: { data in try await saveGate.gate(data) }
         )
-        let fixture = try makeFixture(
+        let fixture = try makeAlertsFixture(
             directory: directory,
             scheduler: scheduler,
             hydrationGate: hydrationGate,
@@ -1739,13 +1739,13 @@ final class AppModelAlertsTests: XCTestCase {
     func testFailedDisableKeepsPostingStoppedDespiteDurableOn() async throws {
         let scheduler = NotificationSchedulingSpy()
         let saveGate = SettingsSaveGate()
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         try seedUsageAlertsEnabled(in: directory)
         let settings = AppSettings(
             fileURL: directory.appending(path: "app-settings.json"),
             saveSettings: { data in try await saveGate.gate(data) }
         )
-        let fixture = try makeFixture(
+        let fixture = try makeAlertsFixture(
             directory: directory, scheduler: scheduler, appSettings: settings
         )
         defer { fixture.removeFiles() }
@@ -1785,7 +1785,7 @@ final class AppModelAlertsTests: XCTestCase {
     func testEntryCancelledColdStartEnableParksAndStartupRefuses() async throws {
         let scheduler = NotificationSchedulingSpy()
         let hydrationGate = HydrationGate()
-        let fixture = try makeFixture(scheduler: scheduler, hydrationGate: hydrationGate)
+        let fixture = try makeAlertsFixture(scheduler: scheduler, hydrationGate: hydrationGate)
         defer { fixture.removeFiles() }
 
         hydrationGate.arm()
@@ -1822,13 +1822,13 @@ final class AppModelAlertsTests: XCTestCase {
         let scheduler = NotificationSchedulingSpy()
         let saveGate = SettingsSaveGate()
         let hydrationGate = HydrationGate()
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         try seedUsageAlertsEnabled(in: directory)
         let settings = AppSettings(
             fileURL: directory.appending(path: "app-settings.json"),
             saveSettings: { data in try await saveGate.gate(data) }
         )
-        let fixture = try makeFixture(
+        let fixture = try makeAlertsFixture(
             directory: directory,
             scheduler: scheduler,
             hydrationGate: hydrationGate,
@@ -1862,13 +1862,13 @@ final class AppModelAlertsTests: XCTestCase {
 
     func testStartupPassNeverWritesSettings() async throws {
         let saveGate = SettingsSaveGate()
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         try seedUsageAlertsEnabled(in: directory)
         let settings = AppSettings(
             fileURL: directory.appending(path: "app-settings.json"),
             saveSettings: { data in try await saveGate.gate(data) }
         )
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
         await fixture.model.flushAlertEvaluations()
@@ -1885,7 +1885,7 @@ final class AppModelAlertsTests: XCTestCase {
     /// against the user's final, already-completed opt-out.
     func testEnableSupersededDuringAuthorizationDoesNotCommitOrActivate() async throws {
         let scheduler = NotificationSchedulingSpy()
-        let fixture = try makeFixture(scheduler: scheduler)
+        let fixture = try makeAlertsFixture(scheduler: scheduler)
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -1924,7 +1924,7 @@ final class AppModelAlertsTests: XCTestCase {
     /// the first snapshot before the second one is evaluated as a genuine
     /// crossing, matching how `AlertPolicy` edge-triggers off a prior
     /// sample.
-    private func driveCriticalCrossing(_ fixture: Fixture) async throws {
+    private func driveCriticalCrossing(_ fixture: AlertsFixture) async throws {
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
         try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
         let account = try XCTUnwrap(fixture.model.accounts.first)
@@ -1952,7 +1952,7 @@ final class AppModelAlertsTests: XCTestCase {
     /// must not replay a crossing that was already posted before the pause,
     /// either — pausing must not clear `AlertStateStore`'s edge-trigger memory.
     func testPausedAccountSkipsAlertEvaluationAndResumeDoesNotReplayOldCrossing() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2012,7 +2012,7 @@ final class AppModelAlertsTests: XCTestCase {
     }
 
     func testEnablingWhilePausedPrimesBaselineSoResumeDoesNotPostPreEnableCrossing() async throws {
-        let fixture = try makeFixture()
+        let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
 
@@ -2061,14 +2061,14 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - Configured thresholds resolved per-account provider
 
     func testAlertUsesConfiguredThresholdForItsProvider() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         // `AppModel.appSettings` is `private` — a directly-constructed
         // `AppSettings`, shared with the fixture via its injection point (the
         // same pattern the hydration-race tests above use), is how a test
         // reaches `setThresholds` without the model exposing an internal.
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2101,10 +2101,10 @@ final class AppModelAlertsTests: XCTestCase {
     }
 
     func testAlertDoesNotFireForAnotherProvidersThreshold() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         // The account is `.chatGPT` — a lowered threshold configured for
@@ -2150,9 +2150,9 @@ final class AppModelAlertsTests: XCTestCase {
     /// posts nothing, so the alert the user just configured is lost for the
     /// rest of the window.
     func testLoweringAThresholdBelowCurrentUsageAlertsWithoutWaitingForTheNextPoll() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let fixture = try makeFixture(directory: directory)
+        let fixture = try makeAlertsFixture(directory: directory)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2187,9 +2187,9 @@ final class AppModelAlertsTests: XCTestCase {
     /// The edit-driven evaluation must go through the same watermark as every
     /// other evaluation, not post unconditionally.
     func testLoweringAThresholdPostsOnlyOnceAcrossLaterEvaluations() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let fixture = try makeFixture(directory: directory)
+        let fixture = try makeAlertsFixture(directory: directory)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2235,9 +2235,9 @@ final class AppModelAlertsTests: XCTestCase {
     /// (`.warning > .critical` is false) keeps that from posting a warning
     /// the user has already moved past.
     func testRaisingAThresholdDoesNotPostALowerTierForAnAlreadyNotifiedWindow() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let fixture = try makeFixture(directory: directory)
+        let fixture = try makeAlertsFixture(directory: directory)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2270,11 +2270,11 @@ final class AppModelAlertsTests: XCTestCase {
     /// prime that would otherwise have swallowed the crossing instead finds
     /// it already notified and stays silent.
     func testAThresholdEditAlertDoesNotRepostAfterRelaunch() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let firstScheduler = NotificationSchedulingSpy()
-        let firstFixture = try makeFixture(directory: directory, scheduler: firstScheduler)
+        let firstFixture = try makeAlertsFixture(directory: directory, scheduler: firstScheduler)
         try await firstFixture.model.load(startBackgroundRefresh: false)
         let sessionID = try firstFixture.model.beginSignIn(provider: .claude)
         try await firstFixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
@@ -2294,7 +2294,7 @@ final class AppModelAlertsTests: XCTestCase {
 
         let secondScheduler = NotificationSchedulingSpy()
         await secondScheduler.setAuthorizationStatusResult(true)
-        let secondFixture = try makeFixture(directory: directory, scheduler: secondScheduler)
+        let secondFixture = try makeAlertsFixture(directory: directory, scheduler: secondScheduler)
         try await secondFixture.model.load(startBackgroundRefresh: false)
         await secondFixture.model.flushAlertEvaluations()
 
@@ -2311,10 +2311,10 @@ final class AppModelAlertsTests: XCTestCase {
     /// notification — while leaving the drop row, which is the whole point of
     /// having two channels.
     func testNotificationChannelOffSuppressesThePostButKeepsTheDropRow() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2354,13 +2354,13 @@ final class AppModelAlertsTests: XCTestCase {
     /// clear `dismissedTier` never runs, so that subject stays hidden for
     /// every future window rather than just the dismissed one.
     func testWindowResetClearsADismissalEvenWhenNotificationsAreDenied() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let scheduler = NotificationSchedulingSpy()
         await scheduler.setAuthorizationResult(false)
         await scheduler.setAuthorizationStatusResult(false)
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, scheduler: scheduler, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, scheduler: scheduler, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2404,12 +2404,12 @@ final class AppModelAlertsTests: XCTestCase {
     /// The other half: evaluation running while unauthorized must still not
     /// POST anything.
     func testNothingIsPostedWhileNotificationsAreDenied() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let scheduler = NotificationSchedulingSpy()
         await scheduler.setAuthorizationResult(false)
         await scheduler.setAuthorizationStatusResult(false)
-        let fixture = try makeFixture(directory: directory, scheduler: scheduler)
+        let fixture = try makeAlertsFixture(directory: directory, scheduler: scheduler)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2436,9 +2436,9 @@ final class AppModelAlertsTests: XCTestCase {
     /// somewhere resets, so usage merely creeping up (or a different window
     /// crossing) cannot pop the panel again minutes later.
     func testDismissingSuppressesEvenANewCrossingOnAnotherWindow() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let fixture = try makeFixture(directory: directory)
+        let fixture = try makeAlertsFixture(directory: directory)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2477,9 +2477,9 @@ final class AppModelAlertsTests: XCTestCase {
 
     /// ...and a reset anywhere brings it back.
     func testAResetOnAnyWindowEndsTheSnooze() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let fixture = try makeFixture(directory: directory)
+        let fixture = try makeAlertsFixture(directory: directory)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2516,9 +2516,9 @@ final class AppModelAlertsTests: XCTestCase {
     /// The snooze must survive a relaunch, or quitting the app becomes a way
     /// to un-dismiss the panel.
     func testTheSnoozeSurvivesRelaunch() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let fixture = try makeFixture(directory: directory)
+        let fixture = try makeAlertsFixture(directory: directory)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2538,7 +2538,7 @@ final class AppModelAlertsTests: XCTestCase {
         await fixture.model.flushAlertEvaluations()
         try await waitForSnoozeOnDisk(in: directory)
 
-        let relaunch = try makeFixture(directory: directory)
+        let relaunch = try makeAlertsFixture(directory: directory)
         try await relaunch.model.load(startBackgroundRefresh: false)
         XCTAssertTrue(
             relaunch.model.attentionRows(now: now).isEmpty,
@@ -2551,10 +2551,10 @@ final class AppModelAlertsTests: XCTestCase {
     /// had NOT changed silently loaded it as false and the dismissed drop
     /// came back.
     func testSnoozeSurvivesRelaunchWhenTheAlertsFlagIsUnchanged() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2576,7 +2576,7 @@ final class AppModelAlertsTests: XCTestCase {
 
         // Relaunch with alerts ALREADY enabled on disk — the flag does not
         // change, so nothing about it is re-applied.
-        let relaunch = try makeFixture(directory: directory)
+        let relaunch = try makeAlertsFixture(directory: directory)
         try await relaunch.model.load(startBackgroundRefresh: false)
         XCTAssertTrue(
             relaunch.model.attentionRows(now: now).isEmpty,
@@ -2587,10 +2587,10 @@ final class AppModelAlertsTests: XCTestCase {
     /// Cursor has no rate window and emits no `.reset`, so a spend-only user
     /// could snooze the drop and never get it back.
     func testCursorBillingPeriodAdvanceEndsTheSnooze() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .cursor)
@@ -2647,10 +2647,10 @@ final class AppModelAlertsTests: XCTestCase {
     /// poll and the rollover rule above — keyed on it — lifted the snooze each
     /// time. The end drifting inside the SAME cycle is not a rollover.
     func testCursorPeriodEndDriftWithinTheSameCycleDoesNotEndTheSnooze() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .cursor)
@@ -2759,11 +2759,11 @@ final class AppModelAlertsTests: XCTestCase {
     /// (0.28.1) — modelled by a snapshot that carries none, as a legacy
     /// `snapshots.json` decodes — with the drop snoozed over its spend row.
     private func makeSnoozedLegacyCursorFixture() async throws -> (
-        directory: URL, fixture: Fixture, settings: AppSettings, account: AccountRecord, now: Date
+        directory: URL, fixture: AlertsFixture, settings: AppSettings, account: AccountRecord, now: Date
     ) {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .cursor)
@@ -2796,7 +2796,7 @@ final class AppModelAlertsTests: XCTestCase {
     /// Whichever transition lands last on disk must be the one that is true
     /// now, regardless of the order two in-flight persists reach the queue.
     func testRapidSnoozeThenUnsnoozePersistsTheFinalState() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
         try await settings.load()
@@ -2829,10 +2829,10 @@ final class AppModelAlertsTests: XCTestCase {
     /// not attached to. Saving it through the first model's own store lets
     /// THAT model lift the snooze, and the relaunch then proves nothing.
     func testSnoozeLiftsOnRelaunchAfterAnOfflineResetWithNotificationsDenied() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2871,7 +2871,7 @@ final class AppModelAlertsTests: XCTestCase {
         let denied = NotificationSchedulingSpy()
         await denied.setAuthorizationResult(false)
         await denied.setAuthorizationStatusResult(false)
-        let relaunch = try makeFixture(directory: directory, scheduler: denied)
+        let relaunch = try makeAlertsFixture(directory: directory, scheduler: denied)
         try await relaunch.model.load(startBackgroundRefresh: false)
         await relaunch.model.flushAlertEvaluations()
 
@@ -2888,10 +2888,10 @@ final class AppModelAlertsTests: XCTestCase {
     // MARK: - Attention drop: rows and dismissal
 
     func testAttentionRowsSurfaceACrossingForTheDropChannel() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2918,10 +2918,10 @@ final class AppModelAlertsTests: XCTestCase {
     /// tick, so a dismissal that lives only in memory would let the row
     /// return on the very next tick.
     func testDismissingARowRemovesItFromLaterRecomputations() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2952,10 +2952,10 @@ final class AppModelAlertsTests: XCTestCase {
     /// store, so it obeys the same tombstone discipline as every other alert
     /// state write — and survives a relaunch.
     func testDismissalPersistsAcrossRelaunch() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -2974,7 +2974,7 @@ final class AppModelAlertsTests: XCTestCase {
         fixture.model.dismissAttentionRows(fixture.model.attentionRows(now: now))
         await fixture.model.flushAlertEvaluations()
 
-        let relaunch = try makeFixture(directory: directory)
+        let relaunch = try makeAlertsFixture(directory: directory)
         try await relaunch.model.load(startBackgroundRefresh: false)
         XCTAssertEqual(
             relaunch.model.alertStateForTesting(accountID: account.id)?.fiveHour.dismissedTier,
@@ -2986,10 +2986,10 @@ final class AppModelAlertsTests: XCTestCase {
     /// Dismissal must never resurrect state for an account being removed —
     /// the same hazard `applyAlertDecision` guards against.
     func testDismissingARowForARemovedAccountIsIgnored() async throws {
-        let directory = try Self.makeTempDirectory()
+        let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
-        let fixture = try makeFixture(directory: directory, appSettings: settings)
+        let fixture = try makeAlertsFixture(directory: directory, appSettings: settings)
         try await fixture.model.load(startBackgroundRefresh: false)
 
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
@@ -3016,80 +3016,6 @@ final class AppModelAlertsTests: XCTestCase {
         )
     }
 
-    /// - Parameters:
-    ///   - directory: Reuse an existing directory (so a second fixture can
-    ///     simulate a "relaunch" against the same persisted files) instead of
-    ///     a fresh temp one.
-    ///   - alertStateStore: Inject a custom store (e.g. one whose `save`
-    ///     fails on demand) instead of the default file-backed one.
-    ///   - scheduler: Inject a custom scheduler instance instead of a fresh
-    ///     spy, so a test can pre-configure its authorization results before
-    ///     `load()` runs.
-    ///   - hydrationGate: Wired to `AppModel`'s `beforeAlertsHydrationCompletes`
-    ///     hook (see `HydrationGate`'s doc). Defaults to a fresh, unarmed gate
-    ///     — a no-op unless a test explicitly arms it — so this parameter is
-    ///     only relevant to the startup-readiness-barrier race tests.
-    private func makeFixture(
-        directory: URL? = nil,
-        alertStateStore: AlertStateStore? = nil,
-        scheduler: NotificationSchedulingSpy = NotificationSchedulingSpy(),
-        hydrationGate: HydrationGate = HydrationGate(),
-        appSettings: AppSettings? = nil
-    ) throws -> Fixture {
-        let directory = try directory ?? Self.makeTempDirectory()
-
-        let accounts = AccountStore(
-            fileURL: directory.appending(path: "accounts.json")
-        )
-        let snapshots = UsageSnapshotStore(
-            fileURL: directory.appending(path: "snapshots.json")
-        )
-        let pendingStore = PendingProfileDeletionStore(
-            fileURL: directory.appending(path: "pending-profile-deletions.json")
-        )
-        let historyStore = UsageHistoryStore(
-            rootDirectory: directory.appending(path: "history", directoryHint: .isDirectory)
-        )
-        let appSettings = appSettings ?? AppSettings(
-            fileURL: directory.appending(path: "app-settings.json")
-        )
-        let alertStateStore = alertStateStore ?? AlertStateStore(
-            fileURL: directory.appending(path: "alert-state.json")
-        )
-        let profileManager = AlertsWebProfileManagerSpy()
-        let adapter = AlertsProviderAdapterSpy()
-        // A second, independently-provider'd adapter — needed only by the
-        // per-provider threshold tests (`beginSignIn(provider: .chatGPT)`).
-        // Registering it unconditionally is harmless: no other test signs in
-        // as `.chatGPT`, so it is simply unused dead weight for them.
-        let chatGPTAdapter = AlertsProviderAdapterSpy(provider: .chatGPT)
-        // Cursor, for the spend-snooze test — unused dead weight for the rest.
-        let cursorAdapter = AlertsProviderAdapterSpy(provider: .cursor)
-        let model = AppModel(
-            accountStore: accounts,
-            snapshotStore: snapshots,
-            pendingProfileDeletionStore: pendingStore,
-            historyStore: historyStore,
-            appSettings: appSettings,
-            alertStateStore: alertStateStore,
-            profileManager: profileManager,
-            adapterRegistry: ProviderAdapterRegistry(adapters: [adapter, chatGPTAdapter, cursorAdapter]),
-            notificationScheduler: scheduler,
-            now: { Date(timeIntervalSince1970: 1_000) },
-            beforeAlertsHydrationCompletes: { await hydrationGate.hook() },
-            systemPowerObserver: NoopSystemPowerObserver()
-        )
-        return Fixture(
-            directory: directory,
-            model: model,
-            snapshots: snapshots,
-            alertStateStore: alertStateStore,
-            scheduler: scheduler,
-            adapter: adapter,
-            chatGPTAdapter: chatGPTAdapter
-        )
-    }
-
     /// The ✕ persists the snooze flag from a fire-and-forget task that nothing
     /// can await, so a relaunch inside the same test can read settings before
     /// that write lands. Waits for the FILE rather than writing the flag from
@@ -3112,38 +3038,6 @@ final class AppModelAlertsTests: XCTestCase {
         }
         XCTFail("the snooze never reached disk", file: file, line: line)
     }
-
-    private static func makeTempDirectory() throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
-        return directory
-    }
-
-    /// Seeds the settings file with usage alerts durably ON, as if a prior
-    /// session enabled them — decodeIfPresent supplies every other default.
-    private func seedUsageAlertsEnabled(in directory: URL) throws {
-        try Data(#"{"usageAlertsEnabled":true}"#.utf8)
-            .write(to: directory.appending(path: "app-settings.json"))
-    }
-}
-
-@MainActor
-private struct Fixture {
-    let directory: URL
-    let model: AppModel
-    let snapshots: UsageSnapshotStore
-    let alertStateStore: AlertStateStore
-    let scheduler: NotificationSchedulingSpy
-    let adapter: AlertsProviderAdapterSpy
-    let chatGPTAdapter: AlertsProviderAdapterSpy
-
-    nonisolated func removeFiles() {
-        try? FileManager.default.removeItem(at: directory)
-    }
 }
 
 /// Counts calls to an injected `AlertStateStore.saveStates` closure, so a
@@ -3155,115 +3049,6 @@ private final class SaveCallCounter {
 
     func increment() {
         count += 1
-    }
-}
-
-@MainActor
-private final class AlertsWebProfileManagerSpy: WebProfileManaging {
-    func makeWebView(profileID: UUID) -> WKWebView {
-        WKWebView(frame: .zero)
-    }
-
-    func removeProfile(profileID: UUID) async throws {}
-}
-
-/// Minimal sign-in adapter: returns a snapshot with no usage windows, so the
-/// account's initial (pre-alerts-enabled) fetch during `completeSignIn` never
-/// risks firing an alert. Tests drive usage via `fixture.snapshots.save`
-/// directly instead of through this adapter.
-///
-/// `fiveHourRemaining` (default `nil`, mirroring the History fixture's
-/// `HistoryProviderAdapterSpy.fiveHourRemaining`) lets a test opt a fetch
-/// (e.g. the resume-triggered `refreshAll` inside `setPaused`) into
-/// returning a real fiveHour window instead of the default nil/nil — needed
-/// so a post-resume evaluation actually re-examines the SAME crossing an
-/// edge-trigger-memory regression would replay, rather than a window-less
-/// snapshot no regression could ever be caught against. Every other test
-/// leaves this `nil` and observes the original nil/nil behavior unchanged.
-@MainActor
-private final class AlertsProviderAdapterSpy: ProviderAdapter {
-    let provider: Provider
-    let signInURL = URL(string: "https://claude.ai/")!
-    var fiveHourRemaining: Double?
-
-    /// `provider` defaults to `.claude` (the default single-adapter fixture
-    /// shape almost every test uses); the per-provider threshold tests
-    /// pass `.chatGPT` to get a second, independently-provider'd account
-    /// through the SAME spy shape rather than a bespoke type.
-    init(provider: Provider = .claude) {
-        self.provider = provider
-    }
-
-    func verifySession(in webView: WKWebView) async throws {}
-
-    func fetchUsage(
-        accountID: UUID,
-        in webView: WKWebView
-    ) async throws -> UsageSnapshot {
-        UsageSnapshot(
-            accountID: accountID,
-            fetchedAt: Date(timeIntervalSince1970: 1_000),
-            fiveHour: fiveHourRemaining.map {
-                UsageWindow(kind: .fiveHour, remainingFraction: $0, resetsAt: nil)
-            },
-            weekly: nil
-        )
-    }
-}
-
-/// Startup-readiness-barrier race test seam: wired to `AppModel`'s
-/// `beforeAlertsHydrationCompletes` hook (called once, unconditionally,
-/// immediately before `load()` may flip `alertsHydrated = true`) so a test
-/// can pin a concurrent `setUsageAlertsEnabled` call to interleave
-/// deterministically DURING hydration — the exact window the startup
-/// readiness barrier closes — without relying on incidental
-/// `Task`-scheduling order or a sleep. Structurally the same
-/// gate-with-suspension-signal mechanism as
-/// `NotificationSchedulingSpy`'s authorization gate (see its doc for the
-/// flakiness this pattern avoids), but generalized to a plain void
-/// interleave point: unlike `authorizationStatus()` — which `load()` only
-/// calls when the persisted setting is ALREADY enabled — this hook fires
-/// unconditionally on every `load()`, which is required for tests where the
-/// persisted setting starts OFF and the interleaved call is itself what
-/// turns it on.
-@MainActor
-private final class HydrationGate {
-    private var armed = false
-    private var pending: CheckedContinuation<Void, Never>?
-    private var suspendedSignal: CheckedContinuation<Void, Never>?
-
-    /// Arms the gate so the next `hook()` call suspends. A gate that is
-    /// never armed is a permanent no-op — the default for fixtures that
-    /// don't care about this interleave point.
-    func arm() {
-        armed = true
-    }
-
-    func hook() async {
-        guard armed else { return }
-        armed = false
-        await withCheckedContinuation { continuation in
-            pending = continuation
-            suspendedSignal?.resume()
-            suspendedSignal = nil
-        }
-    }
-
-    /// Suspends the caller until `hook()` has actually registered itself as
-    /// suspended (i.e. `load()` has reached the gate and is now waiting) —
-    /// the deterministic signal a test needs before it's safe to run the
-    /// concurrent call that must interleave with the still-pending one.
-    func waitUntilSuspended() async {
-        if pending != nil { return }
-        await withCheckedContinuation { continuation in
-            suspendedSignal = continuation
-        }
-    }
-
-    /// Releases the suspended `hook()` call, letting `load()` proceed.
-    func release() {
-        pending?.resume()
-        pending = nil
     }
 }
 
@@ -3309,111 +3094,5 @@ private final class SettingsSaveGate {
     func release() {
         pending?.resume()
         pending = nil
-    }
-}
-
-/// Records every `post` call and returns configurable authorization results.
-/// An `actor` (rather than a locked class) since `NotificationScheduling`
-/// requires `Sendable` and its methods are called via `await` from `AppModel`.
-private actor NotificationSchedulingSpy: NotificationScheduling {
-    private(set) var posts: [(id: String, title: String, body: String)] = []
-    var authorizationResult = true
-    /// Backs `authorizationStatus`: the OS-level status queried on
-    /// `load()`, independent of (and not implied by) `requestAuthorization`.
-    var authorizationStatusResult = true
-
-    /// Version-guard race test seam: when armed, the NEXT call to
-    /// `requestAuthorization()` suspends until `releaseAuthorizationRequest`
-    /// is called, instead of returning immediately. This lets a test
-    /// deterministically interleave a second `setUsageAlertsEnabled` call
-    /// while a first one's continuation is still pending inside its own
-    /// authorization request — the exact shape of the stale-enable race —
-    /// without relying on a sleep or on incidental Task-scheduling order.
-    private var gateArmed = false
-    private var pendingAuthorizationContinuation: CheckedContinuation<Bool, Never>?
-    private var suspendedSignal: CheckedContinuation<Void, Never>?
-
-    /// Startup-pass race seam (mirrors the requestAuthorization gate): when
-    /// armed, the NEXT authorizationStatus() call suspends until
-    /// releaseStatusQuery, so a test can pin taps to land while load()'s
-    /// startup path sits inside its status query.
-    private var statusGateArmed = false
-    private var pendingStatusContinuation: CheckedContinuation<Bool, Never>?
-    private var statusSuspendedSignal: CheckedContinuation<Void, Never>?
-    /// I6 assertion support: counts prompt-capable authorization requests.
-    private(set) var requestAuthorizationCallCount = 0
-
-    func armStatusGate() {
-        statusGateArmed = true
-    }
-
-    func waitUntilStatusQueryIsSuspended() async {
-        if pendingStatusContinuation != nil { return }
-        await withCheckedContinuation { continuation in
-            statusSuspendedSignal = continuation
-        }
-    }
-
-    func releaseStatusQuery(_ result: Bool = true) {
-        pendingStatusContinuation?.resume(returning: result)
-        pendingStatusContinuation = nil
-    }
-
-    func requestAuthorization() async -> Bool {
-        requestAuthorizationCallCount += 1
-        guard gateArmed else { return authorizationResult }
-        gateArmed = false
-        return await withCheckedContinuation { continuation in
-            pendingAuthorizationContinuation = continuation
-            suspendedSignal?.resume()
-            suspendedSignal = nil
-        }
-    }
-
-    func authorizationStatus() async -> Bool {
-        guard statusGateArmed else { return authorizationStatusResult }
-        statusGateArmed = false
-        return await withCheckedContinuation { continuation in
-            pendingStatusContinuation = continuation
-            statusSuspendedSignal?.resume()
-            statusSuspendedSignal = nil
-        }
-    }
-
-    func setAuthorizationStatusResult(_ value: Bool) {
-        authorizationStatusResult = value
-    }
-
-    func setAuthorizationResult(_ value: Bool) {
-        authorizationResult = value
-    }
-
-    func post(id: String, title: String, body: String) async {
-        posts.append((id: id, title: title, body: body))
-    }
-
-    /// Arms the gate so the next `requestAuthorization()` call suspends.
-    func armAuthorizationGate() {
-        gateArmed = true
-    }
-
-    /// Suspends the caller until a `requestAuthorization()` call has
-    /// actually registered itself as suspended on the gate (i.e. the armed
-    /// call has been made and is now waiting) — the deterministic signal a
-    /// test needs before it's safe to run the "newer" transition that must
-    /// interleave with the still-pending one.
-    func waitUntilAuthorizationRequestIsSuspended() async {
-        if pendingAuthorizationContinuation != nil { return }
-        await withCheckedContinuation { continuation in
-            suspendedSignal = continuation
-        }
-    }
-
-    /// Releases the suspended `requestAuthorization()` call, letting its
-    /// continuation resume with `authorizationResult` (or an explicit
-    /// override).
-    func releaseAuthorizationRequest(returning value: Bool? = nil) {
-        pendingAuthorizationContinuation?.resume(returning: value ?? authorizationResult)
-        pendingAuthorizationContinuation = nil
     }
 }

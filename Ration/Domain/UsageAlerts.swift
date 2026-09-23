@@ -41,6 +41,10 @@ enum AlertEvent: Equatable, Sendable {
     // never a percentage — Cursor's API exposes spend with no denominator (see
     // `SpendThresholds`), so there is no fraction to report.
     case spendThreshold(tier: AlertTier, thresholdCents: Int, spentCents: Int)
+    // Usage-limit resets. `expiringSoon` = the credit arrived already inside
+    // the lead window, so this one alert also carries the expiry.
+    case resetCreditAvailable(credit: ResetCredit, expiringSoon: Bool)
+    case resetCreditExpiring(credit: ResetCredit)
 }
 
 /// Per-window edge-trigger memory. `hasObserved` guards against firing `reset`
@@ -146,6 +150,9 @@ struct AccountAlertState: Codable, Equatable, Sendable {
     var spend = SpendAlertMemory()
     var notifiedReauth = false
     var notifiedRateLimited = false
+    /// Per-credit alert memory, keyed by the provider's credit id. See
+    /// `ResetCreditAlertMemory`.
+    var resetCredits: [String: ResetCreditAlertMemory] = [:]
     init() {}
 
     // Backward-compatible decode: older persisted files predate `modelWeekly`
@@ -163,6 +170,22 @@ struct AccountAlertState: Codable, Equatable, Sendable {
         spend = try c.decodeIfPresent(SpendAlertMemory.self, forKey: .spend) ?? SpendAlertMemory()
         notifiedReauth = try c.decodeIfPresent(Bool.self, forKey: .notifiedReauth) ?? false
         notifiedRateLimited = try c.decodeIfPresent(Bool.self, forKey: .notifiedRateLimited) ?? false
+        // Per-entry lossy — see `WindowAlertMemory.init(from:)` for why a
+        // throw here would cost every account its memory. A `resetCredits`
+        // value that is present but the wrong SHAPE (e.g. an array) fails
+        // `decodeIfPresent` itself, and `try?` collapses that to nil, leaving
+        // the property at its declared `[:]` default — same outcome as a key
+        // that decoded fine but whose individual entries are malformed
+        // (dropped one at a time by `compactMapValues`).
+        //
+        // `FailableDecodable`, NOT `AnyCodable`, for the per-entry wrapper:
+        // `ResetCreditAlertMemory` carries a `Date` (`lastSeenExpiresAt`), and
+        // `AnyCodable.decode(as:)` re-decodes with a fresh default
+        // `JSONDecoder()` that doesn't know this store's `.iso8601` strategy —
+        // it would silently turn every well-formed date back to nil on
+        // reload. `FailableDecodable` re-decodes with the CALLER's decoder
+        // (and so its date strategy) instead.
+        resetCredits = (try? c.decodeIfPresent([String: FailableDecodable<ResetCreditAlertMemory>].self, forKey: .resetCredits))?.compactMapValues(\.value) ?? [:]
     }
 }
 
@@ -183,7 +206,8 @@ enum AlertPolicy {
         snapshot: UsageSnapshot?,
         state: AccountViewState,
         thresholds: (UsageWindowKind) -> ThresholdPair,
-        spendThresholds: SpendThresholds
+        spendThresholds: SpendThresholds,
+        resetCredits: ResetCreditAlertInput? = nil
     ) -> (events: [AlertEvent], next: AccountAlertState) {
         var next = previous
         var events: [AlertEvent] = []
@@ -204,6 +228,13 @@ enum AlertPolicy {
             if !next.notifiedRateLimited { events.append(.rateLimited); next.notifiedRateLimited = true }
         } else {
             next.notifiedRateLimited = false
+        }
+
+        // Resets are only ever evaluated on fresh evidence and never while
+        // priming — the caller passes nil then — so nothing is marked
+        // handled without the user having been told.
+        if let resetCredits {
+            ResetCreditPolicy.evaluate(resetCredits, memory: &next.resetCredits, events: &events)
         }
 
         return (events, next)

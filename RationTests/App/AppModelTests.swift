@@ -23,6 +23,67 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(fixture.model.signInSession(for: sessionID))
     }
 
+    /// A NEWLY added Claude account starts warm-up ON — the default a new
+    /// account gets, disclosed at connect time (`WarmUpDefaults`).
+    func testNewClaudeAccountStartsWithWarmUpOn() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+
+        XCTAssertTrue(try XCTUnwrap(fixture.model.accounts.first).autoStartFiveHour)
+    }
+
+    /// Only Claude gets the on-by-default treatment — warm-up is a
+    /// Claude-only feature.
+    func testNewChatGPTAccountDoesNotGetWarmUp() async throws {
+        let fixture = try makeFixture(
+            adapters: [ProviderAdapterSpy(), ChatGPTAdapterStub()]
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+
+        let sessionID = try fixture.model.beginSignIn(provider: .chatGPT)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Codex")
+
+        XCTAssertFalse(try XCTUnwrap(fixture.model.accounts.first).autoStartFiveHour)
+    }
+
+    /// Re-authentication must never resurrect the on-by-default value: a
+    /// user who turned warm-up off keeps it off across a re-auth, because
+    /// `completeSignIn`'s reauth branch persists only via `accountStore
+    /// .rename` (label-only) — it never re-adds the record with a freshly
+    /// computed `autoStartFiveHour`.
+    func testReauthenticationKeepsTheStoredWarmUpValue() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let signInID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: signInID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        XCTAssertTrue(account.autoStartFiveHour, "new Claude account must start with warm-up on")
+
+        try await fixture.model.setAutoStart(accountID: account.id, enabled: false)
+
+        let reauthenticationID = try fixture.model.beginReauthentication(accountID: account.id)
+        try await fixture.model.completeSignIn(sessionID: reauthenticationID, label: "Personal")
+
+        XCTAssertFalse(
+            try XCTUnwrap(fixture.model.accounts.first).autoStartFiveHour,
+            "re-authentication must not resurrect the on-by-default warm-up value"
+        )
+    }
+
+    /// The static table `completeSignIn` and `AddAccountView`/onboarding
+    /// copy all read from.
+    func testWarmUpDefaultsTable() {
+        XCTAssertTrue(WarmUpDefaults.autoStartForNewAccount(provider: .claude))
+        XCTAssertFalse(WarmUpDefaults.autoStartForNewAccount(provider: .chatGPT))
+        XCTAssertFalse(WarmUpDefaults.autoStartForNewAccount(provider: .cursor))
+    }
+
     /// Passkey-only accounts: pasted cookies land in the SIGN-IN SESSION's
     /// own profile store (the exact store its fetches will read), and the web
     /// view reloads so the page reflects the session.
@@ -2226,6 +2287,117 @@ final class AppModelTests: XCTestCase {
         XCTAssertGreaterThan(
             counter.total, evaluationsBeforeSecond,
             "subsequent refresh must fetch again, not join a hung in-flight task"
+        )
+    }
+
+    /// Counts warm-up SENDS seen by `makeWarmUpSendClient`'s evaluator. A
+    /// keep-alive send is two raw POSTs (`ClaudeMessageSender.send`:
+    /// `createConversation` then `postCompletion`) — only the `.../completion`
+    /// one is the actual message send, so that is what "one send" counts.
+    private final class WarmUpSendCounter {
+        var sends = 0
+    }
+
+    /// Same script-routing evaluator as
+    /// `testHungKeepAliveSendIsBoundedAndDoesNotWedgeRefresh`, but the POST
+    /// always succeeds immediately — this exercises the on-by-default FIRST
+    /// send, not the timeout/recycle machinery.
+    private func makeWarmUpSendClient(counter: WarmUpSendCounter) -> WebUsageClient {
+        WebUsageClient(
+            evaluator: { script, arguments, _ in
+                if script.contains("method: \"POST\"") {
+                    if (arguments["path"] as? String)?.hasSuffix("/completion") == true {
+                        counter.sends += 1
+                    }
+                    return ["status": 200, "retryAfter": NSNull(), "body": ""]
+                }
+                if script.contains("getEntriesByType") {
+                    return Self.scriptedSuccess(for: script)
+                }
+                let path = arguments["path"] as? String ?? ""
+                if path.contains("chat_conversations") {
+                    return [
+                        "status": 200,
+                        "retryAfter": NSNull(),
+                        "body": #"[{"model":"claude-test-model","uuid":"abc"}]"#
+                    ]
+                }
+                // A fresh, unused 5h window (utilization 0, no scheduled reset)
+                // — the "not started" state that arms
+                // `AutoStartPolicy.shouldAutoStart`.
+                return [
+                    "status": 200,
+                    "retryAfter": NSNull(),
+                    "body": """
+                    {
+                      "five_hour": { "utilization": 0, "resets_at": null },
+                      "seven_day": { "utilization": 53, "resets_at": null }
+                    }
+                    """
+                ]
+            },
+            sleep: { _ in }
+        )
+    }
+
+    /// A newly added Claude account gets `autoStartFiveHour = true` for
+    /// free — no explicit `setAutoStart` call — and its first eligible
+    /// refresh sends exactly one warm-up keep-alive.
+    func testNewClaudeAccountSendsWarmUpOnFirstEligibleRefresh() async throws {
+        let counter = WarmUpSendCounter()
+        let client = makeWarmUpSendClient(counter: counter)
+        let claudeAdapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
+        let messageSender = ClaudeMessageSender(client: client)
+        let fixture = try makeFixture(adapters: [claudeAdapter], messageSender: messageSender)
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        // No explicit enable: a NEW Claude account is warm-up-eligible by
+        // default.
+        XCTAssertTrue(try XCTUnwrap(fixture.model.accounts.first).autoStartFiveHour)
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(
+            counter.sends, 1,
+            "the first eligible refresh on a newly added Claude account must send exactly one warm-up keep-alive"
+        )
+    }
+
+    /// Same on-by-default account, but quiet hours cover `now`: the
+    /// first-send must not fire — quiet hours are checked before any
+    /// window reasoning (`AutoStartPolicy.windowSaysFire`).
+    func testNewClaudeAccountDoesNotSendWarmUpDuringQuietHours() async throws {
+        let counter = WarmUpSendCounter()
+        let client = makeWarmUpSendClient(counter: counter)
+        let claudeAdapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
+        let messageSender = ClaudeMessageSender(client: client)
+        let fixture = try makeFixture(adapters: [claudeAdapter], messageSender: messageSender)
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+
+        // The fixture's default clock (`now: Date(timeIntervalSince1970: 1_000)`),
+        // expressed as the quiet cell `AutoStartPolicy` will check against
+        // (same `.autoupdatingCurrent` calendar production uses) — covering
+        // it blocks the send regardless of the machine's time zone.
+        let now = Date(timeIntervalSince1970: 1_000)
+        let calendar = Calendar.autoupdatingCurrent
+        let quietCell = WarmUpQuietSchedule.cellIndex(
+            weekday: calendar.component(.weekday, from: now),
+            hour: calendar.component(.hour, from: now)
+        )
+        try await fixture.model.setQuietHours([quietCell])
+
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(
+            counter.sends, 0,
+            "quiet hours covering `now` must suppress the first send too"
         )
     }
 

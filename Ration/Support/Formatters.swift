@@ -90,4 +90,15 @@ enum UsageFormatters {
         let remainderHours = hours % 24
         return remainderHours > 0 ? "\(days)d \(remainderHours)h" : "\(days)d"
     }
+
+    /// Time left on a usage-limit reset: whole days from 24 h up, whole hours
+    /// below that. Coarser than `remainingUntilReset` on purpose — a reset lives
+    /// for weeks, and "29d 7h" is noise that also truncates in the drop.
+    static func resetCreditRemaining(_ expiresAt: Date, relativeTo now: Date = .now) -> String {
+        let totalSeconds = Int(expiresAt.timeIntervalSince(now).rounded(.down))
+        guard totalSeconds > 0 else { return "now" }
+        guard totalSeconds >= 3_600 else { return "<1h" }
+        guard totalSeconds >= 86_400 else { return "\(totalSeconds / 3_600)h" }
+        return "\(totalSeconds / 86_400)d"
+    }
 }

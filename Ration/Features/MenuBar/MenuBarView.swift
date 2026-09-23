@@ -35,6 +35,12 @@ struct MenuBarView: View {
     var samples: (UUID, UsageWindowKind) -> [UsageHistorySample] = { _, _ in [] }
     var projection: (UUID, UsageWindowKind) -> Date? = { _, _ in nil }
     var orderingPinByProvider: [Provider: UUID] = [:]
+    /// Per-provider lead-days setting for the reset-credits card line
+    /// (`AppSettingsData.resetExpiryLeadDays`). Keyed by provider rather than
+    /// threaded through as a plain `AppSettings` reference, mirroring
+    /// `orderingPinByProvider` — this view stays a pure presentation type with
+    /// no direct model dependency.
+    var resetLeadDaysByProvider: [Provider: Int] = [:]
     /// Declared last and defaulted so the existing `MenuBarView(...)` call
     /// sites in tests keep compiling; app code always supplies a real action.
     var onOpenSetupGuide: () -> Void = {}
@@ -316,7 +322,8 @@ struct MenuBarView: View {
                             onReauthenticate: { onReauthenticate(presentation.id) },
                             samples: { kind in samples(presentation.id, kind) },
                             projection: { kind in projection(presentation.id, kind) },
-                            activeUsage: activeAccounts[presentation.id]
+                            activeUsage: activeAccounts[presentation.id],
+                            resetLeadDays: resetLeadDaysByProvider[presentation.account.provider] ?? 1
                         )
                         .background(
                             GeometryReader { proxy in
