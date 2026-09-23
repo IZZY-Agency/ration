@@ -1,3 +1,14 @@
+<p align="center">
+  <a href="https://ration.sh"><img src=".github/ration-banner.svg" alt="Ration: every Claude, Codex and Cursor account in one menu bar" width="880"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/IZZY-Agency/ration/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/IZZY-Agency/ration/ci.yml?branch=main&amp;label=CI" alt="CI"></a>
+  <a href="https://github.com/IZZY-Agency/ration/releases/latest"><img src="https://img.shields.io/github/v/release/IZZY-Agency/ration?label=macOS%20app&amp;color=f5c518" alt="macOS app release"></a>
+  <a href="https://github.com/IZZY-Agency/homebrew-tap"><img src="https://img.shields.io/badge/brew-izzy--agency%2Ftap%2Fration-f5c518" alt="Homebrew cask"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/IZZY-Agency/ration" alt="MIT license"></a>
+</p>
+
 # Ration
 
 Know your Claude, Codex and Cursor limits before you hit the wall.
