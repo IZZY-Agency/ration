@@ -119,6 +119,11 @@ final class AttentionDropSnapshotTests: XCTestCase {
             if let dir = ProcessInfo.processInfo.environment["RATION_SNAPSHOT_DIR"], !dir.isEmpty {
                 let url = URL(fileURLWithPath: dir).appending(path: "drop-\(suffix).png")
                 try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: url)
+                if scheme == .dark {
+                    // The rows' window names drawn as `WindowTag`s.
+                    let tags = URL(fileURLWithPath: dir).appending(path: "drop-window-tags-dark.png")
+                    try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: tags)
+                }
             }
         }
     }

@@ -6,6 +6,7 @@ enum SettingsSectionTitle {
     static let accounts = "Accounts"
     static let general = "General"
     static let menuBar = "Menu Bar"
+    static let features = "Features"
     static let identity = "Identity"
     static let automation = "Automation"
     static let resets = "Resets"
@@ -16,7 +17,7 @@ enum SettingsSectionTitle {
     static let cursorSpend = "Cursor Spend"
 
     static let all = [
-        accounts, general, menuBar, identity, automation, resets, billing,
+        accounts, general, menuBar, features, identity, automation, resets, billing,
         session, quietHours, holidays, cursorSpend,
     ]
 }

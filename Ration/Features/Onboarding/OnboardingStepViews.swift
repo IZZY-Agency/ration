@@ -10,7 +10,7 @@ struct OnboardingProviderGuide {
     let symbol: String
     let hint: String
 
-    static func guide(for provider: Provider) -> OnboardingProviderGuide {
+    static func guide(for provider: Provider, warmUpEnabled: Bool = true) -> OnboardingProviderGuide {
         switch provider {
         case .claude:
             OnboardingProviderGuide(
@@ -19,7 +19,7 @@ struct OnboardingProviderGuide {
                     If you sign in with a magic link, paste the link from your \
                     email into the field at the top of the sign-in window. \
                     Opening it in Safari signs in your browser, not Ration. \
-                    \(WarmUpDefaults.newClaudeAccountDisclosure)
+                    \(WarmUpDefaults.newClaudeAccountDisclosure(warmUpEnabled: warmUpEnabled))
                     """
             )
         case .chatGPT:
@@ -38,10 +38,9 @@ struct OnboardingProviderGuide {
                     """
             )
         case .cursor:
-            // Kept deliberately, against the spec's "no caveat" line: C5 in
-            // docs/KNOWN-LIMITATIONS.md means the Cursor card shows dollars,
-            // not a percentage, and a user who expects a percentage will read
-            // a correct card as broken.
+            // Kept deliberately: as docs/KNOWN-LIMITATIONS.md explains, the
+            // Cursor card shows dollars, not a percentage, and a user who
+            // expects a percentage will read a correct card as broken.
             OnboardingProviderGuide(
                 symbol: "cursorarrow.rays",
                 hint: """
@@ -86,6 +85,8 @@ struct OnboardingConnectStep: View {
     let onSelect: (Provider) -> Void
     let isWaitingForSignIn: Bool
     let signInError: String?
+    /// The global Claude warm-up switch, for the Claude hint's disclosure.
+    var warmUpEnabled: Bool = true
 
     /// Each provider's icon wears that provider's identity accent, like Add
     /// Account — it was Claude gold for every provider.
@@ -99,7 +100,7 @@ struct OnboardingConnectStep: View {
             )
 
             ForEach(Provider.allCases) { provider in
-                let guide = OnboardingProviderGuide.guide(for: provider)
+                let guide = OnboardingProviderGuide.guide(for: provider, warmUpEnabled: warmUpEnabled)
                 Button {
                     onSelect(provider)
                 } label: {

@@ -42,7 +42,8 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
             resetCredits: Self.resetCredits(
                 from: read.resetCredits,
                 fetchedAt: fetchedAt
-            )
+            ),
+            planDetection: PlanDetection.chatGPT(planType: read.payload.planType)
         )
     }
 
@@ -180,9 +181,19 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
 
 private struct ChatGPTUsagePayload: Decodable, Sendable {
     let rateLimit: ChatGPTRateLimitPayload?
+    /// Live-verified 2026-09-24: `"prolite"` on a Pro 5x account. Lenient —
+    /// a wrong shape reads as "not read", never a failed usage decode.
+    let planType: String?
 
     enum CodingKeys: String, CodingKey {
         case rateLimit = "rate_limit"
+        case planType = "plan_type"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        rateLimit = try c.decodeIfPresent(ChatGPTRateLimitPayload.self, forKey: .rateLimit)
+        planType = (try? c.decodeIfPresent(String.self, forKey: .planType)) ?? nil
     }
 }
 

@@ -185,6 +185,9 @@ struct SignInSessionView: View {
     @State private var isVerifying = false
     @State private var errorMessage: String?
     @State private var verificationTask: Task<Void, Never>?
+    /// Set after a successful sign-in of a NEW account whose plan or billing
+    /// day is still unknown: the window then shows the plan step.
+    @State private var planStepAccount: AccountRecord?
 
     enum SessionCookieStatus: Equatable {
         case applied
@@ -207,6 +210,33 @@ struct SignInSessionView: View {
     }
 
     var body: some View {
+        // The plan step covers the sign-in content instead of replacing it,
+        // so the sign-in view's own appear/disappear hooks don't fire.
+        ZStack {
+            signInContent
+                .accessibilityHidden(planStepAccount != nil)
+            if let planStepAccount {
+                PlanStepView(
+                    account: planStepAccount,
+                    onSave: { plan, day in
+                        let id = planStepAccount.id
+                        if let plan {
+                            try await model.requestSetPlan(accountID: id, plan: plan).value
+                        }
+                        if let day {
+                            try await model.requestSetBillingRenewalDay(accountID: id, day: day).value
+                        }
+                        close()
+                    },
+                    onSkip: { close() }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.ink)
+            }
+        }
+    }
+
+    private var signInContent: some View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
@@ -480,7 +510,13 @@ struct SignInSessionView: View {
                     sessionID: session.id,
                     label: label
                 )
-                close()
+                if session.isNewAccount, model.needsPlanStep(accountID: session.accountID),
+                   let account = model.accounts.first(where: { $0.id == session.accountID }) {
+                    planStepAccount = account
+                    isVerifying = false
+                } else {
+                    close()
+                }
             } catch is CancellationError {
                 isVerifying = false
             } catch is AccountCommitError {

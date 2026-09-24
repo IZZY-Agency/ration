@@ -10,14 +10,30 @@ enum AlertMessage {
     /// otherwise appear in a lock-screen preview. The generic copy still tells
     /// the user Ration needs attention; opening the app shows which
     /// account and why.
+    ///
+    /// `advice` is the switch advice whose `from` is this event's account,
+    /// matched by the caller at composition time. It adds one line to the
+    /// body of a limit crossing (`.threshold`, Warn or Critical) and is
+    /// ignored for every other event; privacy mode gets the label- and
+    /// number-free line.
     static func text(
         for event: AlertEvent,
         accountLabel: String,
-        redacted: Bool = false
+        redacted: Bool = false,
+        advice: SwitchAdvice? = nil
     ) -> (title: String, body: String) {
-        guard !redacted else {
-            return redactedText(for: event)
-        }
+        let base: (title: String, body: String) = redacted
+            ? redactedText(for: event)
+            : plainText(for: event, accountLabel: accountLabel)
+        guard case .threshold = event, let advice else { return base }
+        let line: String = SwitchAdviceCopy.notificationLine(advice, redacted: redacted)
+        return (base.title, base.body + "\n" + line)
+    }
+
+    private static func plainText(
+        for event: AlertEvent,
+        accountLabel: String
+    ) -> (title: String, body: String) {
         switch event {
         case .threshold(let kind, _, let percent, let label):
             return (

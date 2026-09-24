@@ -410,4 +410,59 @@ final class AlertMessageTests: XCTestCase {
         XCTAssertTrue(expiring.body.contains("2 usage-limit resets for Work expire"), expiring.body)
         XCTAssertFalse(expiring.body.contains("Secret Corp launch"), expiring.body)
     }
+
+    // MARK: - Switch advice line
+
+    private func switchAdvice(binding: UsageWindowKind = .weekly) -> SwitchAdvice {
+        SwitchAdvice(
+            provider: .claude, fromAccountID: accountID, fromLabel: label,
+            toAccountID: UUID(), toLabel: "Personal", toHeadroom: 0.85, toBinding: binding
+        )
+    }
+
+    func testThresholdCrossingsAppendTheAdviceLine() {
+        for tier in [AlertTier.warning, .critical] {
+            let event = AlertEvent.threshold(kind: .weekly, tier: tier, percent: 90)
+            let plain = AlertMessage.text(for: event, accountLabel: label)
+            let advised = AlertMessage.text(for: event, accountLabel: label, advice: switchAdvice())
+            XCTAssertEqual(advised.title, plain.title)
+            XCTAssertEqual(advised.body, plain.body + "\nSwitch to Personal — 85% of its week left.")
+        }
+    }
+
+    func testRedactedThresholdAppendsTheGenericAdviceLine() {
+        let event = AlertEvent.threshold(kind: .fiveHour, tier: .warning, percent: 75)
+        let plain = AlertMessage.text(for: event, accountLabel: label, redacted: true)
+        let advised = AlertMessage.text(for: event, accountLabel: label, redacted: true, advice: switchAdvice())
+        XCTAssertEqual(advised.body, plain.body + "\nAnother Claude account has more room.")
+        XCTAssertFalse(advised.body.contains("Personal"))
+        XCTAssertNil(advised.body.rangeOfCharacter(from: .decimalDigits))
+    }
+
+    func testNonLimitEventsNeverCarryAdvice() {
+        let credit = ResetCredit(id: "c", title: nil, count: 1, expiresAt: Date(timeIntervalSince1970: 2_000_000_000), usableNow: true)
+        let events: [AlertEvent] = [
+            .reset(kind: .weekly), .reauthRequired, .rateLimited,
+            .spendThreshold(tier: .warning, thresholdCents: 5_000, spentCents: 5_250),
+            .resetCreditAvailable(credit: credit, expiringSoon: false),
+            .resetCreditExpiring(credit: credit),
+        ]
+        for event in events {
+            for redacted in [false, true] {
+                XCTAssertEqual(
+                    AlertMessage.text(for: event, accountLabel: label, redacted: redacted, advice: switchAdvice()).body,
+                    AlertMessage.text(for: event, accountLabel: label, redacted: redacted).body,
+                    "\(event)"
+                )
+            }
+        }
+    }
+
+    func testNoAdviceMeansNoAppend() {
+        let event = AlertEvent.threshold(kind: .weekly, tier: .critical, percent: 90)
+        XCTAssertEqual(
+            AlertMessage.text(for: event, accountLabel: label, advice: nil).body,
+            "You've used 90% of the weekly limit for \(label)."
+        )
+    }
 }

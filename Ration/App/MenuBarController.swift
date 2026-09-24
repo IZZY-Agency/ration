@@ -375,6 +375,11 @@ final class MenuBarController: NSObject {
         else { anchoredToStatusItem = false }
 
         attentionModel.rows = rows
+        // Rides the model subscription like the rows: `switchAdvice` is
+        // `@Published` on `AppModel`, so a change re-runs this.
+        if attentionModel.switchAdvice != model.switchAdvice {
+            attentionModel.switchAdvice = model.switchAdvice
+        }
         attentionModel.now = now()
         attentionModel.showsTicker = anchoredToStatusItem
         attentionModel.availableRowsHeight = AttentionDropGeometry.availableRowsHeight(
@@ -619,11 +624,11 @@ final class MenuBarController: NSObject {
             )
             gauges = MenuBarGaugeState.gauges(
                 accounts: accounts,
-                activeUsage: ActiveUsageMap.computePerAccount(
-                    accounts: accounts,
-                    history: model.history,
-                    now: at
-                ),
+                // In-use detection off → no green center dots; the rings
+                // themselves stay (they are `showInUseInMenuBar`'s).
+                activeUsage: model.settings.featureInUseEnabled
+                    ? ActiveUsageMap.computePerAccount(accounts: accounts, history: model.history, now: at)
+                    : [:],
                 snapshots: { snapshots[$0] },
                 windowKind: { windowKinds[$0] ?? AppSettingsData.defaultMenuBarWindow(for: $0) },
                 displaysRemaining: displaysRemaining,
@@ -1032,7 +1037,12 @@ final class MenuBarController: NSObject {
     }
 
     private func capturePin(_ snapshot: AccountPinSnapshot) {
-        snapshot.refresh(accounts: model.visibleAccounts, history: model.history, now: .now)
+        snapshot.refresh(
+            accounts: model.visibleAccounts,
+            history: model.history,
+            now: .now,
+            inUseEnabled: model.settings.featureInUseEnabled
+        )
     }
 
     private func makeMenuBarContent(pinSnapshot: AccountPinSnapshot) -> MenuBarContent {

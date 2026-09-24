@@ -18,6 +18,10 @@ struct SettingsView: View {
 
     @State private var selection: SettingsSelection?
     @State private var accountToRemove: AccountRecord?
+    /// `AppSettings` is its own `ObservableObject`, which `model` never
+    /// republishes — mirrored here so a switch flipped in General redraws the
+    /// sidebar's IN USE pills and the account pane at once.
+    @State private var features: FeatureSwitches = .allOn
     @State private var errorMessage: String?
 
     /// Computed from the non-paused subset only: a paused account can have
@@ -27,7 +31,9 @@ struct SettingsView: View {
     /// (`model.presentations`, unfiltered) — only this detection input is
     /// restricted.
     private var activeUsage: [UUID: ActiveUsage] {
-        ActiveUsageMap.compute(
+        // In-use detection off → no IN USE pill in the sidebar or account pane.
+        guard features.inUse else { return [:] }
+        return ActiveUsageMap.compute(
             accounts: AccountVisibility.visible(model.accounts),
             history: history,
             now: .now
@@ -57,6 +63,7 @@ struct SettingsView: View {
         .background(Theme.ink)
         .frame(minWidth: Self.minimumWindowWidth, minHeight: 470)
         .task { ensureSelection() }
+        .onReceive(model.settings.featuresPublisher) { features = $0 }
         .onChange(of: model.accounts.map(\.id)) { _, _ in ensureSelection() }
         .alert(
             "Remove account?",
@@ -86,6 +93,7 @@ struct SettingsView: View {
                 AccountDetailView(
                     presentation: presentation,
                     activeUsage: activeUsage[id],
+                    features: features,
                     // Awaited so `LabelAutosave` can serialize saves, retry a
                     // busy account and keep a failed edit. It does not clear
                     // the banner per attempt: busy retries would wipe other
@@ -103,6 +111,9 @@ struct SettingsView: View {
                     onSetBillingRenewalDay: { day in
                         perform(request: { try model.requestSetBillingRenewalDay(accountID: id, day: day) })
                     },
+                    onSetPlan: { plan in
+                        perform(request: { try model.requestSetPlan(accountID: id, plan: plan) })
+                    },
                     onSetPaused: { paused in
                         perform(request: { try model.requestSetPaused(accountID: id, paused: paused) })
                     },
@@ -119,9 +130,11 @@ struct SettingsView: View {
         case .warmUp:
             WarmUpDetailView(
                 settings: model.settings,
-                autoStartEnabledCount: AutoStartPolicy.effectiveAutoStartCount(
-                    model.accounts
-                ),
+                // Warm-up switched off globally → nothing warms up, so quiet
+                // hours suppress no warm-up either.
+                autoStartEnabledCount: features.warmUp
+                    ? AutoStartPolicy.effectiveAutoStartCount(model.accounts)
+                    : 0,
                 // Awaited (not `perform`-and-forget) so the pane can tell a
                 // successful save from a failed one and keep the edit.
                 onSetQuietHours: { cells in
@@ -173,6 +186,12 @@ struct SettingsView: View {
                 },
                 onSetMenuBarDisplaysRemaining: { enabled in
                     perform { try await model.setMenuBarDisplaysRemaining(enabled) }
+                },
+                onSetPopoverLayout: { layout in
+                    perform { try await model.setPopoverLayout(layout) }
+                },
+                onSetFeature: { feature, enabled in
+                    perform { try await model.setFeature(feature, enabled: enabled) }
                 },
                 onOpenSetupGuide: onOpenSetupGuide,
                 onAllowNotifications: { model.requestNotificationPermission() }

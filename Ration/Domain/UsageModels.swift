@@ -78,6 +78,10 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
     /// docs/provider-contracts/claude.md), so it decodes as nil and is
     /// dropped on encode.
     let organizationID: String?
+    /// The provider's plan field as read by this fetch — IN MEMORY
+    /// ONLY; the durable home of the plan is `AccountRecord.plan`. nil = the
+    /// plan field was not read this fetch.
+    let planDetection: PlanDetection?
 
     enum CodingKeys: String, CodingKey {
         case accountID, fetchedAt, fiveHour, weekly, modelWeekly, cursorSpend, resetCredits
@@ -91,7 +95,8 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         modelWeekly: UsageWindow? = nil,
         cursorSpend: CursorSpend? = nil,
         organizationID: String? = nil,
-        resetCredits: ResetCredits? = nil
+        resetCredits: ResetCredits? = nil,
+        planDetection: PlanDetection? = nil
     ) {
         self.accountID = accountID
         self.fetchedAt = fetchedAt
@@ -101,6 +106,7 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         self.cursorSpend = cursorSpend
         self.organizationID = organizationID
         self.resetCredits = resetCredits
+        self.planDetection = planDetection
     }
 
     init(from decoder: any Decoder) throws {
@@ -114,6 +120,7 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         // Lossy: a malformed list must never cost the account its snapshot.
         resetCredits = try? c.decodeIfPresent(ResetCredits.self, forKey: .resetCredits)
         organizationID = nil
+        planDetection = nil
     }
 
     func window(for kind: UsageWindowKind) -> UsageWindow? {
@@ -145,7 +152,8 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
             modelWeekly: modelWeekly,
             cursorSpend: cursorSpend,
             organizationID: organizationID,
-            resetCredits: credits
+            resetCredits: credits,
+            planDetection: planDetection
         )
     }
 }

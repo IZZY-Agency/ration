@@ -22,6 +22,8 @@ struct MenuBarView: View {
     /// which publishes nothing, so a value captured at render time would freeze.
     var warmUpBanner: (Date) -> WarmUpBanner? = { _ in nil }
     let activeAccounts: [UUID: ActiveUsage]
+    /// The Resets feature switch: off hides each card's reset-credits line.
+    var showsResetCredits: Bool = true
     var pausedCount: Int = 0
     let onOpen: () -> Void
     let onAddAccount: () -> Void
@@ -54,6 +56,23 @@ struct MenuBarView: View {
     /// is mouse-only; this offers the same dismissal from the keyboard.
     var attentionDropShowing: Bool = false
     var onDismissAttentionDrop: () -> Void = {}
+    /// `AppModel.switchAdvice`. While non-empty, the NEXT RESET line gives
+    /// way to one "→ SWITCH … TO …" line per advice (provider order).
+    var switchAdvice: [SwitchAdvice] = []
+    /// `AppSettingsData.popoverLayout`. Focus replaces the card list with
+    /// `FocusView`; header, banners and footer are shared.
+    var layout: PopoverLayout = .standard
+    /// Focus content AS OF a moment — driven by a `TimelineView`, since IN
+    /// USE ages with the clock, which publishes nothing.
+    var focusModel: (Date) -> FocusModel = { date in
+        FocusModel.make(presentations: [], phases: [:], advice: [], fableCounts: { _ in false }, now: date)
+    }
+    /// The header's STANDARD | FOCUS switch (both layouts) — writes the
+    /// same setting as the Settings picker.
+    var onSetLayout: (PopoverLayout) -> Void = { _ in }
+    /// Focus: show this account as the hero (nil → back to automatic) until
+    /// the surface is presented again.
+    var onShowFocusHero: (UUID?) -> Void = { _ in }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -140,7 +159,9 @@ struct MenuBarView: View {
                 Divider().overlay(Theme.line)
             }
 
-            if presentations.isEmpty {
+            if layout == .focus {
+                focusBody
+            } else if presentations.isEmpty {
                 emptyState
             } else {
                 accountList
@@ -166,13 +187,14 @@ struct MenuBarView: View {
     private var header: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                HStack(spacing: 3) {
-                    Text("$").foregroundStyle(Theme.gold)
-                    Text("Ration").foregroundStyle(Theme.cream)
+                HStack(spacing: 6) {
+                    RationMark(size: 17)
+                    Text("Ration")
+                        .foregroundStyle(Theme.cream)
+                        .font(Theme.mono(16, bold: true))
+                        .tracking(0.5)
+                        .textCase(.uppercase)
                 }
-                .font(Theme.mono(16, bold: true))
-                .tracking(0.5)
-                .textCase(.uppercase)
 
                 Spacer()
 
@@ -192,6 +214,9 @@ struct MenuBarView: View {
                     .accessibilityLabel("Dismiss alerts")
                     .padding(.trailing, 12)
                 }
+
+                LayoutSwitch(selection: Self.layoutBinding(layout: layout, onSet: onSetLayout))
+                    .padding(.trailing, 12)
 
                 if isRefreshing {
                     ProgressView()
@@ -215,9 +240,77 @@ struct MenuBarView: View {
             .padding(.horizontal, 13)
             .padding(.vertical, 9)
 
-            soonestResetLine
+            // Focus: no header line at all — each account's reset sits with
+            // that account, and the "Next …" lines are in the body.
+            if layout == .standard {
+                if switchAdvice.isEmpty {
+                    soonestResetLine
+                } else {
+                    switchAdviceLines
+                }
+            }
         }
     }
+
+    /// The NEXT RESET line's three drawn pieces.
+    static func resetLineParts(_ next: SoonestReset, now: Date) -> (account: String, tag: String, countdown: String) {
+        (
+            next.accountLabel,
+            WindowTag.text(kind: next.kind, label: next.label),
+            UsageFormatters.remainingUntilReset(next.resetsAt, relativeTo: now)
+        )
+    }
+
+    /// The header switch's selection: reads the current layout, writes only
+    /// through the callback (which persists via `AppModel`).
+    static func layoutBinding(
+        layout: PopoverLayout,
+        onSet: @escaping (PopoverLayout) -> Void
+    ) -> Binding<PopoverLayout> {
+        Binding(get: { layout }, set: { onSet($0) })
+    }
+
+    /// Same fonts and padding as the NEXT RESET line it replaces, so one
+    /// advice costs no height; a second stacks below it.
+    private var switchAdviceLines: some View {
+        VStack(spacing: 4) {
+            ForEach(switchAdvice, id: \.fromAccountID) { advice in
+                let parts = SwitchAdviceCopy.headerParts(advice)
+                SwitchAdviceLineLayout(spacing: 6) {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11, weight: .medium))
+                    Text(parts.lead)
+                        .font(Theme.mono(11))
+                        .tracking(1.2)
+                    Text(parts.target)
+                        .font(Theme.mono(12, bold: true))
+                        .foregroundStyle(Theme.cream)
+                    Text(parts.tail)
+                        .font(Theme.mono(11))
+                        .tracking(1.2)
+                }
+                .foregroundStyle(Theme.active)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .clipped()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(SwitchAdviceCopy.spokenHeader(advice))
+                .accessibilityIdentifier(SwitchAdviceCopy.headerIdentifier(advice))
+            }
+        }
+        .padding(.horizontal, 13)
+        .padding(.top, Self.headerLineTopPadding)
+        .padding(.bottom, Self.headerLineBottomPadding)
+    }
+
+    /// Above / below the header line (NEXT RESET or a switch line). Optical,
+    /// not geometric: the bordered STANDARD | FOCUS control right above the
+    /// line makes an equal gap read tight, so the ink gap from the control to
+    /// the line is ~3pt LARGER than the one from the line to the divider
+    /// (snapshot-measured, `FocusSnapshotTests`). Total height is unchanged
+    /// from the original 0 + 9.
+    static let headerLineTopPadding: CGFloat = 1
+    static let headerLineBottomPadding: CGFloat = 8
 
     private func freshnessIndicator(_ freshness: HeaderFreshness) -> some View {
         let (dot, label): (Color, Color) = switch freshness {
@@ -241,12 +334,7 @@ struct MenuBarView: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let next = SoonestResetSummary.next(from: presentations, now: context.date)
             if let next {
-                let kindLabel: String = switch next.kind {
-                    case .fiveHour: "5H"
-                    case .weekly: "WK"
-                    case .modelWeekly: (next.label ?? "Fable").uppercased()
-                }
-                let remaining = UsageFormatters.remainingUntilReset(next.resetsAt, relativeTo: context.date)
+                let parts = Self.resetLineParts(next, now: context.date)
 
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.clockwise")
@@ -257,18 +345,45 @@ struct MenuBarView: View {
                         .tracking(1.2)
                         .textCase(.uppercase)
                         .foregroundStyle(Theme.creamFaint)
-                    Text("\(next.accountLabel) · \(kindLabel) · \(remaining)")
+                    // "Personal [5H] 22m": the account, the window as a tag, then
+                    // the countdown alone in reset blue — never read as "5h 22m".
+                    Text(parts.account)
+                        .font(Theme.mono(12))
+                        .foregroundStyle(Theme.cream)
+                    WindowTag(parts.tag)
+                    Text(parts.countdown)
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.resetAccent)
+                        .fixedSize()
                 }
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .padding(.horizontal, 13)
-                .padding(.bottom, 9)
+                .padding(.top, Self.headerLineTopPadding)
+                .padding(.bottom, Self.headerLineBottomPadding)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(next.accessibilityLabel(now: context.date))
             } else {
                 EmptyView()
+            }
+        }
+    }
+
+    private var focusBody: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let focus: FocusModel = focusModel(context.date)
+            if focus.emptyState == .noAccounts {
+                emptyState
+            } else {
+                // No scroll view: Focus is compact by design (one hero, a
+                // line per in-use/advised account, the rest wrapped).
+                FocusView(
+                    model: focus,
+                    now: context.date,
+                    onShowHero: onShowFocusHero,
+                    onReauthenticate: onReauthenticate
+                )
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -378,6 +493,7 @@ struct MenuBarView: View {
                             samples: { kind in samples(presentation.id, kind) },
                             projection: { kind in projection(presentation.id, kind) },
                             activeUsage: activeAccounts[presentation.id],
+                            showsResetCredits: showsResetCredits,
                             resetLeadDays: resetLeadDaysByProvider[presentation.account.provider] ?? 1
                         )
                         .background(
@@ -471,6 +587,46 @@ struct MenuBarView: View {
         .accessibilityLabel(label)
         .help(shortcut.map { "\(label) (⌘\(String($0.character).uppercased()))" } ?? label)
         .modifier(CommandShortcut(key: shortcut))
+    }
+}
+
+/// The header's STANDARD | FOCUS segmented switch, drawn in the header's mono
+/// type. Two buttons (keyboard-focusable, each with the Selected trait) in a
+/// container VoiceOver reads as "Layout". The selected segment is cream on
+/// `panel`, the other `creamFaint` on `ink` — both ≥ 4.5 : 1.
+struct LayoutSwitch: View {
+    @Binding var selection: PopoverLayout
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(PopoverLayout.allCases) { layout in
+                let isOn: Bool = layout == selection
+                Button {
+                    selection = layout
+                } label: {
+                    Text(layout.title)
+                        .font(Theme.mono(10.5, bold: isOn))
+                        .tracking(0.8)
+                        .textCase(.uppercase)
+                        .foregroundStyle(isOn ? Theme.cream : Theme.creamFaint)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(isOn ? Theme.panel : Color.clear)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(layout.title)
+                .accessibilityAddTraits(isOn ? .isSelected : [])
+                .accessibilityIdentifier("layoutSwitch.\(layout.rawValue)")
+                .help("\(layout.title) layout")
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Theme.line2, lineWidth: 1))
+        .fixedSize()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Layout")
+        .accessibilityIdentifier("layoutSwitch")
     }
 }
 

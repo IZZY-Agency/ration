@@ -160,13 +160,19 @@ final class WebUsageClient {
     /// Same-origin JSON POST used for the auto-start keep-alive send. The
     /// completion endpoint streams Server-Sent Events, so the body is cancelled
     /// immediately after the status line — only acceptance (2xx) matters.
+    ///
+    /// `mayDispatch` runs at the last native moment before the script is
+    /// handed to WebKit (inside the bounded task, after any hop); throwing
+    /// vetoes the request so it never reaches the page.
     func postJSON(
         path: String,
         bodyJSON: String,
+        mayDispatch: (@MainActor () throws -> Void)? = nil,
         in webView: WKWebView
     ) async throws -> WebResponseEnvelope {
         let result = try await bounded { [evaluator] in
-            try await evaluator(
+            try mayDispatch?()
+            return try await evaluator(
                 Self.postScript,
                 ["path": path, "bodyJSON": bodyJSON],
                 webView

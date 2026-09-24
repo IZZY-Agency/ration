@@ -82,15 +82,19 @@ private final class AccountSessionManager {
     }
 
     /// The single irreversible send.
+    /// `mayPost` runs immediately before each POST is dispatched and throws
+    /// to veto it (see `ClaudeMessageSender.send`).
     func sendKeepAlive(
         prepared: ClaudeMessageSender.Prepared,
         conversationID: UUID?,
-        for account: AccountRecord
+        for account: AccountRecord,
+        mayPost: ClaudeMessageSender.PostGate? = nil
     ) async throws -> UUID {
         try await recycleWebViewOnTimeout(profileID: account.webProfileID) { webView in
             try await messageSender.send(
                 prepared: prepared,
                 conversationID: conversationID,
+                mayPost: mayPost,
                 in: webView
             )
         }
@@ -121,6 +125,26 @@ private final class AccountSessionManager {
         try await adapter.verifySession(in: session.webView)
     }
 
+    /// The adapter's separate plan read (nil for providers without one),
+    /// through the same timeout recovery as every other bridge call.
+    ///
+    /// Background and optional, so it YIELDS the view: if another evaluation
+    /// started on the same view after this read began (a usage refresh that
+    /// may well be healthy), a late plan timeout abandons the read instead of
+    /// tearing that view down under it.
+    func refreshPlanDetection(
+        for account: AccountRecord,
+        snapshot: UsageSnapshot
+    ) async throws -> PlanDetection? {
+        let adapter = try adapterRegistry.adapter(for: account.provider)
+        return try await recycleWebViewOnTimeout(
+            profileID: account.webProfileID,
+            yieldsToNewerEvaluations: true
+        ) { webView in
+            try await adapter.refreshPlanDetection(for: snapshot, in: webView)
+        }
+    }
+
     func fetchUsage(for account: AccountRecord) async throws -> UsageSnapshot {
         let adapter = try adapterRegistry.adapter(for: account.provider)
         return try await recycleWebViewOnTimeout(profileID: account.webProfileID) { webView in
@@ -143,6 +167,12 @@ private final class AccountSessionManager {
     /// profile was protected at the time. `completeDeferredRecycles()`
     /// finishes them once protection ends.
     private var pendingRecycleProfileIDs: Set<UUID> = []
+
+    /// Monotonic count of evaluations started through
+    /// `recycleWebViewOnTimeout`, and the latest one per profile with the view
+    /// it ran on — lets a yielding call see that a newer one started on its view.
+    private var evaluationSerial: UInt64 = 0
+    private var latestEvaluation: [UUID: (serial: UInt64, view: ObjectIdentifier)] = [:]
 
     /// A timed-out evaluation means this profile's cached web view is
     /// suspect (a wedged WebContent process reproduces the hang on every
@@ -177,12 +207,23 @@ private final class AccountSessionManager {
     /// still hosts the abandoned bridge call, cached or not.
     private func recycleWebViewOnTimeout<T>(
         profileID: UUID,
+        yieldsToNewerEvaluations: Bool = false,
         _ operation: (WKWebView) async throws -> T
     ) async rethrows -> T {
         let operatedView = webView(for: profileID)
+        evaluationSerial &+= 1
+        let serial = evaluationSerial
+        latestEvaluation[profileID] = (serial, ObjectIdentifier(operatedView))
         do {
             return try await operation(operatedView)
         } catch let error as WebUsageClientError where error == .timedOut {
+            if yieldsToNewerEvaluations,
+               let latest = latestEvaluation[profileID],
+               latest.serial != serial,
+               latest.view == ObjectIdentifier(operatedView) {
+                // A newer evaluation is using this view; leave it be.
+                throw error
+            }
             if isProfileProtected(profileID) {
                 pendingRecycleProfileIDs.insert(profileID)
             } else {
@@ -366,6 +407,9 @@ final class AppModel: ObservableObject {
     /// replaced could do (nothing in the app ever cleared that, so an auto-start
     /// failure stayed on screen until the app was quit).
     @Published private(set) var autoStartFailures: [UUID: AutoStartFailure] = [:]
+    /// "Switch to this account next", per advised provider (`SwitchAdvisor`).
+    /// Assigned only when it changes, so subscribers see real transitions.
+    @Published private(set) var switchAdvice: [SwitchAdvice] = []
 
     /// Warm-up's own banner row. Computed on every read from live accounts,
     /// snapshots and `autoStartFailures`; it shares no storage with
@@ -382,6 +426,7 @@ final class AppModel: ObservableObject {
             presentations: presentations,
             failures: autoStartFailures,
             schedule: warmUpSchedule,
+            warmUpEnabled: appSettings.featureWarmUpEnabled,
             now: date
         )
     }
@@ -447,6 +492,16 @@ final class AppModel: ObservableObject {
     /// because cleanup enumerates profile IDs.
     private var profileIDsBeingRemoved: Set<UUID> = []
     private var mutatingAccountIDs: Set<UUID> = []
+    /// Latest plan reading per account this launch, with the moment
+    /// it was read, so "Detect automatically" can re-apply it at once and
+    /// switch advice can use it before the store has saved it. In memory only;
+    /// purged on removal.
+    private var latestPlanDetections: [UUID: (detection: PlanDetection, at: Date)] = [:]
+    /// Background plan reads in flight (`refreshPlanInBackground`); a test
+    /// barrier awaits them.
+    private var planRefreshTasks: [UUID: Task<Void, Never>] = [:]
+    /// Bumped per background plan read; a read applies only if still latest.
+    private var planRequestRevision: [UUID: UInt64] = [:]
     /// Account IDs with a pause currently being persisted. Claimed
     /// SYNCHRONOUSLY in `requestSetPaused` (before any `await`, only when
     /// `paused == true`) and released once `AccountStore.setPaused`'s
@@ -474,6 +529,24 @@ final class AppModel: ObservableObject {
     private var cancelledSessionIDsPendingCleanup: Set<UUID> = []
     private var volatileProfileDeletionIDs: Set<UUID> = []
     private var sendingKeepAliveAccountIDs: Set<UUID> = []
+    /// Bumped SYNCHRONOUSLY the instant the global warm-up switch is asked to
+    /// turn off (before its save suspends). A warm-up attempt captures it up
+    /// front and re-checks it — with the live switch — after the reservation
+    /// and immediately before every POST, so an attempt that was already
+    /// past its commit guard can never send once the user has said no.
+    private var warmUpGeneration: UInt64 = 0
+    /// Disables of the global warm-up switch whose save has not landed yet:
+    /// `featureWarmUpEnabled` is published only after the save, so an attempt
+    /// STARTING inside that window would otherwise capture the new generation
+    /// and still read the switch as on.
+    private var warmUpDisablesInFlight = 0
+    /// Same shape for the Resets switch: bumped synchronously on every
+    /// switch-off, captured when a reset notification is queued, and checked
+    /// when it runs — so an ON→OFF→ON flip while the post waits behind earlier
+    /// side effects cannot release it. `resetsDisablesInFlight` covers the
+    /// save window before `featureResetsEnabled` publishes.
+    private var resetsDeliveryGeneration: UInt64 = 0
+    private var resetsDisablesInFlight = 0
     /// Authoritative in-memory alert-evaluation state for this session — NOT
     /// `alertStateStore`. Seeded from the store once in `load()`, then owned
     /// exclusively by `decideAlerts`, which commits to it SYNCHRONOUSLY (no
@@ -737,17 +810,12 @@ final class AppModel: ObservableObject {
             appSettings.$sortByWeeklyReset
         )
         .map { accounts, snapshots, states, sortByWeeklyReset in
-            let mapped = accounts.map { account in
-                let snapshot = snapshots[account.id]
-                let state = states[account.id]
-                    ?? (snapshot == nil ? .unavailable : .current)
-                return AccountPresentation(
-                    account: account,
-                    snapshot: snapshot,
-                    state: state
-                )
-            }
-            return AccountDisplaySort.sorted(mapped, sortByWeeklyReset: sortByWeeklyReset)
+            Self.makePresentations(
+                accounts: accounts,
+                snapshots: snapshots,
+                states: states,
+                sortByWeeklyReset: sortByWeeklyReset
+            )
         }
         .sink { [weak self] presentations in
             self?.presentations = presentations
@@ -796,7 +864,12 @@ final class AppModel: ObservableObject {
             refreshCoordinator.$states
         )
         .sink { [weak self] snapshots, states in
-            guard let self, self.appSettings.usageAlertsEnabled else { return }
+            guard let self else { return }
+            // Switch advice for THIS revision, before its alert decision, so
+            // a crossing's notification is composed against it. Ungated:
+            // advice is presentation, not an alert.
+            self.recomputeSwitchAdvice(snapshots: snapshots, states: states, now: self.now())
+            guard self.appSettings.usageAlertsEnabled else { return }
             // `refreshableAccounts` (not `accounts`) excludes accounts currently
             // being removed: `removeAccount` sets `removingAccountIDs` BEFORE
             // its teardown (`refreshCoordinator.cancel` / `snapshotStore.remove`)
@@ -832,8 +905,31 @@ final class AppModel: ObservableObject {
             // this one, or the history series' monotonic guard rejects it and
             // permanently flips `isProjectionEligible` to false.
             self?.historyStore.record(account: account, snapshot: snapshot)
+            self?.refreshFableVerdict(accountID: account.id, snapshot: snapshot)
+            await self?.applyDetectedPlan(
+                accountID: account.id,
+                detection: snapshot.planDetection,
+                at: snapshot.fetchedAt
+            )
+            self?.refreshPlanInBackground(account: account, snapshot: snapshot)
             await self?.handleAutoStart(account: account, snapshot: snapshot)
         }
+
+        // Everything else switch advice reads — the account list (pause,
+        // removal, order) and settings (thresholds, sort) — recomputes on the
+        // next turn, once the published storage has actually been written.
+        accountStore.$accounts
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.scheduleSwitchAdviceRecompute()
+            }
+            .store(in: &cancellables)
+        appSettings.objectWillChange
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.scheduleSwitchAdviceRecompute()
+            }
+            .store(in: &cancellables)
 
         // On system sleep or memory pressure, release WebViews not backing
         // in-flight work. Started in `load()`, stopped in `stop()`.
@@ -905,12 +1001,17 @@ final class AppModel: ObservableObject {
         account: AccountRecord,
         snapshot: UsageSnapshot
     ) async {
+        // Captured before anything suspends: a warm-up switch-off from here on
+        // invalidates this attempt (see `warmUpStillAllowed`).
+        let warmUpGenerationAtStart = warmUpGeneration
+        guard warmUpStillAllowed(warmUpGenerationAtStart) else { return }
         guard AutoStartPolicy.shouldAutoStart(
             account: account,
             fiveHour: snapshot.fiveHour,
             weekly: snapshot.weekly,
             now: now(),
-            schedule: warmUpSchedule
+            schedule: warmUpSchedule,
+            warmUpEnabled: appSettings.featureWarmUpEnabled
         ) else {
             return
         }
@@ -969,6 +1070,7 @@ final class AppModel: ObservableObject {
                 // (before any await), so it reflects that intent immediately —
                 // bail rather than reserve behind an opt-out and POST.
                 !mutatingAccountIDs.contains(atCommit.id),
+                warmUpStillAllowed(warmUpGenerationAtStart),
                 // `weekly` here is the TRIGGERING snapshot's, exactly as
                 // `fiveHour` is: the refresh is single-flight, so no newer local
                 // observation can exist yet, and re-reading the store would
@@ -983,7 +1085,8 @@ final class AppModel: ObservableObject {
                     fiveHour: snapshot.fiveHour,
                     weekly: snapshot.weekly,
                     now: commitNow,
-                    schedule: warmUpSchedule
+                    schedule: warmUpSchedule,
+                    warmUpEnabled: appSettings.featureWarmUpEnabled
                 )
             else {
                 return
@@ -991,10 +1094,21 @@ final class AppModel: ObservableObject {
             // Reserve BEFORE the irreversible POST: even if the send fails or its
             // result is lost, the policy will not re-fire within this window.
             try await accountStore.reserveAutoStart(id: current.id, at: commitNow)
+            // The reservation suspended: the global switch may have gone off
+            // meanwhile. The reservation stays (harmless — warm-up is off), but
+            // nothing is sent. The same check runs again right before EVERY
+            // POST inside the send (conversation create, completion, retry),
+            // down to the moment the script is dispatched.
+            guard warmUpStillAllowed(warmUpGenerationAtStart) else { return }
             let conversationID = try await sessionManager.sendKeepAlive(
                 prepared: prepared,
                 conversationID: current.keepAliveConversationID,
-                for: current
+                for: current,
+                mayPost: { [weak self] in
+                    guard let self, self.warmUpStillAllowed(warmUpGenerationAtStart) else {
+                        throw CancellationError()
+                    }
+                }
             )
             // The POST landed — the 5h window HAS started. This attempt is now
             // the latest word on the account, so it takes back any earlier
@@ -1023,6 +1137,7 @@ final class AppModel: ObservableObject {
                 do {
                     try await snapshotStore.save(refreshed)
                     historyStore.record(account: current, snapshot: refreshed)
+                    refreshFableVerdict(accountID: current.id, snapshot: refreshed)
                 } catch {}
             }
         } catch is CancellationError {
@@ -1049,6 +1164,113 @@ final class AppModel: ObservableObject {
         return Task { [self] in
             defer { mutatingAccountIDs.remove(accountID) }
             try await accountStore.setAutoStart(id: accountID, enabled: enabled)
+        }
+    }
+
+    /// A user plan choice; nil = "Detect automatically", which
+    /// re-applies this launch's latest reading at once instead of leaving the
+    /// plan blank until the next poll.
+    @MainActor
+    func requestSetPlan(accountID: UUID, plan: PlanTier?) throws -> Task<Void, Error> {
+        try claimAccountMutation(accountID)
+        return Task { [self] in
+            defer { mutatingAccountIDs.remove(accountID) }
+            try await accountStore.setPlan(id: accountID, plan: plan)
+            if plan == nil, let latest = latestPlanDetections[accountID] {
+                try await accountStore.applyDetectedPlan(id: accountID, detection: latest.detection)
+            }
+        }
+    }
+
+    /// Whether the add-account flow should ask "Which plan is this?" for this
+    /// freshly signed-in account.
+    func needsPlanStep(accountID: UUID) -> Bool {
+        guard let account = accounts.first(where: { $0.id == accountID }) else { return false }
+        return PlanStep.isNeeded(for: account)
+    }
+
+    /// One fetch's plan reading. Remembered (for "Detect automatically") and
+    /// applied through the store's serialized queue, which re-judges it
+    /// against the CURRENT record — a user choice that landed first wins.
+    /// Best effort: a removed account or a failed save just drops it.
+    func applyDetectedPlan(accountID: UUID, detection: PlanDetection?, at moment: Date) async {
+        guard
+            let detection,
+            notePlanDetection(accountID: accountID, detection: detection, at: moment),
+            let account = accounts.first(where: { $0.id == accountID }),
+            account.applyingDetectedPlan(detection) != account
+        else { return }
+        try? await accountStore.applyDetectedPlan(id: accountID, detection: detection)
+    }
+
+    /// Remembers a reading for a live account, unless a newer one is already
+    /// known. False = dropped (account gone or going, or an older reading).
+    @discardableResult
+    private func notePlanDetection(accountID: UUID, detection: PlanDetection, at moment: Date) -> Bool {
+        guard
+            !removingAccountIDs.contains(accountID),
+            !alertTombstones.contains(accountID),
+            accounts.contains(where: { $0.id == accountID })
+        else { return false }
+        if let known = latestPlanDetections[accountID], known.at > moment { return false }
+        latestPlanDetections[accountID] = (detection, moment)
+        return true
+    }
+
+    /// `account` as switch advice should size it: the newest plan reading
+    /// (this revision's snapshot or a later background read) applied on the
+    /// fly — a `.user` choice still wins — so a notification composed while
+    /// the plan save is suspended does not use the previous plan.
+    private func withLatestDetectedPlan(
+        _ account: AccountRecord,
+        snapshot: UsageSnapshot?
+    ) -> AccountRecord {
+        var newest = latestPlanDetections[account.id]
+        if let snapshot, let detection = snapshot.planDetection,
+           newest.map({ snapshot.fetchedAt >= $0.at }) ?? true {
+            newest = (detection, snapshot.fetchedAt)
+        }
+        guard let newest else { return account }
+        return account.applyingDetectedPlan(newest.detection)
+    }
+
+    /// Claude reads its plan with a request of its own; it runs here, apart
+    /// from the usage fetch, so a slow list never holds usage up. The read
+    /// goes through the session manager, so a timeout recycles the view like
+    /// any other bridge call; the result is applied through the store.
+    private func refreshPlanInBackground(account: AccountRecord, snapshot: UsageSnapshot) {
+        guard
+            account.provider == .claude,
+            snapshot.organizationID != nil,
+            planRefreshTasks[account.id] == nil
+        else { return }
+        let organizationID = snapshot.organizationID
+        let revision: UInt64 = (planRequestRevision[account.id] ?? 0) &+ 1
+        planRequestRevision[account.id] = revision
+        planRefreshTasks[account.id] = Task { @MainActor [weak self] in
+            defer { self?.planRefreshTasks[account.id] = nil }
+            guard let self else { return }
+            let detection = try? await self.sessionManager.refreshPlanDetection(
+                for: account,
+                snapshot: snapshot
+            )
+            // The reading describes the org it was read for: drop it if the
+            // account has since moved to another workspace (its current
+            // snapshot names a different org) or a newer read superseded it.
+            guard
+                !Task.isCancelled,
+                self.planRequestRevision[account.id] == revision,
+                let current = self.snapshotStore.snapshot(for: account.id)?.organizationID,
+                current == organizationID
+            else { return }
+            await self.applyDetectedPlan(accountID: account.id, detection: detection, at: self.now())
+        }
+    }
+
+    /// TEST barrier: resolves once every background plan read has applied.
+    func flushPlanRefreshes() async {
+        while let pending = planRefreshTasks.values.first {
+            await pending.value
         }
     }
 
@@ -1098,11 +1320,13 @@ final class AppModel: ObservableObject {
         // relevant for pausing (dormancy); resuming needs no such guard.
         if paused {
             pausingAccountIDs.insert(accountID)
+            scheduleSwitchAdviceRecompute()
         }
         return Task { [self] in
             defer {
                 mutatingAccountIDs.remove(accountID)
                 pausingAccountIDs.remove(accountID)
+                scheduleSwitchAdviceRecompute()
             }
             try await accountStore.setPaused(id: accountID, paused: paused)
             // Resume: refresh immediately so the card and data reappear now,
@@ -1142,6 +1366,45 @@ final class AppModel: ObservableObject {
 
     func setMenuBarDisplaysRemaining(_ value: Bool) async throws {
         try await appSettings.setMenuBarDisplaysRemaining(value)
+    }
+
+    func setPopoverLayout(_ value: PopoverLayout) async throws {
+        try await appSettings.setPopoverLayout(value)
+    }
+
+    /// Settings → General → Features. Presentation/gating only: nothing is
+    /// re-evaluated or re-primed here — switch advice recomputes through the
+    /// existing settings subscription, everything else reads the switch live.
+    ///
+    /// Turning warm-up OFF is the one exception to "read live": an attempt
+    /// may already be past its checks, so the intent is recorded
+    /// synchronously here (`warmUpGeneration`, `warmUpDisablesInFlight`)
+    /// before the save suspends — see `warmUpStillAllowed`.
+    func setFeature(_ feature: FeatureSwitch, enabled: Bool) async throws {
+        if feature == .warmUp, !enabled {
+            warmUpGeneration &+= 1
+            warmUpDisablesInFlight += 1
+            defer { warmUpDisablesInFlight -= 1 }
+            try await appSettings.setFeature(feature, enabled: enabled)
+            return
+        }
+        if feature == .resets, !enabled {
+            resetsDeliveryGeneration &+= 1
+            resetsDisablesInFlight += 1
+            defer { resetsDisablesInFlight -= 1 }
+            try await appSettings.setFeature(feature, enabled: enabled)
+            return
+        }
+        try await appSettings.setFeature(feature, enabled: enabled)
+    }
+
+    /// True while a warm-up attempt that captured `generation` may still send:
+    /// the switch is on, no disable is mid-save, and no disable happened since
+    /// the capture (an OFF→ON flip in between still invalidates it).
+    private func warmUpStillAllowed(_ generation: UInt64) -> Bool {
+        appSettings.featureWarmUpEnabled
+            && warmUpDisablesInFlight == 0
+            && warmUpGeneration == generation
     }
 
     // Field-level pass-throughs (not the whole-pair `setThresholds`/
@@ -1674,6 +1937,24 @@ final class AppModel: ObservableObject {
         return appSettings.data.channels(forKey: key).notification
     }
 
+    /// Reset-credit alerts are suppressed while the Resets feature is off.
+    private func featureAllowsDelivery(_ event: AlertEvent) -> Bool {
+        switch event {
+        case .resetCreditAvailable, .resetCreditExpiring:
+            appSettings.featureResetsEnabled && resetsDisablesInFlight == 0
+        default: true
+        }
+    }
+
+    /// A reset notification queued before a Resets switch-off is dead, even
+    /// if the switch has been turned back on since. Other events pass.
+    private func resetsGenerationAllows(_ event: AlertEvent, queuedAt generation: UInt64) -> Bool {
+        switch event {
+        case .resetCreditAvailable, .resetCreditExpiring: resetsDeliveryGeneration == generation
+        default: true
+        }
+    }
+
     // MARK: - Attention drop
 
     /// What is over a configured threshold right now, for the menu-bar drop.
@@ -1753,7 +2034,9 @@ final class AppModel: ObservableObject {
         provider: Provider
     ) {
         guard appSettings.data.dropSnoozed else { return }
-        let resetCreditsDropOn = appSettings.data.channels(
+        // A reset row that the Resets feature hides must not lift the snooze
+        // either — the panel would come back with nothing new on it.
+        let resetCreditsDropOn = appSettings.featureResetsEnabled && appSettings.data.channels(
             forKey: AppSettingsData.resetCreditsKey(provider: provider)
         ).drop
         let somethingNew = events.contains { event in
@@ -1904,7 +2187,10 @@ final class AppModel: ObservableObject {
         // that a later activation could release.
         guard alertsActive else { return }
         let activation = alertsActivationGeneration
-        for event in events {
+        let resetsGeneration = resetsDeliveryGeneration
+        // A feature that is off right now never queues a post: re-enabling it
+        // later must not release what was decided while it was off.
+        for event in events where featureAllowsDelivery(event) {
             let notificationID = AlertMessage.id(for: event, accountID: accountID)
             alertSideEffectQueue.enqueue { [weak self] in
                 guard
@@ -1917,6 +2203,12 @@ final class AppModel: ObservableObject {
                     // honoured. `nil` key = no cell governs this event (reset,
                     // reauth, rate-limit) — those always deliver.
                     self.notificationChannelAllows(event, accountID: accountID),
+                    // Global feature switches gate DELIVERY only; the event was
+                    // still evaluated and recorded, so re-enabling a feature
+                    // does not replay what happened while it was off.
+                    self.featureAllowsDelivery(event),
+                    // …and no switch-off since this was queued (ON→OFF→ON).
+                    self.resetsGenerationAllows(event, queuedAt: resetsGeneration),
                     !self.alertTombstones.contains(accountID),
                     !self.removingAccountIDs.contains(accountID),
                     !self.pausingAccountIDs.contains(accountID),
@@ -1926,10 +2218,18 @@ final class AppModel: ObservableObject {
                 // time — not at enqueue time. A user who enables "hide account
                 // details" while this item waits behind earlier side effects
                 // must not have the already-rendered label/percentage posted.
+                // Switch advice is recomputed at the same moment from the
+                // stores, the pause/removal markers and the clock — not read
+                // from the published value, which only refreshes on a pass or
+                // tick and can still name a target that has since started
+                // pausing or had its window overtaken by a reset.
+                // Only limit crossings use it.
+                let advice: SwitchAdvice? = self.currentAdvice(forAccount: accountID)
                 let (title, body) = AlertMessage.text(
                     for: event,
                     accountLabel: label,
-                    redacted: self.appSettings.redactNotifications
+                    redacted: self.appSettings.redactNotifications,
+                    advice: advice
                 )
                 await self.notificationScheduler.post(
                     id: notificationID,
@@ -1949,6 +2249,11 @@ final class AppModel: ObservableObject {
     /// from the persisted mirror.
     func alertStateForTesting(accountID: UUID) -> AccountAlertState? {
         alertStates[accountID]
+    }
+
+    /// Test-only: the remembered plan reading for `accountID`.
+    func latestPlanDetectionForTesting(accountID: UUID) -> PlanDetection? {
+        latestPlanDetections[accountID]?.detection
     }
 
     /// Test-only: exposes the synchronous posting/activation gate so tests
@@ -1997,6 +2302,12 @@ final class AppModel: ObservableObject {
         sendingKeepAliveAccountIDs.insert(account.id)
         defer { sendingKeepAliveAccountIDs.remove(account.id) }
         errorMessage = "Debug send: warming session…"
+        // Even a manual debug send honours the global warm-up switch.
+        let warmUpGenerationAtStart = warmUpGeneration
+        guard warmUpStillAllowed(warmUpGenerationAtStart) else {
+            errorMessage = "Debug send: Claude warm-up is turned off."
+            return
+        }
         do {
             // Bind the debug send to the warm-up snapshot's org when it
             // succeeded; a failed warm-up falls back to live discovery (nil),
@@ -2009,7 +2320,12 @@ final class AppModel: ObservableObject {
             let conversationID = try await sessionManager.sendKeepAlive(
                 prepared: prepared,
                 conversationID: account.keepAliveConversationID,
-                for: account
+                for: account,
+                mayPost: { [weak self] in
+                    guard let self, self.warmUpStillAllowed(warmUpGenerationAtStart) else {
+                        throw CancellationError()
+                    }
+                }
             )
             try await accountStore.recordAutoStart(
                 id: account.id,
@@ -2181,6 +2497,7 @@ final class AppModel: ObservableObject {
             await performLaunchProfileHygiene()
             // Begin observing sleep / memory-pressure to release idle WebViews.
             systemPowerObserver.start()
+            startSwitchAdviceTimer()
 
             guard startBackgroundRefresh else { return }
             refreshCoordinator.startBackgroundRefresh { [weak self] in
@@ -2206,9 +2523,291 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: Switch advice
+
+    /// Clock tick that ages IN USE into "last used" — nothing else changes
+    /// when the user simply stops working. Started in `load()`, stopped in
+    /// `stop()`.
+    private var switchAdviceTimer: Timer?
+    /// The pending coalesced recompute, if any: a burst of triggers in one
+    /// run-loop turn yields one recompute (and at most one publication).
+    private var switchAdviceRecompute: Task<Void, Never>?
+    static let switchAdviceTickInterval: TimeInterval = 60
+
+    /// The advice whose in-use account is `id` (the account a Warn names).
+    func advice(forAccount id: UUID) -> SwitchAdvice? {
+        switchAdvice.first { $0.fromAccountID == id }
+    }
+
+    /// Advice for `id` as of right now, computed synchronously from the
+    /// stores' current state, the markers and the injected clock — without
+    /// publishing. For consumers that must not act on a value up to a tick old.
+    func currentAdvice(forAccount id: UUID) -> SwitchAdvice? {
+        computeSwitchAdvice(
+            snapshots: snapshotStore.snapshots,
+            states: refreshCoordinator.states,
+            now: now()
+        ).first { $0.fromAccountID == id }
+    }
+
+    /// Recomputes from the stores' current state. The injected clock by default.
+    func recomputeSwitchAdvice(now date: Date? = nil) {
+        recomputeSwitchAdvice(
+            snapshots: snapshotStore.snapshots,
+            states: refreshCoordinator.states,
+            now: date ?? now()
+        )
+    }
+
+    /// The 60 s tick's body (internal so tests can drive it without a timer).
+    func switchAdviceTick() {
+        scheduleSwitchAdviceRecompute()
+    }
+
+    /// TEST barrier: resolves once a scheduled recompute has run.
+    func flushSwitchAdvice() async {
+        while let pending = switchAdviceRecompute {
+            await pending.value
+        }
+    }
+
+    private func scheduleSwitchAdviceRecompute() {
+        guard switchAdviceRecompute == nil else { return }
+        switchAdviceRecompute = Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.switchAdviceRecompute = nil
+            self.recomputeSwitchAdvice()
+        }
+    }
+
+    private func startSwitchAdviceTimer() {
+        guard switchAdviceTimer == nil else { return }
+        let timer = Timer(timeInterval: Self.switchAdviceTickInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.switchAdviceTick()
+            }
+        }
+        timer.tolerance = 5
+        RunLoop.main.add(timer, forMode: .common)
+        switchAdviceTimer = timer
+    }
+
+    /// One pass over the given revision. `snapshots` / `states` are passed in
+    /// because the alert sink runs from `@Published`'s `willSet`, before the
+    /// stores' storage holds them. History is read as it will be once this
+    /// revision's snapshots are recorded (`record` runs after the save), so a
+    /// crossing and the account's first activity in the same refresh are
+    /// seen together. In-memory reads only — no disk on a tick.
+    private func recomputeSwitchAdvice(
+        snapshots: [UUID: UsageSnapshot],
+        states: [UUID: AccountViewState],
+        now date: Date
+    ) {
+        let advice: [SwitchAdvice] = computeSwitchAdvice(snapshots: snapshots, states: states, now: date)
+        if advice != switchAdvice {
+            switchAdvice = advice
+        }
+    }
+
+    private func computeSwitchAdvice(
+        snapshots: [UUID: UsageSnapshot],
+        states: [UUID: AccountViewState],
+        now date: Date
+    ) -> [SwitchAdvice] {
+        // Off (or in-use detection off, which advice is built on): nothing is
+        // advised anywhere — header, notification line, drop arrow, Focus.
+        guard appSettings.features.switchAdviceEffective else { return [] }
+        let advisable: [AccountRecord] = AccountVisibility.visible(accounts).filter { account in
+            !removingAccountIDs.contains(account.id) && !pausingAccountIDs.contains(account.id)
+        }.map { withLatestDetectedPlan($0, snapshot: snapshots[$0.id]) }
+        let presentations: [AccountPresentation] = Self.makePresentations(
+            accounts: advisable,
+            snapshots: snapshots,
+            states: states,
+            sortByWeeklyReset: appSettings.sortByWeeklyReset
+        )
+        // With the lookahead: this pass may run before `record` has seen
+        // the revision's snapshots.
+        let activity: [UUID: ActiveUsage] = ActiveUsageMap.computePerAccount(
+            accounts: advisable,
+            history: historyStore,
+            now: date,
+            including: snapshots
+        )
+        let phases: [UUID: InUsePhase] = Self.inUsePhases(activity, now: date)
+        let settings: AppSettingsData = appSettings.data
+        return SwitchAdvisor.advice(
+            presentations: presentations,
+            phases: phases,
+            thresholds: { provider, kind in settings.thresholds(provider: provider, window: kind) },
+            fableCounts: fableCounter(snapshots: snapshots),
+            now: date
+        )
+    }
+
+    /// Per-account phases (every burning account, not the popover's one
+    /// winner per provider) — the one rule for switch advice and Focus.
+    static func inUsePhases(_ activity: [UUID: ActiveUsage], now date: Date) -> [UUID: InUsePhase] {
+        var phases: [UUID: InUsePhase] = [:]
+        for (id, usage) in activity {
+            phases[id] = InUsePhase.classify(usage, now: date)
+        }
+        return phases
+    }
+
+    /// "Does Fable count for this account": the cached history verdict,
+    /// else the snapshot fallback. In-memory only.
+    private func fableCounter(snapshots: [UUID: UsageSnapshot]) -> (UUID) -> Bool {
+        let verdicts: [UUID: FableUsage.Verdict] = fableVerdicts
+        return { id in
+            FableUsage.counts(verdict: verdicts[id] ?? .unknown, snapshot: snapshots[id])
+        }
+    }
+
+    /// The Focus layout's content as of `date`, from the same inputs switch
+    /// advice uses: per-account phases over non-paused accounts, the cached
+    /// Fable verdicts, the published advice, the alert thresholds (for the
+    /// nearly-spent lines). All presentations — paused ones included — so
+    /// Focus can list them. `pinnedHeroID`: the surface's picked hero.
+    /// In-memory reads only.
+    func focusModel(now date: Date, pinnedHeroID: UUID? = nil) -> FocusModel {
+        let active: [AccountRecord] = visibleAccounts
+        // In-use detection off: no phases, so no IN USE tags and the hero
+        // falls back to the least-headroom account.
+        let activity: [UUID: ActiveUsage] = appSettings.featureInUseEnabled
+            ? ActiveUsageMap.computePerAccount(accounts: active, history: historyStore, now: date)
+            : [:]
+        return FocusModel.make(
+            presentations: presentations,
+            phases: Self.inUsePhases(activity, now: date),
+            advice: switchAdvice,
+            fableCounts: fableCounter(snapshots: snapshotStore.snapshots),
+            thresholds: { [settings = appSettings.data] provider, kind in
+                settings.thresholds(provider: provider, window: kind)
+            },
+            pinnedHeroID: pinnedHeroID,
+            now: date
+        )
+    }
+
+    /// The popover's account list for one revision: store order, then the
+    /// display sort. Shared by `presentations` and switch advice so ties
+    /// resolve in the order the user sees.
+    static func makePresentations(
+        accounts: [AccountRecord],
+        snapshots: [UUID: UsageSnapshot],
+        states: [UUID: AccountViewState],
+        sortByWeeklyReset: Bool
+    ) -> [AccountPresentation] {
+        let mapped: [AccountPresentation] = accounts.map { account in
+            let snapshot = snapshots[account.id]
+            let state = states[account.id]
+                ?? (snapshot == nil ? .unavailable : .current)
+            return AccountPresentation(
+                account: account,
+                snapshot: snapshot,
+                state: state
+            )
+        }
+        return AccountDisplaySort.sorted(mapped, sortByWeeklyReset: sortByWeeklyReset)
+    }
+
+    // MARK: Fable verdict cache
+
+    /// Per-account `FableUsage` verdict from rollup history, hydrated off the
+    /// UI path after each history ingestion so switch advice never reads disk
+    /// on a tick. Deliberately NOT `@Published`: consumers are recomputed via
+    /// `fableVerdictsDidChange()`. A missing entry means "not hydrated yet",
+    /// which `FableUsage.counts` treats like `.unknown`.
+    private(set) var fableVerdicts: [UUID: FableUsage.Verdict] = [:]
+
+    /// The latest in-flight hydration per account. Only the newest generation
+    /// may commit, so an older, slower read can't overwrite a newer verdict.
+    private var fableVerdictRefreshes: [UUID: (generation: Int, task: Task<Void, Never>)] = [:]
+    private var fableVerdictGeneration = 0
+
+    /// Re-derives the account's verdict from history. Called right after
+    /// `historyStore.record` for that snapshot, so the rollup the read sees
+    /// includes it (`loadRecentRollups` overlays the in-memory month).
+    private func refreshFableVerdict(accountID: UUID, snapshot: UsageSnapshot) {
+        guard snapshot.modelWeekly != nil else {
+            // No Fable window → `counts` is false whatever history says; skip
+            // the disk read and forget any verdict from an older shape.
+            fableVerdictRefreshes.removeValue(forKey: accountID)
+            if fableVerdicts.removeValue(forKey: accountID) != nil {
+                fableVerdictsDidChange()
+            }
+            return
+        }
+        fableVerdictGeneration += 1
+        let generation = fableVerdictGeneration
+        let store = historyStore
+        // Only the months that can hold the lookback, both kinds in one pass,
+        // filtered off the main actor — not every retained month twice.
+        let since: Date = now().addingTimeInterval(-FableUsage.lookback)
+        let task = Task { @MainActor [weak self] in
+            let recent = await store.loadRecentRollups(
+                accountID: accountID,
+                kinds: [.weekly, .modelWeekly],
+                since: since
+            )
+            self?.commitFableVerdict(
+                accountID: accountID,
+                generation: generation,
+                weekly: recent[.weekly] ?? [],
+                fable: recent[.modelWeekly] ?? []
+            )
+        }
+        fableVerdictRefreshes[accountID] = (generation, task)
+    }
+
+    private func commitFableVerdict(
+        accountID: UUID,
+        generation: Int,
+        weekly: [UsageHourlyBucket],
+        fable: [UsageHourlyBucket]
+    ) {
+        guard fableVerdictRefreshes[accountID]?.generation == generation else { return }
+        fableVerdictRefreshes.removeValue(forKey: accountID)
+        // The account may have been removed or paused while the read was off
+        // the main actor; a verdict for it would describe nothing advisable.
+        guard
+            let account = accounts.first(where: { $0.id == accountID }),
+            !account.isPaused,
+            !removingAccountIDs.contains(accountID)
+        else { return }
+        let verdict = FableUsage.verdict(weekly: weekly, fable: fable, now: now())
+        guard fableVerdicts[accountID] != verdict else { return }
+        fableVerdicts[accountID] = verdict
+        fableVerdictsDidChange()
+    }
+
+    /// Hook run after every `fableVerdicts` change. Switch advice recomputes
+    /// from here.
+    func fableVerdictsDidChange() {
+        scheduleSwitchAdviceRecompute()
+    }
+
+    /// TEST-ONLY barrier (no production caller): resolves once every
+    /// in-flight verdict hydration has committed or been discarded.
+    func flushFableVerdicts() async {
+        while let pending = fableVerdictRefreshes.values.first {
+            await pending.task.value
+            // A task that lost its generation leaves the newer entry in place;
+            // one whose owner is gone can't clear itself — drop it here.
+            if fableVerdictRefreshes.values.contains(where: { $0.generation == pending.generation }) {
+                fableVerdictRefreshes = fableVerdictRefreshes.filter { $0.value.generation != pending.generation }
+            }
+        }
+    }
+
     func stop() {
         refreshCoordinator.stopBackgroundRefresh()
+        for task in planRefreshTasks.values { task.cancel() }
         systemPowerObserver.stop()
+        switchAdviceTimer?.invalidate()
+        switchAdviceTimer = nil
     }
 
     func snapshot(for accountID: UUID) -> UsageSnapshot? {
@@ -2349,7 +2948,7 @@ final class AppModel: ObservableObject {
             throw AccountStoreError.operationInProgress
         }
         try requireActive(session)
-        let account = AccountRecord(
+        let baseAccount = AccountRecord(
             id: session.accountID,
             provider: session.provider,
             label: trimmedLabel,
@@ -2359,7 +2958,17 @@ final class AppModel: ObservableObject {
             autoStartFiveHour: session.isNewAccount
                 && WarmUpDefaults.autoStartForNewAccount(provider: session.provider)
         )
-        let snapshot = try await sessionManager.fetchUsage(for: account)
+        let snapshot = try await sessionManager.fetchUsage(for: baseAccount)
+        // A new account starts with whatever plan its first fetch read.
+        // Sign-in is the one place that WAITS for Claude's separate plan read
+        // (so the add-account plan step can be prefilled); polling never does.
+        let signInDetection: PlanDetection? = await signInPlanDetection(
+            for: baseAccount,
+            snapshot: snapshot
+        )
+        let account: AccountRecord = signInDetection.map { detection in
+            baseAccount.applyingDetectedPlan(detection)
+        } ?? baseAccount
         try requireActive(session)
         // fetchUsage suspended too — the same no-apply-since-verification
         // guarantee must hold right up to the commit.
@@ -2378,6 +2987,7 @@ final class AppModel: ObservableObject {
                 do {
                     try await snapshotStore.save(snapshot)
                     historyStore.record(account: account, snapshot: snapshot)
+                    refreshFableVerdict(accountID: account.id, snapshot: snapshot)
                 } catch {
                     let snapshotError = error
                     do {
@@ -2390,6 +3000,7 @@ final class AppModel: ObservableObject {
             } else {
                 try await snapshotStore.save(snapshot)
                 historyStore.record(account: account, snapshot: snapshot)
+                refreshFableVerdict(accountID: account.id, snapshot: snapshot)
                 try await accountStore.rename(id: account.id, label: trimmedLabel)
             }
         } catch {
@@ -2426,6 +3037,24 @@ final class AppModel: ObservableObject {
         // timeout recycle was deferred.
         sessionManager.completeDeferredRecycles()
         await refreshCoordinator.cancel(accountID: account.id)
+        // Re-auth keeps the stored record: apply the reading through the
+        // store (never over a user choice). New accounts got it at creation;
+        // this call then only remembers it for "Detect automatically".
+        await applyDetectedPlan(
+            accountID: account.id,
+            detection: signInDetection,
+            at: snapshot.fetchedAt
+        )
+    }
+
+    /// The sign-in fetch's reading, else Claude's separate plan read. Best
+    /// effort: any failure reads as "not read".
+    private func signInPlanDetection(
+        for account: AccountRecord,
+        snapshot: UsageSnapshot
+    ) async -> PlanDetection? {
+        if let detection = snapshot.planDetection { return detection }
+        return (try? await sessionManager.refreshPlanDetection(for: account, snapshot: snapshot)) ?? nil
     }
 
     /// Drops per-session bookkeeping for sessions that no longer exist. Entries are
@@ -2709,6 +3338,10 @@ final class AppModel: ObservableObject {
                 removingAccountIDs.remove(id)
                 profileIDsBeingRemoved.remove(account.webProfileID)
                 mutatingAccountIDs.remove(id)
+                // The account left the advisable set while its marker was
+                // held; a failed / rolled-back removal must bring its advice
+                // back now, not at the next tick.
+                scheduleSwitchAdviceRecompute()
                 // Republish on EVERY exit, and only here — AFTER the markers
                 // above are released. Two reasons it belongs at this exact spot:
                 //
@@ -2851,6 +3484,15 @@ final class AppModel: ObservableObject {
         // Same reasoning, smaller scope: warm-up's recorded failure describes an
         // account that no longer exists.
         autoStartFailures.removeValue(forKey: id)
+        // Its plan readings and any background plan read.
+        latestPlanDetections.removeValue(forKey: id)
+        planRefreshTasks.removeValue(forKey: id)?.cancel()
+        planRequestRevision.removeValue(forKey: id)
+        // Its Fable verdict too; an in-flight hydration for it is discarded at
+        // commit (the account is gone).
+        if fableVerdicts.removeValue(forKey: id) != nil {
+            fableVerdictsDidChange()
+        }
         // Enqueued onto the SAME `alertSideEffectQueue` as every save/post
         // item, AFTER the synchronous tombstone insert above. FIFO ordering
         // guarantees this `remove` runs after any save already enqueued for

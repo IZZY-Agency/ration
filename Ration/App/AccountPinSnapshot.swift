@@ -11,11 +11,20 @@ import Foundation
 @MainActor
 final class AccountPinSnapshot: ObservableObject {
     @Published private(set) var orderingPinByProvider: [Provider: UUID] = [:]
+    /// The account the user picked as Focus's hero on this surface. Lives
+    /// only until the surface is presented again: every capture clears it,
+    /// so closing and reopening returns to the automatic hero.
+    @Published private(set) var focusHeroID: UUID?
+
+    func pinFocusHero(_ id: UUID?) {
+        if focusHeroID != id { focusHeroID = id }
+    }
 
     func refresh(
         from activeAccounts: [UUID: ActiveUsage],
         accounts: [AccountRecord]
     ) {
+        focusHeroID = nil
         var pins: [Provider: UUID] = [:]
         for account in accounts where activeAccounts[account.id] != nil {
             // The detector yields at most one active account per provider, so
@@ -31,9 +40,11 @@ final class AccountPinSnapshot: ObservableObject {
     /// and `MenuBarController.capturePin` route through this single method, so
     /// there is exactly one implementation of "accounts + history + now → pin
     /// state" shared by every presentation surface.
-    func refresh(accounts: [AccountRecord], history: UsageHistoryStore, now: Date) {
+    /// `inUseEnabled` is the In-use detection feature switch: off → no
+    /// account is detected, so nothing is pinned.
+    func refresh(accounts: [AccountRecord], history: UsageHistoryStore, now: Date, inUseEnabled: Bool) {
         refresh(
-            from: ActiveUsageMap.compute(accounts: accounts, history: history, now: now),
+            from: inUseEnabled ? ActiveUsageMap.compute(accounts: accounts, history: history, now: now) : [:],
             accounts: accounts
         )
     }
@@ -46,10 +57,11 @@ final class AccountPinSnapshot: ObservableObject {
     static func captured(
         accounts: [AccountRecord],
         history: UsageHistoryStore,
-        now: Date
+        now: Date,
+        inUseEnabled: Bool
     ) -> AccountPinSnapshot {
         let snapshot = AccountPinSnapshot()
-        snapshot.refresh(accounts: accounts, history: history, now: now)
+        snapshot.refresh(accounts: accounts, history: history, now: now, inUseEnabled: inUseEnabled)
         return snapshot
     }
 

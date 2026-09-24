@@ -75,6 +75,12 @@ struct ClaudeProviderAdapter: ProviderAdapter {
             throw ProviderError.integrationChanged
         }
         let modelWeekly = Self.modelWeeklyWindow(from: payload.limits)
+        // The LAST reading only — never a request here, so a slow or hung
+        // organizations list can't hold up usage. The reading is
+        // refreshed separately through `refreshPlanDetection(for:in:)`.
+        let planDetection = organizationResolver.cachedPlanDetection(
+            organizationID: organizationID
+        )
 
         // The snapshot CARRIES the org its data came from (in memory only —
         // it is excluded from persistence). Auto-start reads it straight off
@@ -88,7 +94,22 @@ struct ClaudeProviderAdapter: ProviderAdapter {
             weekly: weekly,
             modelWeekly: modelWeekly,
             organizationID: organizationID,
-            resetCredits: Self.resetCredits(from: payload, fetchedAt: fetchedAt)
+            resetCredits: Self.resetCredits(from: payload, fetchedAt: fetchedAt),
+            planDetection: planDetection
+        )
+    }
+
+    /// Refreshes the plan of the org `snapshot` was read from, when due
+    /// (resolver cadence). Called apart from the usage fetch; `.timedOut`
+    /// propagates so the caller's timeout recovery recycles the view.
+    func refreshPlanDetection(
+        for snapshot: UsageSnapshot,
+        in webView: WKWebView
+    ) async throws -> PlanDetection? {
+        guard let organizationID = snapshot.organizationID else { return nil }
+        return try await organizationResolver.refreshPlanDetection(
+            organizationID: organizationID,
+            in: webView
         )
     }
 

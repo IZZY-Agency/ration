@@ -93,7 +93,8 @@ struct OnboardingView: View {
             OnboardingConnectStep(
                 onSelect: startSignIn,
                 isWaitingForSignIn: isWaitingForSignIn,
-                signInError: flow.signInError
+                signInError: flow.signInError,
+                warmUpEnabled: model.settings.featureWarmUpEnabled
             )
         case .launchAtLogin:
             OnboardingLaunchAtLoginStep(launchAtLogin: launchAtLogin)

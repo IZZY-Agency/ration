@@ -122,6 +122,42 @@ final class ChatGPTProviderAdapterTests: XCTestCase {
         )
     }
 
+    private func fetchSnapshot(planTypeJSON: String) async throws -> UsageSnapshot {
+        let client = WebUsageClient { _, _, _ in
+            [
+                "status": 200,
+                "retryAfter": NSNull(),
+                "body": """
+                {
+                  \(planTypeJSON)
+                  "rate_limit": {
+                    "primary_window": {
+                      "used_percent": 10,
+                      "limit_window_seconds": 604800,
+                      "reset_at": 1784487780
+                    },
+                    "secondary_window": null
+                  }
+                }
+                """
+            ]
+        }
+        let adapter = ChatGPTProviderAdapter(client: client, prepareWebView: { _ in })
+        return try await adapter.fetchUsage(accountID: UUID(), in: WKWebView())
+    }
+
+    func testFetchReadsPlanType() async throws {
+        let prolite = try await fetchSnapshot(planTypeJSON: "\"plan_type\": \"prolite\",")
+        XCTAssertEqual(prolite.planDetection, .tier(.chatGPTPro5x))
+        let team = try await fetchSnapshot(planTypeJSON: "\"plan_type\": \"team\",")
+        XCTAssertEqual(team.planDetection, .unrecognized)
+        let absent = try await fetchSnapshot(planTypeJSON: "")
+        XCTAssertNil(absent.planDetection)
+        let wrongShape = try await fetchSnapshot(planTypeJSON: "\"plan_type\": 7,")
+        XCTAssertNil(wrongShape.planDetection, "a wrong-shaped plan never fails the usage decode")
+        XCTAssertNotNil(wrongShape.weekly)
+    }
+
     func testLocalRedactedCaptureContainsVerifiedChatGPTUsageShape() throws {
         let environmentKey = "RATION_CHATGPT_CONTRACT_FIXTURE"
         guard

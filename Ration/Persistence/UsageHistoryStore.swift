@@ -23,10 +23,18 @@ actor HistoryFileIO {
     /// `guard let data = try? …` behavior) — unreadable is not corrupt.
     /// Writes are atomic, so a read concurrent with a persist sees an
     /// old-or-new complete file, never a torn one.
-    func readFiles(inDirectory dir: URL, prefix: String, suffix: String) -> [HistoryFilePayload] {
+    /// `minimumName`, when set, skips every entry that sorts before it —
+    /// with `rollup-YYYY-MM.json` names, "only this month and later".
+    func readFiles(
+        inDirectory dir: URL,
+        prefix: String,
+        suffix: String,
+        minimumName: String? = nil
+    ) -> [HistoryFilePayload] {
         guard let entries = try? FileManager.default.contentsOfDirectory(atPath: dir.path(percentEncoded: false)) else { return [] }
         var result: [HistoryFilePayload] = []
         for entry in entries.sorted() where entry.hasPrefix(prefix) && entry.hasSuffix(suffix) {
+            if let minimumName, entry < minimumName { continue }
             let url = dir.appending(path: entry)
             guard let data = try? Data(contentsOf: url) else { continue }
             result.append(HistoryFilePayload(url: url, data: data))
@@ -356,6 +364,94 @@ final class UsageHistoryStore: ObservableObject {
         return byHourStart.values.sorted { $0.hourStart < $1.hourStart }
     }
 
+    /// Bounded read for the Fable verdict: `kinds` from only the rollup
+    /// months that can hold a bucket at or after `since` — the cutoff month
+    /// and the one before it, for files captured in another time zone (older
+    /// months are neither read nor decoded), filtered to `since` off the main actor.
+    /// Same barrier, month-change re-read, quarantine and live-month overlay
+    /// as `loadRollups`. Each kind's buckets are sorted by `hourStart`.
+    func loadRecentRollups(
+        accountID: UUID,
+        kinds: [UsageWindowKind],
+        since: Date
+    ) async -> [UsageWindowKind: [UsageHourlyBucket]] {
+        await persistTail.value // ensure pending writes are on disk
+        let dir = rootDirectory.appending(path: accountID.uuidString, directoryHint: .isDirectory)
+        // Files are named in their CAPTURE time zone, which may differ from
+        // today's: after a zone change the month before the cutoff month can
+        // still hold in-window buckets. Start one month earlier; the
+        // absolute-time `since` filter drops what is too old.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let monthBefore: Date = calendar.date(byAdding: .month, value: -1, to: since) ?? since
+        let minimumName = "rollup-\(monthKey(for: monthBefore)).json"
+        let monthKeyBeforeRead = currentMonths[accountID]?.key
+        let files = await writer.readFiles(
+            inDirectory: dir, prefix: "rollup-", suffix: ".json", minimumName: minimumName
+        )
+        await afterRollupScan?() // test-only interleave seam; nil in production
+        var decoded = await Self.decodeRecentRollups(files, kinds: kinds, since: since)
+        if currentMonths[accountID]?.key != monthKeyBeforeRead {
+            await persistTail.value
+            let refreshed = await writer.readFiles(
+                inDirectory: dir, prefix: "rollup-", suffix: ".json", minimumName: minimumName
+            )
+            decoded = await Self.decodeRecentRollups(refreshed, kinds: kinds, since: since)
+        }
+
+        let liveMonthURL = currentMonths[accountID].map { rollupFileURL(accountID, key: $0.key) }
+        for url in decoded.corruptURLs where url != liveMonthURL {
+            quarantine(url)
+        }
+
+        var result: [UsageWindowKind: [UsageHourlyBucket]] = [:]
+        for kind in kinds {
+            var byHourStart = decoded.byKind[kind] ?? [:]
+            if let month = currentMonths[accountID] {
+                for bucket in month.buckets(for: kind).values where bucket.hourStart >= since {
+                    byHourStart[bucket.hourStart] = bucket
+                }
+            }
+            result[kind] = byHourStart.values.sorted { $0.hourStart < $1.hourStart }
+        }
+        return result
+    }
+
+    /// Off-main decode for `loadRecentRollups`: every file decoded once for
+    /// all `kinds`, buckets before `since` dropped.
+    nonisolated static func decodeRecentRollups(
+        _ files: [HistoryFilePayload],
+        kinds: [UsageWindowKind],
+        since: Date
+    ) async -> (byKind: [UsageWindowKind: [Date: UsageHourlyBucket]], corruptURLs: [URL]) {
+        let decoder = Self.decoder()
+        var byKind: [UsageWindowKind: [Date: UsageHourlyBucket]] = [:]
+        var corrupt: [URL] = []
+        for file in files {
+            do {
+                let env = try decoder.decode(UsageHistoryEnvelope<RollupMonthData>.self, from: file.data)
+                guard env.version == 1 else {
+                    corrupt.append(file.url)
+                    continue
+                }
+                for kind in kinds {
+                    let bucketsForKind: [UsageHourlyBucket]
+                    switch kind {
+                    case .fiveHour: bucketsForKind = env.data.fiveHour
+                    case .weekly: bucketsForKind = env.data.weekly
+                    case .modelWeekly: bucketsForKind = env.data.modelWeekly
+                    }
+                    for bucket in bucketsForKind where bucket.hourStart >= since {
+                        byKind[kind, default: [:]][bucket.hourStart] = bucket
+                    }
+                }
+            } catch {
+                corrupt.append(file.url)
+            }
+        }
+        return (byKind, corrupt)
+    }
+
     /// Off-main decode + merge of rollup files (following the
     /// off-main-decode pattern: `nonisolated async` so it executes off the
     /// caller's actor, `Sendable` payloads only).
@@ -437,6 +533,29 @@ final class UsageHistoryStore: ObservableObject {
 
     func rawSamples(accountID: UUID, kind: UsageWindowKind) -> [UsageHistorySample] {
         rawSeries[accountID]?[kind]?.samples ?? []
+    }
+
+    /// The raw samples as they WILL read once `snapshot` is recorded, without
+    /// recording it: the same ingest rules as `record`, applied to a copy.
+    /// A snapshot already recorded (or older than the series) leaves the
+    /// samples unchanged. Lets a pass that runs between a snapshot's save and
+    /// its `record` (the alert sink) see that snapshot's activity.
+    func rawSamples(
+        accountID: UUID,
+        kind: UsageWindowKind,
+        provider: Provider,
+        including snapshot: UsageSnapshot?
+    ) -> [UsageHistorySample] {
+        var series = rawSeries[accountID]?[kind] ?? UsageWindowSeries(kind: kind)
+        guard let snapshot, let window = snapshot.window(for: kind) else { return series.samples }
+        let sample = UsageHistorySample(
+            ts: snapshot.fetchedAt,
+            remaining: window.remainingFraction,
+            resetsAt: window.resetsAt
+        )
+        let isClaudeFiveHour: Bool = provider == .claude && kind == .fiveHour
+        _ = series.ingest(sample, isClaudeFiveHour: isClaudeFiveHour)
+        return series.samples
     }
 
     func remove(accountID: UUID) async {

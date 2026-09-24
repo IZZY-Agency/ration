@@ -19,11 +19,15 @@ struct AccountDetailPauseState {
 struct AccountDetailView: View {
     let presentation: AccountPresentation
     var activeUsage: ActiveUsage? = nil
+    /// Global feature switches: Resets hides the Resets section; Claude
+    /// warm-up off locks the Auto-start toggle (its stored value is kept).
+    var features: FeatureSwitches = .allOn
     var now: Date = .now
     let onReauthenticate: () -> Void
     let onRemove: () -> Void
     let onSetAutoStart: (Bool) -> Void
     let onSetBillingRenewalDay: (Int?) -> Void
+    let onSetPlan: (PlanTier?) -> Void
     let onSetPaused: (Bool) -> Void
     let onDebugSend: () -> Void
 
@@ -33,6 +37,7 @@ struct AccountDetailView: View {
     init(
         presentation: AccountPresentation,
         activeUsage: ActiveUsage? = nil,
+        features: FeatureSwitches = .allOn,
         now: Date = .now,
         onRename: @escaping @MainActor (String) async throws -> Void,
         onRenameError: @escaping @MainActor (Error?) -> Void,
@@ -40,16 +45,19 @@ struct AccountDetailView: View {
         onRemove: @escaping () -> Void,
         onSetAutoStart: @escaping (Bool) -> Void,
         onSetBillingRenewalDay: @escaping (Int?) -> Void,
+        onSetPlan: @escaping (PlanTier?) -> Void,
         onSetPaused: @escaping (Bool) -> Void,
         onDebugSend: @escaping () -> Void
     ) {
         self.presentation = presentation
         self.activeUsage = activeUsage
+        self.features = features
         self.now = now
         self.onReauthenticate = onReauthenticate
         self.onRemove = onRemove
         self.onSetAutoStart = onSetAutoStart
         self.onSetBillingRenewalDay = onSetBillingRenewalDay
+        self.onSetPlan = onSetPlan
         self.onSetPaused = onSetPaused
         self.onDebugSend = onDebugSend
         // Created once per account: `SettingsView` gives this view `.id(id)`,
@@ -95,10 +103,16 @@ struct AccountDetailView: View {
                         )
                     )
                     .accessibilityIdentifier("autoStartToggle")
-                    .disabled(pauseState.disablesAutomationAndBilling)
+                    .disabled(pauseState.disablesAutomationAndBilling || !features.warmUp)
                     Text("Sends a short message when the 5h window resets, so its countdown starts right away.")
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
+                    if !features.warmUp {
+                        Text(FeatureSwitch.warmUpOffNote)
+                            .font(Theme.mono(12))
+                            .foregroundStyle(Theme.warn)
+                            .accessibilityIdentifier("autoStartWarmUpOffNote")
+                    }
                     #if DEBUG
                     Button("Send test keep-alive now (debug)", action: onDebugSend)
                         .font(Theme.mono(12))
@@ -107,7 +121,8 @@ struct AccountDetailView: View {
                 }
             }
 
-            if account.provider != .cursor,
+            if features.resets,
+               account.provider != .cursor,
                let items = presentation.snapshot?.resetCredits?.unexpired(at: now), !items.isEmpty {
                 Section(SettingsSectionTitle.resets) {
                     ForEach(items, id: \.id) { credit in
@@ -136,6 +151,24 @@ struct AccountDetailView: View {
             // an account is retained untouched — it is simply not consulted.
             if BillingCycleEligibility.supports(account.provider) {
             Section(SettingsSectionTitle.billing) {
+                if !PlanTier.options(for: account.provider).isEmpty {
+                    Picker(
+                        "Plan",
+                        selection: Binding(
+                            get: { PlanChoice.selection(for: account) },
+                            set: { onSetPlan(PlanChoice.plan(forSelection: $0)) }
+                        )
+                    ) {
+                        Text(PlanChoice.automaticTitle(for: account)).tag(PlanChoice.automatic)
+                        ForEach(PlanTier.options(for: account.provider), id: \.self) { tier in
+                            Text(tier.displayName).tag(tier.rawValue)
+                        }
+                    }
+                    .accessibilityIdentifier("planPicker")
+                    Text("Plans differ in size, so switch advice compares what's left in absolute terms, not just percentages.")
+                        .font(Theme.mono(12))
+                        .foregroundStyle(Theme.creamDim)
+                }
                 Picker(
                     "Renewal day",
                     selection: Binding(

@@ -13,6 +13,8 @@ struct GeneralDetailView: View {
     let onSetShowInUseInMenuBar: (Bool) -> Void
     let onSetMenuBarWindow: (Provider, UsageWindowKind) -> Void
     let onSetMenuBarDisplaysRemaining: (Bool) -> Void
+    let onSetPopoverLayout: (PopoverLayout) -> Void
+    var onSetFeature: (FeatureSwitch, Bool) -> Void = { _, _ in }
     let onOpenSetupGuide: () -> Void
     let onAllowNotifications: () -> Void
     @Environment(\.openURL) private var openURL
@@ -28,6 +30,19 @@ struct GeneralDetailView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("appearancePicker")
+
+                Picker(
+                    "Layout",
+                    selection: Self.layoutBinding(settings: settings, onSet: onSetPopoverLayout)
+                ) {
+                    ForEach(PopoverLayout.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("popoverLayoutPicker")
+
+                Text("Focus shows the account you're on as one number, where to go next, and the rest in a line. Applies to the popover and the ⌥⌘U window.")
+                    .font(Theme.mono(12))
+                    .foregroundStyle(Theme.creamDim)
 
                 LabeledContent("Open window shortcut") {
                     Text("⌥⌘U")
@@ -149,6 +164,22 @@ struct GeneralDetailView: View {
                 }
             }
 
+            Section(SettingsSectionTitle.features) {
+                ForEach(FeatureSwitch.allCases) { feature in
+                    let features = settings.features
+                    Toggle(
+                        feature.title,
+                        isOn: Self.featureBinding(feature, settings: settings, onSet: onSetFeature)
+                    )
+                    .disabled(!feature.isAvailable(in: features))
+                    .accessibilityIdentifier("featureToggle-\(feature.rawValue)")
+
+                    Text(feature.isAvailable(in: features) ? feature.summary : FeatureSwitch.switchAdviceNeedsInUseNote)
+                        .font(Theme.mono(12))
+                        .foregroundStyle(feature.isAvailable(in: features) ? Theme.creamDim : Theme.warn)
+                }
+            }
+
             Section(SettingsSectionTitle.menuBar) {
                 Toggle(
                     "Show usage rings in the menu bar",
@@ -217,5 +248,32 @@ struct GeneralDetailView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.ink)
         .onAppear { launchAtLogin.refresh() }
+    }
+
+    /// One Features row's toggle: reads the published switch, writes only
+    /// through the callback (which persists via `AppModel`).
+    static func featureBinding(
+        _ feature: FeatureSwitch,
+        settings: AppSettings,
+        onSet: @escaping (FeatureSwitch, Bool) -> Void
+    ) -> Binding<Bool> {
+        Binding(
+            get: { feature.isOn(in: settings.features) },
+            set: { onSet(feature, $0) }
+        )
+    }
+
+    /// The Layout picker's selection: reads the published setting, writes
+    /// only through the callback (which persists via `AppModel`).
+    static func layoutBinding(
+        settings: AppSettings,
+        onSet: @escaping (PopoverLayout) -> Void
+    ) -> Binding<PopoverLayout> {
+        Binding(
+            get: { settings.popoverLayout },
+            set: { layout in
+                onSet(layout)
+            }
+        )
     }
 }

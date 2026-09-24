@@ -11,6 +11,19 @@ protocol ProviderAdapter {
         accountID: UUID,
         in webView: WKWebView
     ) async throws -> UsageSnapshot
+    /// A plan reading that is NOT part of the usage fetch (Claude reads it
+    /// from a separate request). nil = nothing new. Default: none.
+    func refreshPlanDetection(
+        for snapshot: UsageSnapshot,
+        in webView: WKWebView
+    ) async throws -> PlanDetection?
+}
+
+extension ProviderAdapter {
+    func refreshPlanDetection(
+        for snapshot: UsageSnapshot,
+        in webView: WKWebView
+    ) async throws -> PlanDetection? { nil }
 }
 
 enum ProviderResponseValidator {

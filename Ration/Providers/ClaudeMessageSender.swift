@@ -16,6 +16,10 @@ struct ClaudeMessageSender {
         case rejected(status: Int)
     }
 
+    /// Runs immediately before each POST is dispatched; throwing vetoes it.
+    /// The warm-up caller uses it so a global switch-off lands even mid-send.
+    typealias PostGate = @MainActor () throws -> Void
+
     struct Prepared: Equatable {
         let organizationID: String
         let model: String
@@ -72,6 +76,7 @@ struct ClaudeMessageSender {
         prepared: Prepared,
         conversationID: UUID?,
         prompt: String = "Keeping this window active.",
+        mayPost: PostGate? = nil,
         in webView: WKWebView
     ) async throws -> UUID {
         // The completion endpoint 404s on an unknown conversation — it does not
@@ -80,22 +85,32 @@ struct ClaudeMessageSender {
         if let conversationID {
             conversation = conversationID
         } else {
-            conversation = try await createConversation(prepared: prepared, in: webView)
+            conversation = try await createConversation(
+                prepared: prepared,
+                mayPost: mayPost,
+                in: webView
+            )
         }
         let status = try await postCompletion(
             prepared: prepared,
             conversation: conversation,
             prompt: prompt,
+            mayPost: mayPost,
             in: webView
         )
         if status == 404 {
             // Stored conversation is gone (deleted or stale) — create a fresh one
             // and retry the completion once.
-            let fresh = try await createConversation(prepared: prepared, in: webView)
+            let fresh = try await createConversation(
+                prepared: prepared,
+                mayPost: mayPost,
+                in: webView
+            )
             let retryStatus = try await postCompletion(
                 prepared: prepared,
                 conversation: fresh,
                 prompt: prompt,
+                mayPost: mayPost,
                 in: webView
             )
             guard (200..<300).contains(retryStatus) else {
@@ -112,11 +127,13 @@ struct ClaudeMessageSender {
     /// Creates the reusable keep-alive conversation with a client-generated uuid.
     private func createConversation(
         prepared: Prepared,
+        mayPost: PostGate?,
         in webView: WKWebView
     ) async throws -> UUID {
         // Check right before the POST so a cancelled auto-start does not create
         // a stray blank conversation on the account.
         try Task.checkCancellation()
+        try mayPost?()
         let uuid = UUID()
         let body: [String: Any] = [
             "uuid": uuid.uuidString.lowercased(),
@@ -128,6 +145,7 @@ struct ClaudeMessageSender {
             status = try await client.postJSON(
                 path: path,
                 bodyJSON: try Self.jsonString(from: body),
+                mayDispatch: mayPost,
                 in: webView
             ).status
         } catch is CancellationError {
@@ -152,11 +170,13 @@ struct ClaudeMessageSender {
         prepared: Prepared,
         conversation: UUID,
         prompt: String,
+        mayPost: PostGate?,
         in webView: WKWebView
     ) async throws -> Int {
         // Check right before the irreversible POST so a cancelled auto-start
         // (e.g. account removal mid-refresh) cannot send.
         try Task.checkCancellation()
+        try mayPost?()
         let body: [String: Any] = [
             "prompt": prompt,
             "model": prepared.model,
@@ -173,6 +193,7 @@ struct ClaudeMessageSender {
             return try await client.postJSON(
                 path: path,
                 bodyJSON: try Self.jsonString(from: body),
+                mayDispatch: mayPost,
                 in: webView
             ).status
         } catch is CancellationError {

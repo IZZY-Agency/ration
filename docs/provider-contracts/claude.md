@@ -39,6 +39,28 @@ The resolved id is memoized in memory per account for the fallback steps only
 memo and re-resolves once with that org excluded. Nothing is persisted to
 disk.
 
+### Plan detection (live-verified 2026-09-24)
+
+After a successful usage fetch the adapter reads the RESOLVED org's
+`rate_limit_tier` and `capabilities` from `GET /api/organizations` (the same
+list as above; cached per org uuid for 30 minutes in the resolver, and
+refreshed for free whenever resolution itself decodes the list). Verified on
+a Max 20x account: `rate_limit_tier: "default_claude_max_20x"`,
+`capabilities: ["chat", "claude_max"]`.
+
+| `rate_limit_tier` | Plan |
+| --- | --- |
+| `default_claude_max_20x` | Max 20x (verified) |
+| `default_claude_max_5x` | Max 5x (inferred) |
+| other `default_claude_*` without "max", and no `claude_max` capability | Pro (inferred) |
+| anything else | unknown — logged once (`NSLog`, the raw tier only, no account data) |
+
+Best effort: a failed or wrong-shaped list never fails the usage fetch
+(`rate_limit_tier` of the wrong type reads as absent and never makes the org
+element undecodable for resolution). The plan lands on `AccountRecord.plan`
+with `planSource: detected`; a user's own choice (`planSource: user`) is
+never overwritten. An unknown value clears a previously detected plan.
+
 ## Response fields used
 
 ```text

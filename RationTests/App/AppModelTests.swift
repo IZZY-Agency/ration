@@ -2296,6 +2296,13 @@ final class AppModelTests: XCTestCase {
     /// one is the actual message send, so that is what "one send" counts.
     private final class WarmUpSendCounter {
         var sends = 0
+        /// Every POST (conversation create AND completion) that reached the page.
+        var posts = 0
+        /// Runs inside the evaluator for each POST while it is in flight —
+        /// lets a test flip the switch mid-send. Synchronous on purpose: the
+        /// stub clients' zero `sleep` makes any suspension here lose the
+        /// `bounded` race and read as a timeout.
+        var onPost: (@MainActor (String) -> Void)?
     }
 
     /// Same script-routing evaluator as
@@ -2306,9 +2313,12 @@ final class AppModelTests: XCTestCase {
         WebUsageClient(
             evaluator: { script, arguments, _ in
                 if script.contains("method: \"POST\"") {
-                    if (arguments["path"] as? String)?.hasSuffix("/completion") == true {
+                    let path = arguments["path"] as? String ?? ""
+                    counter.posts += 1
+                    if path.hasSuffix("/completion") {
                         counter.sends += 1
                     }
+                    counter.onPost?(path)
                     return ["status": 200, "retryAfter": NSNull(), "body": ""]
                 }
                 if script.contains("getEntriesByType") {
@@ -2401,6 +2411,392 @@ final class AppModelTests: XCTestCase {
         )
     }
 
+    /// The global Claude warm-up switch off: no send, the account's own
+    /// Auto-start choice untouched; back on, the next refresh sends.
+    func testWarmUpSwitchOffSendsNothingAndKeepsTheAccountChoice() async throws {
+        let counter = WarmUpSendCounter()
+        let client = makeWarmUpSendClient(counter: counter)
+        let claudeAdapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
+        let messageSender = ClaudeMessageSender(client: client)
+        let fixture = try makeFixture(adapters: [claudeAdapter], messageSender: messageSender)
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        try await fixture.model.setFeature(.warmUp, enabled: false)
+
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(counter.sends, 0, "warm-up off: no account warms up")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        XCTAssertTrue(account.autoStartFiveHour, "the per-account choice is kept")
+        XCTAssertNil(account.lastAutoStartedAt, "nothing was reserved")
+        XCTAssertNil(fixture.model.warmUpBanner)
+
+        try await fixture.model.setFeature(.warmUp, enabled: true)
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(counter.sends, 1, "back on: the next eligible refresh sends")
+    }
+
+    // MARK: - The plan read runs apart from usage
+
+    /// Claude's plan read hangs on a refresh: usage still lands, and the
+    /// read's timeout reaches the recycle path (the view is torn down) instead
+    /// of being swallowed; the stored plan is left alone.
+    func testHungPlanReadDoesNotBlockUsageAndRecyclesTheView() async throws {
+        final class Mode { var hangList = false; var clock = Date(timeIntervalSince1970: 1_000) }
+        let mode = Mode()
+        let organizationID = UUID().uuidString.lowercased()
+        let client = WebUsageClient(
+            evaluator: { script, arguments, _ in
+                if script.contains("lastActiveOrg") { return organizationID }
+                if arguments["path"] as? String == "/api/organizations" {
+                    if mode.hangList {
+                        await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                    }
+                    return [
+                        "status": 200, "retryAfter": NSNull(),
+                        "body": #"[{"uuid":"\#(organizationID)","capabilities":["chat"],"rate_limit_tier":"default_claude_max_5x"}]"#
+                    ]
+                }
+                return [
+                    "status": 200, "retryAfter": NSNull(),
+                    "body": #"{"five_hour":{"utilization":5,"resets_at":null},"seven_day":{"utilization":53,"resets_at":null}}"#
+                ]
+            },
+            sleep: { _ in }
+        )
+        let adapter = ClaudeProviderAdapter(
+            client: client,
+            now: { mode.clock },
+            prepareWebView: { _ in },
+            organizationResolver: ClaudeOrganizationResolver(client: client, now: { mode.clock })
+        )
+        let fixture = try makeFixture(adapters: [adapter], now: { mode.clock })
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        XCTAssertEqual(account.plan, .claudeMax5x, "sign-in waits for the plan read")
+
+        mode.clock = mode.clock.addingTimeInterval(ClaudeOrganizationResolver.planCacheLifetime + 1)
+        mode.hangList = true
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(
+            fixture.model.snapshot(for: account.id)?.fetchedAt, mode.clock,
+            "usage landed despite the hung plan read"
+        )
+        await fixture.model.flushPlanRefreshes()
+
+        let view = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+        XCTAssertTrue(
+            view.loadedRequests.contains { $0.url?.absoluteString == "about:blank" },
+            "the plan read's timeout recycles the view"
+        )
+        XCTAssertEqual(fixture.model.accounts.first?.plan, .claudeMax5x, "a timeout is not a new reading")
+    }
+
+    // MARK: - Late plan reads
+
+    /// A Claude client whose organizations list can be HELD (then released
+    /// as a timeout or as a Max 20x list) and whose active org can switch.
+    @MainActor private final class PlanReadMode {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        var org = UUID().uuidString.lowercased()
+        var holdList = false
+        var held: CheckedContinuation<Bool, Never>?
+        var heldSignal: CheckedContinuation<Void, Never>?
+        var usageFetches = 0
+
+        func waitUntilHeld() async {
+            if held != nil { return }
+            await withCheckedContinuation { heldSignal = $0 }
+        }
+
+        /// `timeout`: the held read ends as a bridge timeout; else it answers.
+        func release(timeout: Bool) {
+            held?.resume(returning: timeout)
+            held = nil
+        }
+    }
+
+    private func makePlanReadFixture(_ mode: PlanReadMode) async throws -> (Fixture, AccountRecord) {
+        let client = WebUsageClient(
+            evaluator: { script, arguments, _ in
+                if script.contains("lastActiveOrg") { return mode.org }
+                let path = arguments["path"] as? String ?? ""
+                if path == "/api/organizations" {
+                    let listedOrg = mode.org
+                    if mode.holdList {
+                        mode.holdList = false
+                        let timeout = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                            mode.held = continuation
+                            mode.heldSignal?.resume()
+                            mode.heldSignal = nil
+                        }
+                        if timeout { throw WebUsageClientError.timedOut }
+                        return [
+                            "status": 200, "retryAfter": NSNull(),
+                            "body": #"[{"uuid":"\#(listedOrg)","capabilities":["chat"],"rate_limit_tier":"default_claude_max_20x"}]"#
+                        ]
+                    }
+                    return [
+                        "status": 200, "retryAfter": NSNull(),
+                        "body": #"[{"uuid":"\#(listedOrg)","capabilities":["chat"],"rate_limit_tier":"default_claude_max_5x"}]"#
+                    ]
+                }
+                mode.usageFetches += 1
+                return [
+                    "status": 200, "retryAfter": NSNull(),
+                    "body": #"{"five_hour":{"utilization":5,"resets_at":null},"seven_day":{"utilization":53,"resets_at":null}}"#
+                ]
+            },
+            sleep: { _ in try await Task.sleep(for: .seconds(600)) }
+        )
+        let adapter = ClaudeProviderAdapter(
+            client: client,
+            now: { mode.clock },
+            prepareWebView: { _ in },
+            organizationResolver: ClaudeOrganizationResolver(client: client, now: { mode.clock })
+        )
+        let fixture = try makeFixture(adapters: [adapter], now: { mode.clock })
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        XCTAssertEqual(account.plan, .claudeMax5x, "premise: sign-in read the plan")
+        return (fixture, account)
+    }
+
+    /// A plan read that times out AFTER a newer usage refresh started on the
+    /// same view must not tear that view down: usage stays fresh.
+    func testLatePlanTimeoutDoesNotRecycleAViewANewerRefreshIsUsing() async throws {
+        let mode = PlanReadMode()
+        let (fixture, account) = try await makePlanReadFixture(mode)
+        defer { fixture.removeFiles() }
+        let view = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+
+        mode.clock = mode.clock.addingTimeInterval(ClaudeOrganizationResolver.planCacheLifetime + 1)
+        mode.holdList = true
+        await fixture.model.refreshAll(reason: .manual)
+        await mode.waitUntilHeld()
+
+        mode.clock = mode.clock.addingTimeInterval(60)
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(fixture.model.snapshot(for: account.id)?.fetchedAt, mode.clock, "the newer refresh succeeded")
+
+        mode.release(timeout: true)
+        await fixture.model.flushPlanRefreshes()
+
+        XCTAssertFalse(
+            view.loadedRequests.contains { $0.url?.absoluteString == "about:blank" },
+            "the view the newer refresh used is not torn down"
+        )
+        let viewsBefore = fixture.profileManager.madeProfileIDs.count
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(fixture.profileManager.madeProfileIDs.count, viewsBefore, "the cached view is still in use")
+        let state = fixture.model.presentations.first { $0.account.id == account.id }?.state
+        XCTAssertEqual(state, .current, "usage is fresh")
+    }
+
+    /// A plan read for org A that lands after the account moved to org B is
+    /// dropped: it describes a workspace the account no longer reads.
+    func testLatePlanReadForAPreviousOrgIsDropped() async throws {
+        let mode = PlanReadMode()
+        let (fixture, account) = try await makePlanReadFixture(mode)
+        defer { fixture.removeFiles() }
+
+        mode.clock = mode.clock.addingTimeInterval(ClaudeOrganizationResolver.planCacheLifetime + 1)
+        mode.holdList = true
+        await fixture.model.refreshAll(reason: .manual)
+        await mode.waitUntilHeld()
+
+        // Workspace switch: the next refresh reads org B.
+        let orgA = mode.org
+        mode.org = UUID().uuidString.lowercased()
+        mode.clock = mode.clock.addingTimeInterval(60)
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertNotEqual(fixture.model.snapshot(for: account.id)?.organizationID, orgA, "premise")
+
+        mode.release(timeout: false)   // org A's list answers Max 20x
+        await fixture.model.flushPlanRefreshes()
+
+        XCTAssertEqual(fixture.model.accounts.first?.plan, .claudeMax5x, "org A's late reading is not applied")
+        XCTAssertNotEqual(fixture.model.latestPlanDetectionForTesting(accountID: account.id), .tier(.claudeMax20x))
+    }
+
+    /// Control: the same late reading IS applied when the org is unchanged.
+    func testLatePlanReadForTheCurrentOrgIsApplied() async throws {
+        let mode = PlanReadMode()
+        let (fixture, _) = try await makePlanReadFixture(mode)
+        defer { fixture.removeFiles() }
+
+        mode.clock = mode.clock.addingTimeInterval(ClaudeOrganizationResolver.planCacheLifetime + 1)
+        mode.holdList = true
+        await fixture.model.refreshAll(reason: .manual)
+        await mode.waitUntilHeld()
+        mode.release(timeout: false)
+        await fixture.model.flushPlanRefreshes()
+
+        XCTAssertEqual(fixture.model.accounts.first?.plan, .claudeMax20x)
+    }
+
+    #if DEBUG
+    /// Even the DEBUG manual send honours the global warm-up switch.
+    func testDebugSendRespectsTheWarmUpSwitch() async throws {
+        let counter = WarmUpSendCounter()
+        let client = makeWarmUpSendClient(counter: counter)
+        let fixture = try makeFixture(
+            adapters: [ClaudeProviderAdapter(client: client, prepareWebView: { _ in })],
+            messageSender: ClaudeMessageSender(client: client)
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        try await fixture.model.setFeature(.warmUp, enabled: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+
+        await fixture.model.debugSendKeepAlive(accountID: account.id)
+        XCTAssertEqual(counter.posts, 0)
+    }
+    #endif
+
+    // MARK: - The warm-up switch turned off mid-attempt
+
+    /// Builds a warm-up-ready fixture whose RESERVATION save can be held
+    /// (the account save that first carries `lastAutoStartedAt`).
+    private func makeHeldReservationFixture(
+        counter: WarmUpSendCounter,
+        reservation: WarmUpHold,
+        settingsSave: WarmUpHold? = nil
+    ) async throws -> Fixture {
+        let client = makeWarmUpSendClient(counter: counter)
+        let claudeAdapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
+        let fixture = try makeFixture(
+            saveAccounts: { accounts in
+                if accounts.contains(where: { $0.lastAutoStartedAt != nil }) {
+                    await reservation.pass()
+                }
+            },
+            adapters: [claudeAdapter],
+            messageSender: ClaudeMessageSender(client: client),
+            saveSettings: { _ in await settingsSave?.pass() }
+        )
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        XCTAssertEqual(counter.posts, 0, "precondition: nothing sent during sign-in")
+        return fixture
+    }
+
+    /// The attempt passed every check and is suspended in `reserveAutoStart`
+    /// when the user turns warm-up off: nothing may be sent.
+    func testWarmUpSwitchOffWhileReservationIsSuspendedSendsNothing() async throws {
+        let counter = WarmUpSendCounter()
+        let reservation = WarmUpHold()
+        let fixture = try await makeHeldReservationFixture(counter: counter, reservation: reservation)
+        defer { fixture.removeFiles() }
+
+        reservation.arm()
+        let refresh = Task { await fixture.model.refreshAll(reason: .manual) }
+        await reservation.waitUntilHeld()
+        try await fixture.model.setFeature(.warmUp, enabled: false)
+        reservation.release()
+        await refresh.value
+
+        XCTAssertEqual(counter.posts, 0, "switched off mid-reservation: no POST at all")
+        XCTAssertNil(fixture.model.warmUpBanner, "a vetoed attempt is not a failure")
+    }
+
+    /// OFF then ON again while the reservation is suspended: the switch reads
+    /// on, but the attempt predates the "no" and must not send.
+    func testWarmUpSwitchOffThenOnWhileReservationIsSuspendedSendsNothing() async throws {
+        let counter = WarmUpSendCounter()
+        let reservation = WarmUpHold()
+        let fixture = try await makeHeldReservationFixture(counter: counter, reservation: reservation)
+        defer { fixture.removeFiles() }
+
+        reservation.arm()
+        let refresh = Task { await fixture.model.refreshAll(reason: .manual) }
+        await reservation.waitUntilHeld()
+        try await fixture.model.setFeature(.warmUp, enabled: false)
+        try await fixture.model.setFeature(.warmUp, enabled: true)
+        reservation.release()
+        await refresh.value
+
+        XCTAssertEqual(counter.posts, 0, "an attempt older than the switch-off never sends")
+    }
+
+    /// The switch-off is still SAVING (not yet published) when the attempt
+    /// reaches its commit point: the intent alone must stop it.
+    func testWarmUpSwitchOffStillSavingBlocksTheSend() async throws {
+        let counter = WarmUpSendCounter()
+        let reservation = WarmUpHold()
+        let settingsSave = WarmUpHold()
+        let fixture = try await makeHeldReservationFixture(
+            counter: counter,
+            reservation: reservation,
+            settingsSave: settingsSave
+        )
+        defer { fixture.removeFiles() }
+
+        settingsSave.arm()
+        let disable = Task { try await fixture.model.setFeature(.warmUp, enabled: false) }
+        await settingsSave.waitUntilHeld()
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(counter.posts, 0, "a disable in flight already blocks new attempts")
+
+        settingsSave.release()
+        try await disable.value
+    }
+
+    /// The switch goes off while the conversation-create POST is in flight:
+    /// the completion POST (the actual message) must not follow.
+    func testWarmUpSwitchOffDuringConversationCreateSkipsTheCompletion() async throws {
+        let counter = WarmUpSendCounter()
+        let reservation = WarmUpHold()
+        let fixture = try await makeHeldReservationFixture(counter: counter, reservation: reservation)
+        defer { fixture.removeFiles() }
+        XCTAssertNil(
+            try XCTUnwrap(fixture.model.accounts.first).keepAliveConversationID,
+            "precondition: no stored conversation, so a create POST runs first"
+        )
+        let model = fixture.model
+        // The switch-off is requested while the create POST is in flight;
+        // its synchronous part runs before the create's result is handed back.
+        counter.onPost = { path in
+            if path.hasSuffix("/chat_conversations") {
+                Task { try? await model.setFeature(.warmUp, enabled: false) }
+            }
+        }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(counter.posts, 1, "only the create POST was already under way")
+        XCTAssertEqual(counter.sends, 0, "no completion after the switch-off")
+        XCTAssertTrue(fixture.model.autoStartFailures.isEmpty, "a veto is not a failure")
+    }
+
+    /// Sanity for the stress runs: with the switch left on, the held
+    /// reservation still ends in exactly one message.
+    func testWarmUpHeldReservationStillSendsWhenSwitchStaysOn() async throws {
+        let counter = WarmUpSendCounter()
+        let reservation = WarmUpHold()
+        let fixture = try await makeHeldReservationFixture(counter: counter, reservation: reservation)
+        defer { fixture.removeFiles() }
+
+        reservation.arm()
+        let refresh = Task { await fixture.model.refreshAll(reason: .manual) }
+        await reservation.waitUntilHeld()
+        reservation.release()
+        await refresh.value
+
+        XCTAssertEqual(counter.sends, 1)
+    }
+
     /// Per-script green-path stub payloads, copied from
     /// `ClaudeProviderAdapterTests.testFetchAcceptsRecognizedWindowsWithoutScheduledResets`.
     /// `WebUsageClient`'s resource-path and fetch scripts are `private`, so
@@ -2438,7 +2834,8 @@ final class AppModelTests: XCTestCase {
         // i.e. to exercise what a relaunch sees on disk.
         directory: URL? = nil,
         // A movable clock, for the rate-bounded cache purge.
-        now: (@MainActor () -> Date)? = nil
+        now: (@MainActor () -> Date)? = nil,
+        saveSettings: AppSettings.SaveSettings? = nil
     ) throws -> Fixture {
         let directory = directory
             ?? FileManager.default.temporaryDirectory
@@ -2464,7 +2861,8 @@ final class AppModelTests: XCTestCase {
             rootDirectory: directory.appending(path: "history", directoryHint: .isDirectory)
         )
         let appSettings = AppSettings(
-            fileURL: directory.appending(path: "app-settings.json")
+            fileURL: directory.appending(path: "app-settings.json"),
+            saveSettings: saveSettings
         )
         let alertStateStore = AlertStateStore(
             fileURL: directory.appending(path: "alert-state.json")
@@ -2710,6 +3108,38 @@ private final class ProviderAdapterSpy: ProviderAdapter {
 /// otherwise deliver `.timedOut`, so a test can deterministically control
 /// exactly when a timeout resolves relative to other actions — instead of
 /// relying on Task scheduling order.
+/// Holds the next armed pass until released (one-shot per `arm()`).
+@MainActor
+private final class WarmUpHold {
+    private var armed = false
+    private var held: CheckedContinuation<Void, Never>?
+    private var heldSignal: CheckedContinuation<Void, Never>?
+    private var isHeld = false
+
+    func arm() { armed = true }
+
+    func pass() async {
+        guard armed else { return }
+        armed = false
+        isHeld = true
+        await withCheckedContinuation { continuation in
+            held = continuation
+            heldSignal?.resume()
+            heldSignal = nil
+        }
+    }
+
+    func waitUntilHeld() async {
+        if held != nil { return }
+        await withCheckedContinuation { heldSignal = $0 }
+    }
+
+    func release() {
+        held?.resume()
+        held = nil
+    }
+}
+
 @MainActor
 private final class TimeoutSleepGate {
     private var startWaiters: [CheckedContinuation<Void, Never>] = []

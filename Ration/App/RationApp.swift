@@ -375,11 +375,11 @@ struct MenuBarContent: View {
             signInQuitPauseBanner: model.signInQuitPauseBanner,
             errorMessage: model.errorMessage,
             warmUpBanner: { model.warmUpBanner(at: $0) },
-            activeAccounts: ActiveUsageMap.compute(
-                accounts: model.visibleAccounts,
-                history: history,
-                now: .now
-            ),
+            // In-use detection off → no IN USE pill, frame or tint.
+            activeAccounts: settings.featureInUseEnabled
+                ? ActiveUsageMap.compute(accounts: model.visibleAccounts, history: history, now: .now)
+                : [:],
+            showsResetCredits: settings.featureResetsEnabled,
             pausedCount: model.accounts.count - model.visibleAccounts.count,
             onOpen: {
                 Task {
@@ -442,9 +442,29 @@ struct MenuBarContent: View {
             onOpenNotificationSettings: NotificationSettingsOpener.open,
             onAllowNotifications: { model.requestNotificationPermission() },
             attentionDropShowing: attentionPresence.isShowing,
-            onDismissAttentionDrop: onDismissAttentionDrop
+            onDismissAttentionDrop: onDismissAttentionDrop,
+            switchAdvice: model.switchAdvice,
+            layout: settings.popoverLayout,
+            focusModel: { [pinned = pinSnapshot.focusHeroID] in
+                model.focusModel(now: $0, pinnedHeroID: pinned)
+            },
+            onSetLayout: { layout in
+                Task { await Self.setLayout(layout, model: model) }
+            },
+            onShowFocusHero: { [pinSnapshot] id in pinSnapshot.pinFocusHero(id) }
         )
         .tint(Theme.gold)
+    }
+
+    /// The header's STANDARD | FOCUS switch: the same persisted setting the
+    /// Settings picker writes; a failure surfaces as the popover's error row.
+    static func setLayout(_ layout: PopoverLayout, model: AppModel) async {
+        guard model.settings.popoverLayout != layout else { return }
+        do {
+            try await model.setPopoverLayout(layout)
+        } catch {
+            model.errorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -489,7 +509,8 @@ private struct MenuBarSceneContent: View {
             wrappedValue: AccountPinSnapshot.captured(
                 accounts: model.visibleAccounts,
                 history: model.history,
-                now: .now
+                now: .now,
+                inUseEnabled: model.settings.featureInUseEnabled
             )
         )
     }

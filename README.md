@@ -50,6 +50,14 @@ shows, from your own signed-in session, on your Mac.
   during the hours and holidays you mark quiet, and never when the weekly
   allowance is already spent. On by default for newly added Claude accounts;
   switch it off per account.
+- **Which account next.** When the account you're using nears its limit and
+  another account on the same provider has clearly more room, Ration names it
+  in the popover, the notification and the alerts panel, comparing real plan
+  capacity (Pro, Max 5x/20x, Plus, Pro 5x/20x), not just percentages.
+- **Focus layout.** One big number for the subscription you're using, what's
+  nearly spent, and where to go next; switch from the popover header.
+- **Feature switches.** Resets, switch suggestions, Claude warm-up and in-use
+  detection can each be turned off in Settings.
 - **Light or dark.** Follows macOS, or pick Light or Dark in Settings. Every
   text colour meets WCAG AA contrast in both, and Increase Contrast and
   VoiceOver are supported.

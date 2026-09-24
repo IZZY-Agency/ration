@@ -168,6 +168,36 @@ final class AccountStore: ObservableObject {
         }
     }
 
+    /// A user plan choice; nil = "Detect automatically" (clears the plan so the
+    /// next detection fills it).
+    func setPlan(id: UUID, plan: PlanTier?) async throws {
+        try await mutations.run { [self] in
+            guard let index = accounts.firstIndex(where: { $0.id == id }) else {
+                throw AccountStoreError.accountNotFound
+            }
+            var candidate = accounts
+            candidate[index].plan = plan
+            candidate[index].planSource = plan == nil ? nil : .user
+            try await persist(candidate)
+        }
+    }
+
+    /// One fetch's plan detection. Judged INSIDE the serialized queue, so a
+    /// user choice that landed first is always seen and never overwritten.
+    /// Skips the save when nothing changes (every poll detects).
+    func applyDetectedPlan(id: UUID, detection: PlanDetection) async throws {
+        try await mutations.run { [self] in
+            guard let index = accounts.firstIndex(where: { $0.id == id }) else {
+                throw AccountStoreError.accountNotFound
+            }
+            let updated = accounts[index].applyingDetectedPlan(detection)
+            guard updated != accounts[index] else { return }
+            var candidate = accounts
+            candidate[index] = updated
+            try await persist(candidate)
+        }
+    }
+
     func setPaused(id: UUID, paused: Bool) async throws {
         try await mutations.run { [self] in
             guard let index = accounts.firstIndex(where: { $0.id == id }) else {

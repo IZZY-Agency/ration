@@ -62,9 +62,13 @@ enum WarmUpBannerModel {
         presentations: [AccountPresentation],
         failures: [UUID: AutoStartFailure],
         schedule: WarmUpQuietSchedule,
+        warmUpEnabled: Bool = true,
         now: Date,
         calendar: Calendar = .autoupdatingCurrent
     ) -> WarmUpBanner? {
+        // Warm-up switched off globally: nothing is attempted, so there is no
+        // failure or hold to report.
+        guard warmUpEnabled else { return nil }
         // A failure is the more urgent statement, and it is about an attempt
         // that already happened — it outranks a hold.
         if let banner = failureBanner(

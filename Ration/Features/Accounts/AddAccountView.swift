@@ -41,7 +41,9 @@ struct AddAccountView: View {
                                 .font(Theme.mono(11))
                                 .foregroundStyle(Theme.creamDim)
                             if provider == .claude {
-                                Text(WarmUpDefaults.newClaudeAccountDisclosure)
+                                Text(WarmUpDefaults.newClaudeAccountDisclosure(
+                                    warmUpEnabled: model.settings.featureWarmUpEnabled
+                                ))
                                     .font(Theme.mono(11))
                                     .foregroundStyle(Theme.creamDim)
                                     .fixedSize(horizontal: false, vertical: true)

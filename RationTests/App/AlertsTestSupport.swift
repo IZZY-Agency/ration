@@ -18,6 +18,7 @@ struct AlertsFixture {
     let scheduler: NotificationSchedulingSpy
     let adapter: AlertsProviderAdapterSpy
     let chatGPTAdapter: AlertsProviderAdapterSpy
+    let profileManager: AlertsWebProfileManagerSpy
 
     nonisolated func removeFiles() {
         try? FileManager.default.removeItem(at: directory)
@@ -104,7 +105,8 @@ func makeAlertsFixture(
         alertStateStore: alertStateStore,
         scheduler: scheduler,
         adapter: adapter,
-        chatGPTAdapter: chatGPTAdapter
+        chatGPTAdapter: chatGPTAdapter,
+        profileManager: profileManager
     )
 }
 
@@ -133,7 +135,14 @@ final class AlertsWebProfileManagerSpy: WebProfileManaging {
         WKWebView(frame: .zero)
     }
 
-    func removeProfile(profileID: UUID) async throws {}
+    /// When set, `removeProfile` throws it (a removal that must roll back).
+    var removeError: Error?
+
+    func removeProfile(profileID: UUID) async throws {
+        if let removeError {
+            throw removeError
+        }
+    }
 }
 
 /// Minimal sign-in adapter: returns a snapshot with no usage windows, so the
@@ -154,6 +163,8 @@ final class AlertsProviderAdapterSpy: ProviderAdapter {
     let provider: Provider
     let signInURL = URL(string: "https://claude.ai/")!
     var fiveHourRemaining: Double?
+    /// The plan field this fetch "reads"; nil = not read.
+    var planDetection: PlanDetection?
 
     /// `provider` defaults to `.claude` (the default single-adapter fixture
     /// shape almost every test uses); the per-provider threshold tests
@@ -175,7 +186,8 @@ final class AlertsProviderAdapterSpy: ProviderAdapter {
             fiveHour: fiveHourRemaining.map {
                 UsageWindow(kind: .fiveHour, remainingFraction: $0, resetsAt: nil)
             },
-            weekly: nil
+            weekly: nil,
+            planDetection: planDetection
         )
     }
 }

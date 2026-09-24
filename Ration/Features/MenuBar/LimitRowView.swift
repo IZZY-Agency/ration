@@ -27,15 +27,9 @@ struct LimitRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 7) {
-                Text(title)
-                    .font(Theme.mono(13))
-                    .tracking(0.6)
-                    .textCase(.uppercase)
-                    .foregroundStyle(Theme.creamFaint)
-                    // Never "FABL/E": the title keeps its natural width on one
-                    // line and the meter (GeometryReader) gives way instead.
-                    .lineLimit(1)
-                    .fixedSize()
+                // Never "FABL/E": the tag keeps its natural width on one
+                // line and the meter (GeometryReader) gives way instead.
+                WindowTag(title, size: 13)
 
                 if let window {
                     GeometryReader { geometry in

@@ -195,7 +195,8 @@ enum AttentionDropModel {
             // leaving a stale member behind. `.expiring` before `.available`
             // matches the loop order below and the ordering this function's
             // doc promises.
-            if settings.channels(forKey: AppSettingsData.resetCreditsKey(provider: account.provider)).drop {
+            if settings.featureResetsEnabled,
+               settings.channels(forKey: AppSettingsData.resetCreditsKey(provider: account.provider)).drop {
                 let unexpired = snapshot.resetCredits?.unexpired(at: now) ?? []
                 for kind in [ResetCreditRowKind.expiring, .available] {
                     let active = unexpired.filter { credit in

@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.3.0
+
+- Which account next: when the account you're using reaches your warning
+  threshold and another account from the same provider has clearly more
+  room left, Ration says so — in the popover header ("Switch Claude to
+  Personal · 85% of week left"), in that limit's notification, and in the
+  alerts panel.
+  Fable counts toward the choice only if you actually use it.
+- Plans: Ration reads each account's plan (Claude Pro / Max 5x / Max 20x,
+  ChatGPT Plus / Pro 5x / Pro 20x) and compares real remaining capacity, so
+  25% of a 20x plan isn't mistaken for less room than 100% of a 5x plan. When
+  the plan can't be read, Ration asks after sign-in, together with the billing
+  day; both can be changed in the account's settings.
+- Focus layout: switch between Standard and Focus from the popover header.
+  Focus shows the subscription you're using as one big number, the other
+  accounts in use, accounts that are nearly spent, and where to go next;
+  click any account to see it up close.
+- Feature switches: Settings → General → Features turns Resets, Switch
+  suggestions, Claude warm-up and In-use detection on or off. All are on by
+  default.
+- Limit names (5H, WK, Fable) are shown as small tags everywhere, so a reset
+  like "5H 22m" can't be misread; the popover header shows the Ration mark.
+
 ## 1.2.1
 
 - Ration builds from source with Xcode 26.6 again. No change to how the app

@@ -89,6 +89,34 @@ final class MenuBarInUseIndicatorTests: XCTestCase {
         XCTAssertEqual(button.attributedTitle.string, ring)
     }
 
+    /// In-use detection off keeps the ring (that is `showInUseInMenuBar`'s)
+    /// but drops the green dot; back on restores it.
+    func testInUseDetectionOffDropsTheDotButKeepsTheRing() async throws {
+        let account = makeIndicatorAccount(.claude, order: 0)
+        let harness = try await makeIndicatorHarness(seedAccounts: [account])
+        recordIndicatorActivity(for: account, in: harness.model.history, endingAt: .now)
+        try await harness.seedSnapshot(for: account, fiveHourRemaining: 0.14)
+
+        let controller = MenuBarController(
+            model: harness.model,
+            launchAtLogin: LaunchAtLoginController(),
+            hotKeyRegistrar: HotKeyRegistrarSpy()
+        )
+        controller.start()
+        defer { controller.stop() }
+        let button = try XCTUnwrap(controller.statusItem?.button)
+        XCTAssertEqual(button.toolTip, "Ration — Claude claude-0 5h 86% used (in use)", "premise")
+
+        try await harness.model.setFeature(.inUse, enabled: false)
+        await waitUntil { button.toolTip?.hasSuffix("(in use)") == false }
+        XCTAssertEqual(button.attributedTitle.string, ring)
+        XCTAssertEqual(button.toolTip, "Ration — Claude claude-0 5h 86% used")
+
+        try await harness.model.setFeature(.inUse, enabled: true)
+        await waitUntil { button.toolTip?.hasSuffix("(in use)") == true }
+        XCTAssertEqual(button.toolTip, "Ration — Claude claude-0 5h 86% used (in use)")
+    }
+
     func testTwoAccountsOfSameProviderBothCarryInUse() async throws {
         // The popover pill dedups to one winner per provider; the gauges must
         // NOT — parallel use of two Claude accounts marks both dots.

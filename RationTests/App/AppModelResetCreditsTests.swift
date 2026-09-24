@@ -25,6 +25,162 @@ final class AppModelResetCreditsTests: XCTestCase {
         ResetCredit(id: id, title: "Launch reset", count: 1, expiresAt: now.addingTimeInterval(expiresIn), usableNow: true)
     }
 
+    // MARK: Resets feature switch
+
+    private func signedInWithAlerts(_ fixture: AlertsFixture) async throws -> AccountRecord {
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Work")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        try await fixture.model.setUsageAlertsEnabled(true)
+        return account
+    }
+
+    func testResetsOffSuppressesDeliveryButKeepsBookkeeping() async throws {
+        let fixture = try makeAlertsFixture()
+        defer { fixture.removeFiles() }
+        let account = try await signedInWithAlerts(fixture)
+        try await fixture.model.setFeature(.resets, enabled: false)
+
+        try await fixture.snapshots.save(creditSnapshot(account.id, [credit()]))
+        await fixture.model.flushAlertEvaluations()
+
+        let ids = await fixture.scheduler.posts.map(\.id)
+        XCTAssertFalse(ids.contains { $0.contains(".resetCredit.") }, "no reset notification while off: \(ids)")
+        XCTAssertEqual(fixture.model.attentionRows(now: now), [], "no reset drop row while off")
+        XCTAssertNotNil(
+            fixture.model.alertStateForTesting(accountID: account.id)?.resetCredits["c1"],
+            "reset memory still records the credit while off"
+        )
+    }
+
+    func testResetsOffDoesNotLiftTheSnooze() async throws {
+        let fixture = try makeAlertsFixture()
+        defer { fixture.removeFiles() }
+        let account = try await signedInWithAlerts(fixture)
+        try await fixture.model.setFeature(.resets, enabled: false)
+        fixture.model.snoozeAttentionDrop([])
+
+        try await fixture.snapshots.save(creditSnapshot(account.id, [credit()]))
+        await fixture.model.flushAlertEvaluations()
+
+        XCTAssertTrue(fixture.model.settings.data.dropSnoozed, "a hidden reset must not undo the ✕")
+    }
+
+    func testReEnablingResetsDoesNotReplayWhatHappenedWhileOff() async throws {
+        let fixture = try makeAlertsFixture()
+        defer { fixture.removeFiles() }
+        let account = try await signedInWithAlerts(fixture)
+        try await fixture.model.setFeature(.resets, enabled: false)
+        try await fixture.snapshots.save(creditSnapshot(account.id, [credit("c1")]))
+        await fixture.model.flushAlertEvaluations()
+
+        try await fixture.model.setFeature(.resets, enabled: true)
+        // Same credit, read afresh: already handled while off — silent.
+        try await fixture.snapshots.save(creditSnapshot(account.id, [credit("c1")], fetchedAt: now.addingTimeInterval(-10)))
+        await fixture.model.flushAlertEvaluations()
+        var ids = await fixture.scheduler.posts.map(\.id)
+        XCTAssertFalse(ids.contains { $0.contains(".resetCredit.") }, "no burst on re-enable: \(ids)")
+
+        // A genuinely new credit after re-enabling alerts as usual.
+        try await fixture.snapshots.save(creditSnapshot(account.id, [credit("c1"), credit("c2")], fetchedAt: now.addingTimeInterval(-5)))
+        await fixture.model.flushAlertEvaluations()
+        ids = await fixture.scheduler.posts.map(\.id)
+        XCTAssertEqual(ids.filter { $0.contains(".resetCredit.") }.count, 1, "\(ids)")
+        XCTAssertTrue(ids.contains { $0.contains(".resetCredit.c2.available") }, "\(ids)")
+    }
+
+    // MARK: Queued reset posts vs. the switch
+
+    /// Alerts on, one Claude account; the NEXT alert-state save (the side
+    /// effect queued ahead of any post) is held by `gate`.
+    private func heldQueueFixture(_ gate: ResetsSaveGate) async throws -> (AlertsFixture, AccountRecord) {
+        let directory = try makeTempDirectory()
+        let store = AlertStateStore(
+            fileURL: directory.appending(path: "alert-state.json"),
+            saveStates: { _ in await gate.pass() }
+        )
+        let fixture = try makeAlertsFixture(directory: directory, alertStateStore: store)
+        let account = try await signedInWithAlerts(fixture)
+        return (fixture, account)
+    }
+
+    private func resetPostIDs(_ fixture: AlertsFixture) async -> [String] {
+        await fixture.scheduler.posts.map(\.id).filter { $0.contains(".resetCredit.") }
+    }
+
+    /// Decided while OFF, queue still held when the switch comes back ON:
+    /// nothing was queued, so nothing is released.
+    func testResetDecidedWhileOffIsNotReleasedByReEnablingWhileQueued() async throws {
+        let gate = ResetsSaveGate()
+        let (fixture, account) = try await heldQueueFixture(gate)
+        defer { fixture.removeFiles() }
+        try await fixture.model.setFeature(.resets, enabled: false)
+
+        gate.arm()
+        try await fixture.snapshots.save(creditSnapshot(account.id, [credit()]))
+        await gate.waitUntilHeld()
+        try await fixture.model.setFeature(.resets, enabled: true)
+        gate.release()
+        await fixture.model.flushAlertEvaluations()
+
+        let ids = await resetPostIDs(fixture)
+        XCTAssertEqual(ids, [], "a reset decided while off stays unposted")
+        XCTAssertNotNil(
+            fixture.model.alertStateForTesting(accountID: account.id)?.resetCredits["c1"],
+            "bookkeeping unchanged: the credit is still recorded"
+        )
+    }
+
+    /// Queued while ON, then OFF→ON while it waits: the older post is dead.
+    func testQueuedResetPostDoesNotSurviveAnOffOnFlip() async throws {
+        let gate = ResetsSaveGate()
+        let (fixture, account) = try await heldQueueFixture(gate)
+        defer { fixture.removeFiles() }
+
+        gate.arm()
+        try await fixture.snapshots.save(creditSnapshot(account.id, [credit()]))
+        await gate.waitUntilHeld()
+        try await fixture.model.setFeature(.resets, enabled: false)
+        try await fixture.model.setFeature(.resets, enabled: true)
+        gate.release()
+        await fixture.model.flushAlertEvaluations()
+
+        let ids = await resetPostIDs(fixture)
+        XCTAssertEqual(ids, [], "ON→OFF→ON while queued does not revive the post")
+    }
+
+    /// Control for the two above: left ON, the held post still goes out.
+    func testQueuedResetPostDeliversWhenTheSwitchStaysOn() async throws {
+        let gate = ResetsSaveGate()
+        let (fixture, account) = try await heldQueueFixture(gate)
+        defer { fixture.removeFiles() }
+
+        gate.arm()
+        try await fixture.snapshots.save(creditSnapshot(account.id, [credit()]))
+        await gate.waitUntilHeld()
+        gate.release()
+        await fixture.model.flushAlertEvaluations()
+
+        let ids = await resetPostIDs(fixture)
+        XCTAssertEqual(ids.count, 1, "\(ids)")
+    }
+
+    func testResetsOnShowsTheDropRowAgain() async throws {
+        let fixture = try makeAlertsFixture()
+        defer { fixture.removeFiles() }
+        let account = try await signedInWithAlerts(fixture)
+        try await fixture.snapshots.save(creditSnapshot(account.id, [credit()]))
+        await fixture.model.flushAlertEvaluations()
+        XCTAssertEqual(fixture.model.attentionRows(now: now).map(\.subject), [.resetCredit(id: "c1", kind: .available)])
+
+        try await fixture.model.setFeature(.resets, enabled: false)
+        XCTAssertEqual(fixture.model.attentionRows(now: now), [])
+
+        try await fixture.model.setFeature(.resets, enabled: true)
+        XCTAssertEqual(fixture.model.attentionRows(now: now).map(\.subject), [.resetCredit(id: "c1", kind: .available)])
+    }
+
     func testNewResetPostsOneNotification() async throws {
         let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
@@ -312,5 +468,36 @@ final class AppModelResetCreditsTests: XCTestCase {
         )
         fixture.model.dismissAttentionRows([row])
         XCTAssertEqual(fixture.model.alertStateForTesting(accountID: account.id)?.resetCredits["a"]?.availableRow, .dismissed)
+    }
+}
+
+
+/// Holds the next armed alert-state save until released.
+@MainActor
+private final class ResetsSaveGate {
+    private var armed = false
+    private var held: CheckedContinuation<Void, Never>?
+    private var heldSignal: CheckedContinuation<Void, Never>?
+
+    func arm() { armed = true }
+
+    func pass() async {
+        guard armed else { return }
+        armed = false
+        await withCheckedContinuation { continuation in
+            held = continuation
+            heldSignal?.resume()
+            heldSignal = nil
+        }
+    }
+
+    func waitUntilHeld() async {
+        if held != nil { return }
+        await withCheckedContinuation { heldSignal = $0 }
+    }
+
+    func release() {
+        held?.resume()
+        held = nil
     }
 }

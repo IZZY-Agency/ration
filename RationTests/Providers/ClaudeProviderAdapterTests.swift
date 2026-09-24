@@ -84,6 +84,14 @@ final class ClaudeProviderAdapterTests: XCTestCase {
             if script.contains("lastActiveOrg") {
                 return organizationID
             }
+            if arguments["path"] as? String == "/api/organizations" {
+                // Plan detection reads the resolved org's tier.
+                return [
+                    "status": 200,
+                    "retryAfter": NSNull(),
+                    "body": #"[{"uuid":"\#(organizationID)","capabilities":["chat","claude_max"],"rate_limit_tier":"default_claude_max_20x"}]"#
+                ]
+            }
             if (arguments["path"] as? String)?.hasPrefix("/api/organizations/\(organizationID)/usage") == true {
                 return [
                     "status": 200,
@@ -120,6 +128,42 @@ final class ClaudeProviderAdapterTests: XCTestCase {
             snapshot.organizationID, organizationID,
             "the snapshot must carry the org its data came from — auto-start fails closed without it"
         )
+        // The usage fetch never reads the plan; the separate read does,
+        // and the next snapshot carries it.
+        XCTAssertNil(snapshot.planDetection, "no reading cached yet")
+        let refreshed = try await adapter.refreshPlanDetection(for: snapshot, in: WKWebView())
+        XCTAssertEqual(refreshed, .tier(.claudeMax20x))
+        let next = try await adapter.fetchUsage(accountID: accountID, in: WKWebView())
+        XCTAssertEqual(next.planDetection, .tier(.claudeMax20x))
+    }
+
+    /// A hung organizations list must not hold up the usage snapshot —
+    /// the usage fetch does not touch it at all.
+    func testUsageFetchNeverWaitsOnThePlanRequest() async throws {
+        let organizationID = UUID().uuidString.lowercased()
+        var listRequests = 0
+        let client = WebUsageClient(
+            evaluator: { script, arguments, _ in
+                if script.contains("lastActiveOrg") { return organizationID }
+                if arguments["path"] as? String == "/api/organizations" {
+                    listRequests += 1
+                    await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                    return NSNull()
+                }
+                return [
+                    "status": 200,
+                    "retryAfter": NSNull(),
+                    "body": #"{"five_hour":{"utilization":5,"resets_at":null},"seven_day":{"utilization":53,"resets_at":null}}"#
+                ]
+            },
+            sleep: { _ in try await Task.sleep(for: .seconds(2)) }
+        )
+        let adapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
+
+        let snapshot = try await adapter.fetchUsage(accountID: UUID(), in: WKWebView())
+
+        XCTAssertNotNil(snapshot.fiveHour)
+        XCTAssertEqual(listRequests, 0, "the plan list is not part of the usage fetch")
     }
 
     /// A single-organization account whose only org 404s on usage has no
@@ -245,6 +289,9 @@ final class ClaudeProviderAdapterTests: XCTestCase {
                 return cookieReads == 1 ? staleOrg : freshOrg
             }
             if let path = arguments["path"] as? String {
+                if path == "/api/organizations" {
+                    return ["status": 200, "retryAfter": NSNull(), "body": "[]"]
+                }
                 usageCalls.append(path)
                 if path.contains(staleOrg) {
                     return ["status": 404, "retryAfter": NSNull(), "body": ""]

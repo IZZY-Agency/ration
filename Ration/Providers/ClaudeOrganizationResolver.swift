@@ -70,8 +70,118 @@ final class ClaudeOrganizationResolver {
     /// suspended across an invalidation or a newer resolution can therefore
     /// never overwrite or resurrect newer state.
     private var epochs: [UUID: Int] = [:]
-    init(client: WebUsageClient) {
+    /// Last plan reading per org uuid, from the org's
+    /// `rate_limit_tier` + `capabilities`. Absent = never read, or the last
+    /// successful list did not name the org.
+    private var planCache: [String: PlanDetection] = [:]
+    /// When a plan read was last ATTEMPTED per org — set before the request
+    /// suspends, so failures and in-flight reads also respect the cadence.
+    private var planAttemptAt: [String: Date] = [:]
+    /// One list request at a time per org: accounts sharing an org join it.
+    private var planInFlight: [String: Task<PlanDetection?, Error>] = [:]
+    static let planCacheLifetime: TimeInterval = 30 * 60
+    private let now: @MainActor () -> Date
+
+    init(client: WebUsageClient, now: @escaping @MainActor () -> Date = { .now }) {
         self.client = client
+        self.now = now
+    }
+
+    /// The last reading for this org, without any request. What a usage
+    /// snapshot carries — usage delivery never waits on the plan.
+    func cachedPlanDetection(organizationID: String) -> PlanDetection? {
+        planCache[organizationID]
+    }
+
+    /// Refreshes the org's plan reading when due (at most once per
+    /// `planCacheLifetime` per org, counted from the last ATTEMPT, success or
+    /// not) and returns the fresh reading; nil = not due, or not read.
+    ///
+    /// Concurrent calls for the same org share one request. Only the caller
+    /// that started it sees `CancellationError` / `.timedOut` (so its own web
+    /// view is the one recycled); joiners read a failure as nil. Every other
+    /// failure reads as nil.
+    func refreshPlanDetection(
+        organizationID: String,
+        in webView: WKWebView
+    ) async throws -> PlanDetection? {
+        if let running = planInFlight[organizationID] {
+            return try? await running.value
+        }
+        let moment: Date = now()
+        if let attempted = planAttemptAt[organizationID],
+           moment.timeIntervalSince(attempted) < Self.planCacheLifetime {
+            return nil
+        }
+        planAttemptAt[organizationID] = moment
+        let task = Task { @MainActor [self] () throws -> PlanDetection? in
+            try await readPlan(organizationID: organizationID, at: moment, in: webView)
+        }
+        planInFlight[organizationID] = task
+        defer { planInFlight[organizationID] = nil }
+        do {
+            // The caller's cancellation (account removed, app stopping)
+            // reaches the unstructured read.
+            return try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+        } catch is CancellationError {
+            // A cancelled read was not an attempt: the next caller may retry.
+            if planAttemptAt[organizationID] == moment {
+                planAttemptAt[organizationID] = nil
+            }
+            throw CancellationError()
+        }
+    }
+
+    private func readPlan(
+        organizationID: String,
+        at moment: Date,
+        in webView: WKWebView
+    ) async throws -> PlanDetection? {
+        try Task.checkCancellation()
+        let envelope: WebResponseEnvelope
+        do {
+            envelope = try await client.fetch(
+                path: "/api/organizations",
+                expectedOrigin: Provider.claude.webOrigin,
+                in: webView
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as WebUsageClientError where error == .timedOut {
+            // The recycle contract: the caller's session manager tears the
+            // wedged view down on this.
+            throw error
+        } catch {
+            return nil
+        }
+        // The bridge call itself can't be interrupted; its result can.
+        try Task.checkCancellation()
+        guard
+            (200..<300).contains(envelope.status),
+            let data = envelope.body.data(using: .utf8),
+            let wrapped = try? JSONDecoder().decode([FailableOrganization].self, from: data)
+        else { return nil }
+        // The list no longer names this org: an older reading must not
+        // outlive that answer.
+        planCache[organizationID] = nil
+        recordPlans(wrapped, at: moment)
+        return planCache[organizationID]
+    }
+
+    private func recordPlans(_ wrapped: [FailableOrganization], at moment: Date) {
+        for element in wrapped {
+            guard let normalized = element.value?.normalized else { continue }
+            let detection: PlanDetection? = PlanDetection.claude(
+                rateLimitTier: element.value?.rateLimitTier,
+                capabilities: normalized.capabilities
+            )
+            planCache[normalized.uuid] = detection
+            planAttemptAt[normalized.uuid] = max(planAttemptAt[normalized.uuid] ?? moment, moment)
+        }
     }
 
     /// Lowercased organization uuid for this account.
@@ -219,6 +329,7 @@ final class ClaudeOrganizationResolver {
         else {
             return .unavailable
         }
+        recordPlans(wrapped, at: now())
         let decoded = wrapped.compactMap { $0.value?.normalized }
         // An element that failed to decode (no valid uuid, or no capabilities
         // array to judge it by) is a membership we know NOTHING about — it
@@ -317,13 +428,28 @@ private struct FailableOrganization: Decodable {
 /// LIVE-PINNED 2026-08-13 against `GET https://claude.ai/api/organizations`:
 /// an array of objects carrying `uuid` (string), `name`, `capabilities`
 /// (string array — the active chat org carries "chat"), `rate_limit_tier`,
-/// `billing_type`. Only `uuid` and `capabilities` are consumed, and BOTH are
+/// `billing_type`. `uuid` and `capabilities` drive selection, and BOTH are
 /// required: an element without a capabilities array cannot be judged by the
 /// selection rules, so it must count as undecodable rather than as an org
-/// with no capabilities.
+/// with no capabilities. `rate_limit_tier` (live-verified 2026-09-24:
+/// `default_claude_max_20x`) feeds plan detection only and is lenient — a
+/// wrong shape reads as nil, never an undecodable org.
 private struct OrganizationPayload: Decodable {
     let uuid: String?
     let capabilities: [String]?
+    let rateLimitTier: String?
+
+    enum CodingKeys: String, CodingKey {
+        case uuid, capabilities
+        case rateLimitTier = "rate_limit_tier"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        uuid = try c.decodeIfPresent(String.self, forKey: .uuid)
+        capabilities = try c.decodeIfPresent([String].self, forKey: .capabilities)
+        rateLimitTier = (try? c.decodeIfPresent(String.self, forKey: .rateLimitTier)) ?? nil
+    }
 
     struct Normalized {
         let uuid: String

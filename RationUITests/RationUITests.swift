@@ -76,7 +76,7 @@ final class RationUITests: XCTestCase {
         let aboutWindow = app.windows["About Ration"]
         XCTAssertTrue(aboutWindow.waitForExistence(timeout: 3))
         XCTAssertTrue(aboutWindow.staticTexts["Ration"].exists)
-        XCTAssertTrue(aboutWindow.staticTexts["Version 1.2.1 (78)"].exists)
+        XCTAssertTrue(aboutWindow.staticTexts["Version 1.3.0 (84)"].exists)
         XCTAssertTrue(
             aboutWindow.staticTexts[
                 "Copyright © 2026 IZZY.Agency"

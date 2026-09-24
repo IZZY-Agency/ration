@@ -617,4 +617,173 @@ final class ClaudeOrganizationResolverTests: XCTestCase {
             XCTFail("expected CancellationError, got \(error)")
         }
     }
+
+    // MARK: Plan detection
+
+    private static func listEnvelope(_ body: String) -> [String: Any] {
+        ["status": 200, "retryAfter": NSNull(), "body": body]
+    }
+
+    func testPlanDetectionReadsResolvedOrgsRateLimitTier() async throws {
+        let body = """
+        [{"uuid":"\(Self.otherOrg)","capabilities":["billing"],"rate_limit_tier":"default_claude_ai"},
+         {"uuid":"\(Self.org)","capabilities":["chat","claude_max"],"rate_limit_tier":"default_claude_max_20x"}]
+        """
+        let resolver = resolver(Self.evaluator(cookie: Self.org, organizationsEnvelope: Self.listEnvelope(body)))
+        let detection = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertEqual(detection, .tier(.claudeMax20x))
+    }
+
+    func testPlanDetectionIsCachedForItsLifetime() async throws {
+        var calls: [String] = []
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let body = "[{\"uuid\":\"\(Self.org)\",\"capabilities\":[\"chat\"],\"rate_limit_tier\":\"default_claude_max_5x\"}]"
+        let resolver = ClaudeOrganizationResolver(
+            client: WebUsageClient(evaluator: Self.evaluator(organizationsEnvelope: Self.listEnvelope(body)) { calls.append($0) }),
+            now: { clock }
+        )
+        _ = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        _ = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertEqual(calls, ["list"])
+        clock = clock.addingTimeInterval(ClaudeOrganizationResolver.planCacheLifetime + 1)
+        let again = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertEqual(again, .tier(.claudeMax5x))
+        XCTAssertEqual(calls, ["list", "list"])
+    }
+
+    // MARK: Cadence, coalescing, omission
+
+    func testPlanReadFailureStillWaitsOutTheInterval() async throws {
+        var calls: [String] = []
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let resolver = ClaudeOrganizationResolver(
+            client: WebUsageClient(evaluator: Self.evaluator(
+                organizationsEnvelope: ["status": 500, "retryAfter": NSNull(), "body": ""]
+            ) { calls.append($0) }),
+            now: { clock }
+        )
+        _ = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        _ = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertEqual(calls, ["list"], "a failed read is an attempt: no refetch every poll")
+        clock = clock.addingTimeInterval(ClaudeOrganizationResolver.planCacheLifetime + 1)
+        _ = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertEqual(calls, ["list", "list"])
+    }
+
+    func testConcurrentPlanReadsForOneOrgShareOneRequest() async throws {
+        var listCalls = 0
+        var release: CheckedContinuation<Void, Never>?
+        var reachedList: CheckedContinuation<Void, Never>?
+        let body = "[{\"uuid\":\"\(Self.org)\",\"capabilities\":[\"chat\"],\"rate_limit_tier\":\"default_claude_max_5x\"}]"
+        let resolver = resolver { _, arguments, _ in
+            guard arguments["path"] as? String == "/api/organizations" else { return NSNull() }
+            listCalls += 1
+            reachedList?.resume()
+            reachedList = nil
+            await withCheckedContinuation { release = $0 }
+            return Self.listEnvelope(body)
+        }
+        async let first = resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        await withCheckedContinuation { reachedList = $0 }
+        async let second = resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        await Task.yield()
+        release?.resume()
+        let (one, two) = try await (first, second)
+        XCTAssertEqual(listCalls, 1, "the second caller joins the in-flight read")
+        XCTAssertEqual(one, .tier(.claudeMax5x))
+        XCTAssertEqual(two, .tier(.claudeMax5x))
+    }
+
+    func testListThatOmitsTheOrgClearsItsOldReading() async throws {
+        var clock = Date(timeIntervalSince1970: 1_000)
+        var body = "[{\"uuid\":\"\(Self.org)\",\"capabilities\":[\"chat\"],\"rate_limit_tier\":\"default_claude_max_20x\"}]"
+        let resolver = ClaudeOrganizationResolver(
+            client: WebUsageClient { _, arguments, _ in
+                guard arguments["path"] as? String == "/api/organizations" else { return NSNull() }
+                return Self.listEnvelope(body)
+            },
+            now: { clock }
+        )
+        _ = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertEqual(resolver.cachedPlanDetection(organizationID: Self.org), .tier(.claudeMax20x))
+
+        body = "[{\"uuid\":\"\(Self.otherOrg)\",\"capabilities\":[\"chat\"],\"rate_limit_tier\":\"default_claude_ai\"}]"
+        clock = clock.addingTimeInterval(ClaudeOrganizationResolver.planCacheLifetime + 1)
+        let fresh = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertNil(fresh)
+        XCTAssertNil(resolver.cachedPlanDetection(organizationID: Self.org), "no expired reading survives")
+    }
+
+    /// Cancelling the caller reaches the read, and a cancelled read is not
+    /// an attempt: the next call may retry at once.
+    func testCancelledPlanReadIsForwardedAndRetriesNextTime() async throws {
+        var listCalls = 0
+        var release: CheckedContinuation<Void, Never>?
+        var reached: CheckedContinuation<Void, Never>?
+        var hold = true
+        let body = "[{\"uuid\":\"\(Self.org)\",\"capabilities\":[\"chat\"],\"rate_limit_tier\":\"default_claude_max_5x\"}]"
+        let resolver = resolver { _, arguments, _ in
+            guard arguments["path"] as? String == "/api/organizations" else { return NSNull() }
+            listCalls += 1
+            if hold {
+                hold = false
+                reached?.resume()
+                reached = nil
+                await withCheckedContinuation { release = $0 }
+            }
+            return Self.listEnvelope(body)
+        }
+        let caller = Task { try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView()) }
+        await withCheckedContinuation { reached = $0 }
+        caller.cancel()
+        release?.resume()
+        do {
+            _ = try await caller.value
+            XCTFail("expected cancellation")
+        } catch is CancellationError {}
+        XCTAssertNil(resolver.cachedPlanDetection(organizationID: Self.org), "a cancelled read records nothing")
+
+        let again = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertEqual(again, .tier(.claudeMax5x))
+        XCTAssertEqual(listCalls, 2)
+    }
+
+    func testPlanReadTimeoutReachesTheCaller() async throws {
+        let client = WebUsageClient(
+            evaluator: { _, _, _ in
+                await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                return NSNull()
+            },
+            sleep: { _ in }
+        )
+        let resolver = ClaudeOrganizationResolver(client: client)
+        do {
+            _ = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+            XCTFail("expected timedOut")
+        } catch let error as WebUsageClientError {
+            XCTAssertEqual(error, .timedOut, "the timeout must reach the recycle path")
+        }
+    }
+
+    func testPlanDetectionUnknownTierIsUnrecognized() async throws {
+        let body = "[{\"uuid\":\"\(Self.org)\",\"capabilities\":[\"chat\"],\"rate_limit_tier\":\"enterprise_x\"}]"
+        let resolver = resolver(Self.evaluator(organizationsEnvelope: Self.listEnvelope(body)))
+        let detection = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertEqual(detection, .unrecognized)
+    }
+
+    func testPlanDetectionFailureReadsAsNotRead() async throws {
+        let resolver = resolver(Self.evaluator(organizationsEnvelope: ["status": 500, "retryAfter": NSNull(), "body": ""]))
+        let detection = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertNil(detection)
+    }
+
+    func testWrongShapedTierDoesNotBreakResolution() async throws {
+        let body = "[{\"uuid\":\"\(Self.org)\",\"capabilities\":[\"chat\"],\"rate_limit_tier\":42}]"
+        let resolver = resolver(Self.evaluator(organizationsEnvelope: Self.listEnvelope(body)))
+        let id = try await resolver.organizationID(cacheKey: nil, in: WKWebView())
+        XCTAssertEqual(id, Self.org)
+        let detection = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
+        XCTAssertNil(detection)
+    }
 }

@@ -46,8 +46,15 @@ without duration metadata retain the original positional fallback.
 seconds. The app converts used percentage to its normalized remaining fraction
 exactly once, then the UI derives used capacity from that normalized value.
 
-`plan_type`, credit information, analytics history, and other response fields
-are not needed for the menu-bar limits and are ignored.
+`plan_type` (live-verified 2026-09-24: `"prolite"` on a Pro 5x account) is
+read for plan detection: `prolite` → Pro 5x (verified), `pro` → Pro 20x,
+`plus` → Plus; any other value is unknown and logged once (`NSLog`, the raw
+value only). It is lenient — a missing or wrong-shaped `plan_type` never fails
+the usage decode. The plan lands on `AccountRecord.plan` with
+`planSource: detected`; a user's own choice is never overwritten.
+
+Credit information, analytics history, and other response fields are not
+needed for the menu-bar limits and are ignored.
 
 ## Error and change handling
 

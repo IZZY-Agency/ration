@@ -1,6 +1,23 @@
 import Combine
 import Foundation
 
+/// How the popover (and the ⌥⌘U window, which shares its content) lays out
+/// accounts. `standard` = the card list; `focus` = one hero number, next-account
+/// lines and a quiet row of the rest.
+enum PopoverLayout: String, Codable, CaseIterable, Identifiable, Sendable {
+    case standard
+    case focus
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .standard: "Standard"
+        case .focus: "Focus"
+        }
+    }
+}
+
 struct AppSettingsData: Codable, Equatable, Sendable {
     var sortByWeeklyReset: Bool
     var usageAlertsEnabled: Bool
@@ -54,6 +71,25 @@ struct AppSettingsData: Codable, Equatable, Sendable {
     /// Missing → 1; clamped so a hand-edited value can never disable or flood
     /// the alert.
     var resetExpiryLeadDays: [String: Int]
+    /// Popover layout. Missing, unknown or malformed → `.standard`.
+    var popoverLayout: PopoverLayout
+    /// Global feature switches (Settings → General → Features). All default ON;
+    /// missing or malformed → ON. Presentation/gating only — see
+    /// `FeatureSwitches` for what each one hides.
+    var featureResetsEnabled: Bool
+    var featureSwitchAdviceEnabled: Bool
+    var featureWarmUpEnabled: Bool
+    var featureInUseEnabled: Bool
+
+    /// The four global switches as one value, for pure gating code.
+    var features: FeatureSwitches {
+        FeatureSwitches(
+            resets: featureResetsEnabled,
+            switchAdvice: featureSwitchAdviceEnabled,
+            warmUp: featureWarmUpEnabled,
+            inUse: featureInUseEnabled
+        )
+    }
 
     static let cellRange = 0...167
 
@@ -110,7 +146,12 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         alertThresholds: [String: ThresholdPair] = [:],
         alertChannels: [String: AlertChannels] = [:],
         cursorSpend: SpendThresholds = .off,
-        resetExpiryLeadDays: [String: Int] = [:]
+        resetExpiryLeadDays: [String: Int] = [:],
+        popoverLayout: PopoverLayout = .standard,
+        featureResetsEnabled: Bool = true,
+        featureSwitchAdviceEnabled: Bool = true,
+        featureWarmUpEnabled: Bool = true,
+        featureInUseEnabled: Bool = true
     ) {
         self.sortByWeeklyReset = sortByWeeklyReset
         self.usageAlertsEnabled = usageAlertsEnabled
@@ -126,6 +167,11 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         self.alertChannels = alertChannels
         self.cursorSpend = cursorSpend
         self.resetExpiryLeadDays = resetExpiryLeadDays
+        self.popoverLayout = popoverLayout
+        self.featureResetsEnabled = featureResetsEnabled
+        self.featureSwitchAdviceEnabled = featureSwitchAdviceEnabled
+        self.featureWarmUpEnabled = featureWarmUpEnabled
+        self.featureInUseEnabled = featureInUseEnabled
     }
 
     static func canonical(_ cells: [Int]) -> [Int] {
@@ -147,6 +193,11 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         case alertChannels
         case cursorSpend
         case resetExpiryLeadDays
+        case popoverLayout
+        case featureResetsEnabled
+        case featureSwitchAdviceEnabled
+        case featureWarmUpEnabled
+        case featureInUseEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -193,6 +244,18 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         cursorSpend = (try? container.decodeIfPresent(SpendThresholds.self, forKey: .cursorSpend))
             ?? .off
         resetExpiryLeadDays = Self.lossyDecode(container, forKey: .resetExpiryLeadDays)
+        // Lenient: a value from a newer build (or a hand edit) must not cost
+        // the user every other setting — `load()` defaults ALL fields on a throw.
+        let layout: PopoverLayout? = try? container.decodeIfPresent(PopoverLayout.self, forKey: .popoverLayout)
+        popoverLayout = layout ?? .standard
+        // Lenient like `popoverLayout`: missing or malformed → ON.
+        func feature(_ key: CodingKeys) -> Bool {
+            ((try? container.decodeIfPresent(Bool.self, forKey: key)) ?? nil) ?? true
+        }
+        featureResetsEnabled = feature(.featureResetsEnabled)
+        featureSwitchAdviceEnabled = feature(.featureSwitchAdviceEnabled)
+        featureWarmUpEnabled = feature(.featureWarmUpEnabled)
+        featureInUseEnabled = feature(.featureInUseEnabled)
     }
 
     /// Decodes a `[String: Value]` entry by entry, DROPPING malformed entries
@@ -237,6 +300,24 @@ final class AppSettings: ObservableObject {
     @Published private(set) var alertChannels: [String: AlertChannels] = [:]
     @Published private(set) var cursorSpend: SpendThresholds = .off
     @Published private(set) var resetExpiryLeadDays: [String: Int] = [:]
+    @Published private(set) var popoverLayout: PopoverLayout = .standard
+    @Published private(set) var featureResetsEnabled: Bool = true
+    @Published private(set) var featureSwitchAdviceEnabled: Bool = true
+    @Published private(set) var featureWarmUpEnabled: Bool = true
+    @Published private(set) var featureInUseEnabled: Bool = true
+
+    var features: FeatureSwitches { data.features }
+
+    /// The four switches as they change (current value first). For views that
+    /// hold `AppModel` rather than observing `AppSettings` directly — values
+    /// come from the `@Published` projections, so they are the NEW values even
+    /// though `@Published` emits from `willSet`.
+    var featuresPublisher: AnyPublisher<FeatureSwitches, Never> {
+        Publishers.CombineLatest4($featureResetsEnabled, $featureSwitchAdviceEnabled, $featureWarmUpEnabled, $featureInUseEnabled)
+            .map { FeatureSwitches(resets: $0, switchAdvice: $1, warmUp: $2, inUse: $3) }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
     /// `true` when the persisted settings file failed to decode and defaults
     /// were substituted. Consumers that fail *closed* on unknown config (the
     /// warm-up inhibition schedule) read this to avoid trusting the empty
@@ -261,7 +342,12 @@ final class AppSettings: ObservableObject {
             alertThresholds: alertThresholds,
             alertChannels: alertChannels,
             cursorSpend: cursorSpend,
-            resetExpiryLeadDays: resetExpiryLeadDays
+            resetExpiryLeadDays: resetExpiryLeadDays,
+            popoverLayout: popoverLayout,
+            featureResetsEnabled: featureResetsEnabled,
+            featureSwitchAdviceEnabled: featureSwitchAdviceEnabled,
+            featureWarmUpEnabled: featureWarmUpEnabled,
+            featureInUseEnabled: featureInUseEnabled
         )
     }
 
@@ -301,6 +387,35 @@ final class AppSettings: ObservableObject {
 
     func setSortByWeeklyReset(_ value: Bool) async throws {
         try await mutate { $0.sortByWeeklyReset = value }
+    }
+
+    func setPopoverLayout(_ value: PopoverLayout) async throws {
+        try await mutate { $0.popoverLayout = value }
+    }
+
+    func setFeature(_ feature: FeatureSwitch, enabled value: Bool) async throws {
+        switch feature {
+        case .resets: try await setFeatureResetsEnabled(value)
+        case .switchAdvice: try await setFeatureSwitchAdviceEnabled(value)
+        case .warmUp: try await setFeatureWarmUpEnabled(value)
+        case .inUse: try await setFeatureInUseEnabled(value)
+        }
+    }
+
+    func setFeatureResetsEnabled(_ value: Bool) async throws {
+        try await mutate { $0.featureResetsEnabled = value }
+    }
+
+    func setFeatureSwitchAdviceEnabled(_ value: Bool) async throws {
+        try await mutate { $0.featureSwitchAdviceEnabled = value }
+    }
+
+    func setFeatureWarmUpEnabled(_ value: Bool) async throws {
+        try await mutate { $0.featureWarmUpEnabled = value }
+    }
+
+    func setFeatureInUseEnabled(_ value: Bool) async throws {
+        try await mutate { $0.featureInUseEnabled = value }
     }
 
     func setUsageAlertsEnabled(_ value: Bool) async throws {
@@ -590,6 +705,21 @@ final class AppSettings: ObservableObject {
         }
         if resetExpiryLeadDays != data.resetExpiryLeadDays {
             resetExpiryLeadDays = data.resetExpiryLeadDays
+        }
+        if popoverLayout != data.popoverLayout {
+            popoverLayout = data.popoverLayout
+        }
+        if featureResetsEnabled != data.featureResetsEnabled {
+            featureResetsEnabled = data.featureResetsEnabled
+        }
+        if featureSwitchAdviceEnabled != data.featureSwitchAdviceEnabled {
+            featureSwitchAdviceEnabled = data.featureSwitchAdviceEnabled
+        }
+        if featureWarmUpEnabled != data.featureWarmUpEnabled {
+            featureWarmUpEnabled = data.featureWarmUpEnabled
+        }
+        if featureInUseEnabled != data.featureInUseEnabled {
+            featureInUseEnabled = data.featureInUseEnabled
         }
     }
 }

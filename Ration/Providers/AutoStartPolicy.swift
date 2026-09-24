@@ -45,6 +45,7 @@ enum AutoStartPolicy {
         weekly: UsageWindow? = nil,
         now: Date,
         schedule: WarmUpQuietSchedule = .allowAll,
+        warmUpEnabled: Bool = true,
         calendar: Calendar = .autoupdatingCurrent
     ) -> Bool {
         decide(
@@ -53,6 +54,7 @@ enum AutoStartPolicy {
             weekly: weekly,
             now: now,
             schedule: schedule,
+            warmUpEnabled: warmUpEnabled,
             calendar: calendar
         ) == .fire
     }
@@ -63,8 +65,13 @@ enum AutoStartPolicy {
         weekly: UsageWindow? = nil,
         now: Date,
         schedule: WarmUpQuietSchedule = .allowAll,
+        warmUpEnabled: Bool = true,
         calendar: Calendar = .autoupdatingCurrent
     ) -> Decision {
+        // The global Claude warm-up switch (Settings → General → Features).
+        // Off → no account fires; each account's own Auto-start choice is
+        // kept untouched for when it comes back on.
+        guard warmUpEnabled else { return .skip }
         guard windowSaysFire(
             account: account,
             fiveHour: fiveHour,

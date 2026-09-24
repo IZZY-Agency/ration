@@ -17,12 +17,23 @@ enum ActiveUsageMap {
 
     /// Every burning account, un-deduped — the menu-bar gauges, where two
     /// same-provider accounts in parallel use each get their own dot.
+    ///
+    /// `snapshots`, when given, reads history as it WILL be once those
+    /// snapshots are recorded (`UsageHistoryStore.rawSamples(…including:)`),
+    /// for a pass that runs between a snapshot's save and its `record` —
+    /// switch advice. Callers without it (the menu-bar dot) may lag advice by
+    /// one pass: they see the activity once `record` has run.
     @MainActor
-    static func computePerAccount(accounts: [AccountRecord], history: UsageHistoryStore, now: Date) -> [UUID: ActiveUsage] {
+    static func computePerAccount(
+        accounts: [AccountRecord],
+        history: UsageHistoryStore,
+        now: Date,
+        including snapshots: [UUID: UsageSnapshot]? = nil
+    ) -> [UUID: ActiveUsage] {
         ActiveUsageDetector.perAccount(
             accounts: accounts,
-            fiveHourSamples: samples(.fiveHour, accounts: accounts, history: history),
-            weeklySamples: samples(.weekly, accounts: accounts, history: history),
+            fiveHourSamples: samples(.fiveHour, accounts: accounts, history: history, including: snapshots),
+            weeklySamples: samples(.weekly, accounts: accounts, history: history, including: snapshots),
             now: now
         )
     }
@@ -31,10 +42,22 @@ enum ActiveUsageMap {
     private static func samples(
         _ kind: UsageWindowKind,
         accounts: [AccountRecord],
-        history: UsageHistoryStore
+        history: UsageHistoryStore,
+        including snapshots: [UUID: UsageSnapshot]? = nil
     ) -> [UUID: [UsageHistorySample]] {
-        Dictionary(uniqueKeysWithValues: accounts.map {
-            ($0.id, history.rawSamples(accountID: $0.id, kind: kind))
-        })
+        var result: [UUID: [UsageHistorySample]] = [:]
+        for account in accounts {
+            if let snapshots {
+                result[account.id] = history.rawSamples(
+                    accountID: account.id,
+                    kind: kind,
+                    provider: account.provider,
+                    including: snapshots[account.id]
+                )
+            } else {
+                result[account.id] = history.rawSamples(accountID: account.id, kind: kind)
+            }
+        }
+        return result
     }
 }

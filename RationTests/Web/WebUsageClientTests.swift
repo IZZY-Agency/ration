@@ -292,6 +292,29 @@ final class WebUsageClientTests: XCTestCase {
         await Task.yield()
     }
 
+    /// A vetoing `mayDispatch` stops the POST before WebKit sees it.
+    @MainActor
+    func testPostJSONVetoedByMayDispatchNeverEvaluates() async throws {
+        var evaluations = 0
+        let client = WebUsageClient(
+            evaluator: { _, _, _ in
+                evaluations += 1
+                return ["status": 200, "retryAfter": NSNull(), "body": ""]
+            },
+            sleep: { _ in try await Task.sleep(for: .seconds(60)) }
+        )
+        do {
+            _ = try await client.postJSON(
+                path: "/api/x",
+                bodyJSON: "{}",
+                mayDispatch: { throw CancellationError() },
+                in: WKWebView(frame: .zero)
+            )
+            XCTFail("expected the veto to throw")
+        } catch is CancellationError {}
+        XCTAssertEqual(evaluations, 0, "a vetoed POST never reaches the page")
+    }
+
     @MainActor
     func testAllEntryPointsAreBounded() async {
         // Same hung evaluator + immediate sleep: every JS-evaluating entry

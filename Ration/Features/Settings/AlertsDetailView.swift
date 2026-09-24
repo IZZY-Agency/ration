@@ -146,7 +146,7 @@ struct AlertsDetailView: View {
                         .id(row.id)
                     }
 
-                    if provider != .cursor {
+                    if provider != .cursor, settings.featureResetsEnabled {
                         ResetCreditsSettingsRow(
                             provider: provider,
                             leadDays: settings.data.resetExpiryLeadDays(provider: provider),

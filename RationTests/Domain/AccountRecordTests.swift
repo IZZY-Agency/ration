@@ -108,4 +108,39 @@ final class AccountRecordTests: XCTestCase {
         paused.isPaused = true
         XCTAssertEqual(paused.historyLabel, "Work — PAUSED")
     }
+
+    func testPlanRoundTrips() throws {
+        let account = AccountRecord(
+            id: UUID(), provider: .chatGPT, label: "20x", webProfileID: UUID(),
+            displayOrder: 0, createdAt: Date(timeIntervalSince1970: 1_000),
+            plan: .chatGPTPro20x, planSource: .user
+        )
+        let decoded = try JSONDecoder().decode(AccountRecord.self, from: JSONEncoder().encode(account))
+        XCTAssertEqual(decoded.plan, .chatGPTPro20x)
+        XCTAssertEqual(decoded.planSource, .user)
+        XCTAssertEqual(decoded, account)
+    }
+
+    func testLegacyJSONHasNoPlan() throws {
+        let legacy = """
+        {"id":"00000000-0000-0000-0000-000000000001","provider":"claude","label":"Work",\
+        "webProfileID":"00000000-0000-0000-0000-000000000002","displayOrder":0,\
+        "createdAt":1000}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AccountRecord.self, from: legacy)
+        XCTAssertNil(decoded.plan)
+        XCTAssertNil(decoded.planSource)
+    }
+
+    func testUnknownPlanValueDecodesLeniently() throws {
+        let future = """
+        {"id":"00000000-0000-0000-0000-000000000001","provider":"claude","label":"Work",\
+        "webProfileID":"00000000-0000-0000-0000-000000000002","displayOrder":0,\
+        "createdAt":1000,"plan":"claudeMax100x","planSource":"oracle"}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AccountRecord.self, from: future)
+        XCTAssertNil(decoded.plan)
+        XCTAssertNil(decoded.planSource)
+        XCTAssertEqual(decoded.label, "Work")
+    }
 }

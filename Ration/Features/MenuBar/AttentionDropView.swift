@@ -29,6 +29,9 @@ final class AttentionDropModelObject: ObservableObject {
     @Published var showsTicker = false
     /// Room the panel has for rows on the screen it will appear on.
     @Published var availableRowsHeight: CGFloat = .greatestFiniteMagnitude
+    /// `AppModel.switchAdvice`: a limit row of an advice's `from` account
+    /// names the account to switch to.
+    @Published var switchAdvice: [SwitchAdvice] = []
 
     /// Set once by the controller; not published — changing a callback must
     /// not invalidate the view.
@@ -118,7 +121,12 @@ struct AttentionDropView: View {
     private var rowsStack: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(rows) { row in
-                AttentionDropRowView(row: row, now: now, onSelect: { onSelect(row) })
+                AttentionDropRowView(
+                    row: row,
+                    now: now,
+                    advice: Self.switchAdvice(for: row, in: model.switchAdvice),
+                    onSelect: { onSelect(row) }
+                )
             }
         }
     }
@@ -195,11 +203,20 @@ struct AttentionDropView: View {
         )
     }
 
+    /// The advice a row shows: only a LIMIT row (a rate window) of the
+    /// advice's `from` account. Cursor spend and reset rows never carry one.
+    static func switchAdvice(for row: AttentionRow, in advice: [SwitchAdvice]) -> SwitchAdvice? {
+        guard case .window = row.subject else { return nil }
+        return advice.first { $0.fromAccountID == row.accountID }
+    }
+
     /// What VoiceOver reads for one row: words, never the drawn "5H" / "WK" /
-    /// "4h 12m" (read letter by letter).
+    /// "4h 12m" (read letter by letter). An advised row ends with
+    /// ", switch to <target>".
     static func rowAccessibilityLabel(
         _ row: AttentionRow,
         now: Date,
+        advice: SwitchAdvice? = nil,
         locale: Locale = .current
     ) -> String {
         func spoken(_ date: Date) -> String {
@@ -220,7 +237,8 @@ struct AttentionDropView: View {
             ?? row.spentCents.map { "\(AlertMessage.dollars($0)) spent" }
             ?? ""
         let reset = row.resetsAt.map { ", resets in \(spoken($0))" } ?? ""
-        return "\(row.accountLabel), \(subject), \(value), \(tierWord)\(reset)"
+        let switchTo: String = advice.map { SwitchAdviceCopy.dropSpokenSuffix($0) } ?? ""
+        return "\(row.accountLabel), \(subject), \(value), \(tierWord)\(reset)\(switchTo)"
     }
 
     @ViewBuilder
@@ -270,6 +288,7 @@ private struct Ticker: Shape {
 private struct AttentionDropRowView: View {
     let row: AttentionRow
     let now: Date
+    let advice: SwitchAdvice?
     let onSelect: () -> Void
 
     @State private var isHovering = false
@@ -288,18 +307,10 @@ private struct AttentionDropRowView: View {
                     .fill(tint)
                     .frame(width: 5, height: 5)
 
-                Text(row.accountLabel)
-                    .font(Theme.display(15, .semibold))
-                    .foregroundStyle(Theme.cream)
-                    .lineLimit(1)
+                name
                     .layoutPriority(1)
 
-                Text(subjectLabel)
-                    .font(Theme.mono(12))
-                    .tracking(0.6)
-                    .textCase(.uppercase)
-                    .foregroundStyle(Theme.creamFaint)
-                    .lineLimit(1)
+                subjectView
                     .layoutPriority(1)
 
                 meter
@@ -335,6 +346,29 @@ private struct AttentionDropRowView: View {
         .accessibilityHint("Opens Ration and dismisses this row")
     }
 
+    /// The account's name, then "→ target" in the activity green when the
+    /// row is advised. The name gives way first (the target outranks it
+    /// inside this stack), then the target.
+    @ViewBuilder
+    private var name: some View {
+        let label = Text(row.accountLabel)
+            .font(Theme.display(15, .semibold))
+            .foregroundStyle(Theme.cream)
+            .lineLimit(1)
+        if let advice {
+            AdvisedNameLayout(spacing: 5) {
+                label
+                Text(SwitchAdviceCopy.dropSuffix(advice))
+                    .font(Theme.display(15, .semibold))
+                    .foregroundStyle(Theme.active)
+                    .lineLimit(1)
+            }
+            .clipped()
+        } else {
+            label
+        }
+    }
+
     /// Cursor has no denominator, so its line shows the amount alone with no
     /// meter — there is nothing to fill a meter against.
     @ViewBuilder
@@ -354,6 +388,22 @@ private struct AttentionDropRowView: View {
             .frame(height: 3)
         } else {
             Spacer(minLength: 8)
+        }
+    }
+
+    /// A limit window is named by the shared `WindowTag`; the other
+    /// subjects (spend, reset credits) are words, not windows.
+    @ViewBuilder
+    private var subjectView: some View {
+        if case let .window(kind) = row.subject {
+            WindowTag(kind: kind, label: nil, size: 12)
+        } else {
+            Text(subjectLabel)
+                .font(Theme.mono(12))
+                .tracking(0.6)
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.creamFaint)
+                .lineLimit(1)
         }
     }
 
@@ -387,6 +437,94 @@ private struct AttentionDropRowView: View {
     }
 
     private var accessibilityLabel: String {
-        AttentionDropView.rowAccessibilityLabel(row, now: now)
+        AttentionDropView.rowAccessibilityLabel(row, now: now, advice: advice)
+    }
+}
+
+/// Name, then "→ target": the target keeps its full width while the name can
+/// give way, but never below a short floor — a plain priority split squeezed a
+/// long name down to its first glyph behind a long target. Past the floor the
+/// target truncates too.
+struct AdvisedNameLayout: Layout {
+    var spacing: CGFloat
+    /// The least of the account's name that stays visible while the target
+    /// still has room to give (a name shorter than this keeps its own width).
+    static let nameFloor: CGFloat = 44
+
+    /// Offered name width and target width. The gap exists only while the
+    /// target gets width; with none, the name has the whole span.
+    /// `available == nil` → ideal sizes.
+    static func split(
+        available: CGFloat?,
+        spacing: CGFloat,
+        nameIdeal: CGFloat,
+        targetIdeal: CGFloat
+    ) -> (name: CGFloat, target: CGFloat) {
+        guard let available else { return (nameIdeal, targetIdeal) }
+        let room: CGFloat = max(0, available - spacing)
+        let floor: CGFloat = min(nameIdeal, nameFloor)
+        let target: CGFloat = min(targetIdeal, max(0, room - floor))
+        guard target > 0 else { return (min(nameIdeal, max(0, available)), 0) }
+        return (min(nameIdeal, max(0, room - target)), target)
+    }
+
+    private func widths(available: CGFloat?, subviews: Subviews) -> (name: CGFloat, target: CGFloat) {
+        guard subviews.count == 2 else { return (0, 0) }
+        let nameIdeal: CGFloat = subviews[0].sizeThatFits(.unspecified).width
+        let targetIdeal: CGFloat = subviews[1].sizeThatFits(.unspecified).width
+        let offered = Self.split(
+            available: available, spacing: spacing, nameIdeal: nameIdeal, targetIdeal: targetIdeal
+        )
+        guard let available, offered.target > 0 else { return offered }
+        let drawn: CGFloat = subviews[0].sizeThatFits(ProposedViewSize(width: offered.name, height: nil)).width
+        return Self.reclaim(
+            available: available, spacing: spacing, offered: offered,
+            drawnName: drawn, nameIdeal: nameIdeal, targetIdeal: targetIdeal
+        )
+    }
+
+    /// A truncated name draws narrower than offered (it cuts at a glyph);
+    /// hand that slack back to the target instead of leaving a gap — but
+    /// never below the floor, or the target would eat into it.
+    static func reclaim(
+        available: CGFloat,
+        spacing: CGFloat,
+        offered: (name: CGFloat, target: CGFloat),
+        drawnName: CGFloat,
+        nameIdeal: CGFloat,
+        targetIdeal: CGFloat
+    ) -> (name: CGFloat, target: CGFloat) {
+        let floor: CGFloat = min(nameIdeal, nameFloor)
+        let name: CGFloat = min(offered.name, max(drawnName, floor))
+        let room: CGFloat = max(0, available - spacing)
+        return (name, min(targetIdeal, max(0, room - name)))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let split = widths(available: proposal.width, subviews: subviews)
+        var height: CGFloat = 0
+        for subview in subviews {
+            height = max(height, subview.sizeThatFits(.unspecified).height)
+        }
+        let gap: CGFloat = split.target > 0 ? spacing : 0
+        return CGSize(width: split.name + gap + split.target, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let split = widths(available: bounds.width, subviews: subviews)
+        subviews[0].place(
+            at: CGPoint(x: bounds.minX, y: bounds.midY),
+            anchor: .leading,
+            proposal: ProposedViewSize(width: split.name, height: bounds.height)
+        )
+        // A target with no width is parked past the trailing edge (the
+        // container clips), never drawn over the name.
+        let targetX: CGFloat = split.target > 0 ? bounds.minX + split.name + spacing : bounds.maxX
+        subviews[1].place(
+            at: CGPoint(x: targetX, y: bounds.midY),
+            anchor: .leading,
+            proposal: ProposedViewSize(width: split.target, height: bounds.height)
+        )
     }
 }

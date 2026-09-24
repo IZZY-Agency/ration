@@ -346,4 +346,82 @@ final class UsageHistoryRollupStoreTests: XCTestCase {
         XCTAssertTrue(entries.contains("rollup-1970-01.json"), "valid rewritten January file must survive")
         XCTAssertEqual(entries.filter { $0.hasPrefix("rollup-1970-01.json.corrupt-") }.count, 1)
     }
+
+    // MARK: Bounded recent read
+
+    private func weeklyAndFable(_ id: UUID, _ t: TimeInterval, weekly: Double, fable: Double) -> UsageSnapshot {
+        UsageSnapshot(
+            accountID: id, fetchedAt: Date(timeIntervalSince1970: t),
+            fiveHour: nil,
+            weekly: UsageWindow(kind: .weekly, remainingFraction: weekly, resetsAt: nil),
+            modelWeekly: UsageWindow(kind: .modelWeekly, remainingFraction: fable, resetsAt: nil)
+        )
+    }
+
+    /// Only months intersecting `since` are read: an older month's file is
+    /// never decoded (a corrupt one would otherwise be quarantined), and
+    /// buckets before `since` — on disk or in the live month — are dropped.
+    func testLoadRecentRollupsReadsOnlyMonthsSinceAndFiltersToSince() async throws {
+        let dir = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let acc = account()
+        let accountDir = dir.appending(path: acc.id.uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: accountDir, withIntermediateDirectories: true)
+        // Two months before the cutoff month (the month before is read, for
+        // files captured in another time zone).
+        let december = accountDir.appending(path: "rollup-1969-12.json")
+        try Data("not json".utf8).write(to: december)
+
+        let utc = TimeZone(identifier: "UTC")!
+        let feb5: TimeInterval = 35 * 86_400
+        let feb15: TimeInterval = 45 * 86_400
+        let since = Date(timeIntervalSince1970: 40 * 86_400)
+        let store = UsageHistoryStore(rootDirectory: dir, timeZone: utc)
+        await store.load(activeAccountIDs: [acc.id])
+        store.record(account: acc, snapshot: weeklyAndFable(acc.id, feb5, weekly: 1.0, fable: 1.0))
+        store.record(account: acc, snapshot: weeklyAndFable(acc.id, feb5 + 1_800, weekly: 0.9, fable: 0.95))
+        store.record(account: acc, snapshot: weeklyAndFable(acc.id, feb15, weekly: 0.85, fable: 0.9))
+        store.record(account: acc, snapshot: weeklyAndFable(acc.id, feb15 + 1_800, weekly: 0.8, fable: 0.85))
+        await store.flush()
+
+        let live = await store.loadRecentRollups(accountID: acc.id, kinds: [.weekly, .modelWeekly], since: since)
+        let reloaded = UsageHistoryStore(rootDirectory: dir, timeZone: utc)
+        await reloaded.load(activeAccountIDs: [acc.id])
+        let disk = await reloaded.loadRecentRollups(accountID: acc.id, kinds: [.weekly, .modelWeekly], since: since)
+
+        for result in [live, disk] {
+            for kind in [UsageWindowKind.weekly, .modelWeekly] {
+                let buckets = result[kind] ?? []
+                XCTAssertFalse(buckets.isEmpty, "\(kind)")
+                XCTAssertTrue(buckets.allSatisfy { $0.hourStart >= since }, "\(kind): \(buckets.map(\.hourStart))")
+            }
+        }
+        let entries = try FileManager.default.contentsOfDirectory(atPath: accountDir.path(percentEncoded: false))
+        XCTAssertTrue(entries.contains("rollup-1969-12.json"), "an older month must not be read")
+        XCTAssertFalse(entries.contains { $0.hasPrefix("rollup-1969-12.json.corrupt-") }, "\(entries)")
+    }
+
+    /// Files are named in their CAPTURE time zone. After a zone change the
+    /// month before the cutoff month (in the current zone) can still hold
+    /// in-window buckets: captured in Los Angeles, read in Paris.
+    func testLoadRecentRollupsReadsThePreviousMonthFileAfterATimeZoneChange() async throws {
+        let dir = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let acc = account()
+        let accountDir = dir.appending(path: acc.id.uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: accountDir, withIntermediateDirectories: true)
+        // 1970-02-01T00:00Z is Jan 31 16:00 in Los Angeles → January's file.
+        let json = """
+        {"version":1,"data":{"fiveHour":[],"weekly":[\
+        {"hourStart":"1970-02-01T00:00:00Z","tzOffsetSeconds":-28800,"consumed":0.1,"minRemaining":0.9,"sampleCount":1}\
+        ],"modelWeekly":[]}}
+        """
+        try Data(json.utf8).write(to: accountDir.appending(path: "rollup-1970-01.json"))
+
+        let paris = TimeZone(identifier: "Europe/Paris")!
+        let store = UsageHistoryStore(rootDirectory: dir, timeZone: paris)
+        await store.load(activeAccountIDs: [acc.id])
+        // Jan 31 23:10Z = Feb 1 00:10 in Paris: the cutoff month is February.
+        let since = Date(timeIntervalSince1970: 31 * 86_400 - 50 * 60)
+        let result = await store.loadRecentRollups(accountID: acc.id, kinds: [.weekly], since: since)
+        XCTAssertEqual(result[.weekly]?.map(\.hourStart), [Date(timeIntervalSince1970: 31 * 86_400)])
+    }
 }

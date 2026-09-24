@@ -77,4 +77,42 @@ final class AccountStoreTests: XCTestCase {
             XCTAssertEqual(error, .accountNotFound)
         }
     }
+
+    @MainActor
+    func testApplyDetectedPlanFillsThenRespectsUserChoice() async throws {
+        let store = makeStore()
+        let id = try await addClaude(store)
+        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeMax20x))
+        XCTAssertEqual(store.accounts.first?.plan, .claudeMax20x)
+        XCTAssertEqual(store.accounts.first?.planSource, .detected)
+
+        try await store.setPlan(id: id, plan: .claudeMax5x)
+        XCTAssertEqual(store.accounts.first?.planSource, .user)
+        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeMax20x))
+        XCTAssertEqual(store.accounts.first?.plan, .claudeMax5x, "detection never overwrites a user choice")
+    }
+
+    @MainActor
+    func testSetPlanNilReturnsToDetection() async throws {
+        let store = makeStore()
+        let id = try await addClaude(store)
+        try await store.setPlan(id: id, plan: .claudePro)
+        try await store.setPlan(id: id, plan: nil)
+        XCTAssertNil(store.accounts.first?.plan)
+        XCTAssertNil(store.accounts.first?.planSource)
+        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeMax20x))
+        XCTAssertEqual(store.accounts.first?.plan, .claudeMax20x)
+    }
+
+    @MainActor
+    func testApplyDetectedPlanSkipsSaveWhenUnchanged() async throws {
+        var saves = 0
+        let url = FileManager.default.temporaryDirectory.appending(path: "a-\(UUID().uuidString).json")
+        let store = AccountStore(fileURL: url, saveAccounts: { _ in saves += 1 })
+        let id = try await addClaude(store)
+        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeMax20x))
+        let afterFirst = saves
+        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeMax20x))
+        XCTAssertEqual(saves, afterFirst)
+    }
 }

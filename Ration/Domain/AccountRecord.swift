@@ -67,6 +67,10 @@ struct AccountRecord: Codable, Equatable, Identifiable, Sendable {
     // warm-up, and the popover, while the signed-in web profile stays on
     // disk. Backward-compatible: absent in older accounts.json → false.
     var isPaused: Bool
+    // Subscription plan. Backward-compatible: absent or
+    // unknown values in accounts.json → nil.
+    var plan: PlanTier?
+    var planSource: PlanSource?
 
     init(
         id: UUID,
@@ -79,7 +83,9 @@ struct AccountRecord: Codable, Equatable, Identifiable, Sendable {
         keepAliveConversationID: UUID? = nil,
         lastAutoStartedAt: Date? = nil,
         billingRenewalDay: Int? = nil,
-        isPaused: Bool = false
+        isPaused: Bool = false,
+        plan: PlanTier? = nil,
+        planSource: PlanSource? = nil
     ) {
         self.id = id
         self.provider = provider
@@ -92,6 +98,8 @@ struct AccountRecord: Codable, Equatable, Identifiable, Sendable {
         self.lastAutoStartedAt = lastAutoStartedAt
         self.billingRenewalDay = billingRenewalDay
         self.isPaused = isPaused
+        self.plan = plan
+        self.planSource = planSource
     }
 
     init(from decoder: any Decoder) throws {
@@ -117,5 +125,10 @@ struct AccountRecord: Codable, Equatable, Identifiable, Sendable {
         isPaused = try container.decodeIfPresent(
             Bool.self, forKey: .isPaused
         ) ?? false
+        // Lenient: a value written by a newer build must not cost the account.
+        plan = (try? container.decodeIfPresent(PlanTier.self, forKey: .plan)) ?? nil
+        planSource = plan == nil
+            ? nil
+            : (try? container.decodeIfPresent(PlanSource.self, forKey: .planSource)) ?? nil
     }
 }

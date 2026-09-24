@@ -57,6 +57,9 @@ final class ClaudeResetCreditsTests: XCTestCase {
         let client = WebUsageClient { script, arguments, _ in
             if script.contains("lastActiveOrg") { return org }
             if let path = arguments["path"] as? String {
+                if path == "/api/organizations" {
+                    return ["status": 200, "retryAfter": NSNull(), "body": "[]"]
+                }
                 requestedPath = path
                 return ["status": 200, "retryAfter": NSNull(), "body": body]
             }

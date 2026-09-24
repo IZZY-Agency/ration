@@ -6,6 +6,8 @@ struct AccountCardView: View {
     var samples: (UsageWindowKind) -> [UsageHistorySample] = { _ in [] }
     var projection: (UsageWindowKind) -> Date? = { _ in nil }
     var activeUsage: ActiveUsage? = nil
+    /// The Resets feature switch (Settings → General → Features).
+    var showsResetCredits: Bool = true
     var now: Date = .now
     var resetLeadDays: Int = 1
 
@@ -27,6 +29,13 @@ struct AccountCardView: View {
     }
 
     static func isHighlighted(phase: InUsePhase) -> Bool { phase != .none }
+
+    /// "Work, Claude" — plus the plan when known: "Work, Claude Max 20x".
+    static func nameAccessibilityLabel(for account: AccountRecord) -> String {
+        let provider: String = account.provider.displayName
+        guard let plan = account.effectivePlan else { return "\(account.label), \(provider)" }
+        return "\(account.label), \(provider) \(plan.displayName)"
+    }
 
     /// The provider chip (CLAUDE / CHATGPT / CURSOR) names the provider, so it
     /// wears that provider's identity accent — it was Claude gold for all.
@@ -59,10 +68,7 @@ struct AccountCardView: View {
                     .font(Theme.display(17, .semibold))
                     .foregroundStyle(Theme.cream)
                     .lineLimit(1)
-                    .accessibilityLabel(
-                        "\(presentation.account.label), "
-                            + presentation.account.provider.displayName
-                    )
+                    .accessibilityLabel(Self.nameAccessibilityLabel(for: presentation.account))
 
                 Text(presentation.account.provider.rawValue)
                     .font(Theme.mono(11))
@@ -76,6 +82,10 @@ struct AccountCardView: View {
                             .stroke(accent.opacity(Self.providerChipBorderOpacity), lineWidth: 1)
                     )
                     .accessibilityHidden(true)
+
+                if let planTag = PlanChoice.tag(for: presentation.account) {
+                    PlanTagView(tag: planTag)
+                }
 
                 Spacer(minLength: 8)
                 AccountStateBadge(
@@ -135,7 +145,7 @@ struct AccountCardView: View {
                     }
                 }
 
-                if let summary = ResetCreditsSummary.make(
+                if showsResetCredits, let summary = ResetCreditsSummary.make(
                     credits: presentation.snapshot?.resetCredits,
                     leadDays: resetLeadDays,
                     now: currentDate
@@ -214,5 +224,28 @@ enum AccountLimitLayout {
         case .weekly: "wk"
         case .modelWeekly: snapshot?.modelWeekly?.label ?? "Fable"
         }
+    }
+}
+
+/// The small plan tag next to the provider chip (`MAX 20X`, `PRO 5X`, …):
+/// neutral ink so it reads as a property, not a second identity color. Never
+/// truncates — the account name gives way first.
+struct PlanTagView: View {
+    let tag: String
+
+    var body: some View {
+        Text(tag)
+            .font(Theme.mono(11))
+            .tracking(0.8)
+            .foregroundStyle(Theme.creamDim)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Theme.line2, lineWidth: 1)
+            )
+            .accessibilityHidden(true)
     }
 }
