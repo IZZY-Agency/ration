@@ -16,7 +16,8 @@ final class RationApplicationDelegateTests: XCTestCase {
             model: harness.model,
             launchAtLogin: harness.launchAtLogin,
             popover: popover,
-            hotKeyRegistrar: hotKeyRegistrar
+            hotKeyRegistrar: hotKeyRegistrar,
+            makePopoverHotKeyRegistrar: HotKeyRegistrarFactorySpy().make
         )
         controller.start()
         defer { controller.stop() }
@@ -46,6 +47,407 @@ final class RationApplicationDelegateTests: XCTestCase {
             )
         )
         XCTAssertFalse(popover.isShown)
+    }
+
+    // MARK: - Popover shortcuts as temporary global hotkeys
+    //
+    // An LSUIElement app is never active, so the popover never becomes key and
+    // its SwiftUI `.keyboardShortcut`s never see a key event. While the popover
+    // is shown, ⌘R / ⌘, / ⌘Q (and ⌘D while the drop is up) are Carbon hotkeys.
+
+    private func makeShortcutController(
+        harness: DelegateHarness,
+        factory: HotKeyRegistrarFactorySpy,
+        refreshes: @escaping () -> Void = {},
+        quits: @escaping () -> Void = {},
+        popover: PopoverPresenterSpy = PopoverPresenterSpy(),
+        statusItemIsAnchored: @escaping () -> Bool = { true },
+        keyCode: @escaping @MainActor (PopoverShortcut) -> UInt32 = { $0.ansiKeyCode }
+    ) -> (MenuBarController, PopoverPresenterSpy, HotKeyRegistrarSpy) {
+        let optionCommandU = HotKeyRegistrarSpy()
+        let controller = MenuBarController(
+            model: harness.model,
+            launchAtLogin: harness.launchAtLogin,
+            popover: popover,
+            hotKeyRegistrar: optionCommandU,
+            makePopoverHotKeyRegistrar: factory.make,
+            refreshAll: refreshes,
+            terminateApp: quits,
+            statusItemIsAnchored: statusItemIsAnchored,
+            popoverKeyCode: keyCode
+        )
+        controller.start()
+        return (controller, popover, optionCommandU)
+    }
+
+    private func clickStatusItem(_ controller: MenuBarController) throws {
+        let button = try XCTUnwrap(controller.statusItem?.button)
+        XCTAssertTrue(
+            NSApplication.shared.sendAction(try XCTUnwrap(button.action), to: button.target, from: button)
+        )
+    }
+
+    func testShowingThePopoverRegistersCommandRCommaQ() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        let (controller, _, optionCommandU) = makeShortcutController(harness: harness, factory: factory)
+        defer { controller.stop() }
+
+        XCTAssertTrue(factory.active.isEmpty, "nothing is claimed while the popover is closed")
+        try clickStatusItem(controller)
+
+        XCTAssertEqual(
+            Set(factory.active.map(\.registeredKeyCode)),
+            [UInt32(kVK_ANSI_R), UInt32(kVK_ANSI_Comma), UInt32(kVK_ANSI_Q)]
+        )
+        XCTAssertTrue(factory.active.allSatisfy { $0.registeredModifiers == UInt32(cmdKey) })
+        XCTAssertTrue(factory.active.allSatisfy { $0.registeredExclusive == true }, "conflicts must be detected")
+        XCTAssertEqual(optionCommandU.registeredExclusive, false, "⌥⌘U keeps its shared registration")
+        XCTAssertEqual(optionCommandU.registerCallCount, 1)
+        XCTAssertEqual(optionCommandU.unregisterCallCount, 0)
+    }
+
+    func testCommandDIsClaimedOnlyWhileTheDropIsShowing() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        let (controller, _, _) = makeShortcutController(harness: harness, factory: factory)
+        defer { controller.stop() }
+
+        try clickStatusItem(controller)
+        XCTAssertNil(factory.active(keyCode: kVK_ANSI_D))
+
+        controller.attentionPresence.set(true)
+        XCTAssertNotNil(factory.active(keyCode: kVK_ANSI_D), "the drop appearing while open claims ⌘D")
+
+        controller.attentionPresence.set(false)
+        XCTAssertNil(factory.active(keyCode: kVK_ANSI_D), "and its leaving releases it")
+        XCTAssertEqual(factory.active.count, 3)
+    }
+
+    func testDropAlreadyShowingClaimsCommandDOnPresent() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        let (controller, _, _) = makeShortcutController(harness: harness, factory: factory)
+        defer { controller.stop() }
+
+        controller.attentionPresence.set(true)
+        XCTAssertTrue(factory.active.isEmpty, "the drop alone claims nothing")
+        try clickStatusItem(controller)
+        XCTAssertEqual(factory.active.count, 4)
+    }
+
+    func testEveryClosePathReleasesEveryPopoverHotKey() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        let (controller, popover, optionCommandU) = makeShortcutController(harness: harness, factory: factory)
+        defer { controller.stop() }
+
+        // Toggle via the status item.
+        try clickStatusItem(controller)
+        controller.attentionPresence.set(true)
+        XCTAssertEqual(factory.active.count, 4)
+        try clickStatusItem(controller)
+        XCTAssertTrue(factory.active.isEmpty, "toggle closed")
+
+        // Transient click-away / Esc: AppKit closes the popover itself.
+        try clickStatusItem(controller)
+        XCTAssertEqual(factory.active.count, 4)
+        popover.performClose(nil)
+        XCTAssertTrue(factory.active.isEmpty, "click-away / Esc")
+
+        // Opening a window from the popover (⌘, fired as a hotkey).
+        try clickStatusItem(controller)
+        factory.active(keyCode: kVK_ANSI_Comma)?.fire()
+        XCTAssertTrue(controller.hasSettingsWindow, "⌘, runs the Settings button's path")
+        XCTAssertFalse(popover.isShown)
+        XCTAssertTrue(factory.active.isEmpty, "opening a window")
+
+        // Reopening claims fresh registrations; nothing leaks across.
+        try clickStatusItem(controller)
+        XCTAssertEqual(factory.active.count, 4)
+        XCTAssertEqual(factory.made.count, 16, "four presentations, each registers its own set")
+        XCTAssertEqual(optionCommandU.unregisterCallCount, 0, "⌥⌘U untouched throughout")
+    }
+
+    func testStopReleasesPopoverHotKeysEvenIfNoCloseCallbackArrives() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        let (controller, popover, optionCommandU) = makeShortcutController(harness: harness, factory: factory)
+
+        try clickStatusItem(controller)
+        popover.sendsDidClose = false
+        controller.stop()
+
+        XCTAssertTrue(factory.active.isEmpty)
+        XCTAssertTrue(factory.made.allSatisfy { $0.unregisterCallCount == 1 }, "released exactly once")
+        XCTAssertEqual(optionCommandU.unregisterCallCount, 1)
+    }
+
+    func testHotKeysRunTheButtonActions() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        var refreshes = 0
+        var quits = 0
+        let (controller, _, _) = makeShortcutController(
+            harness: harness,
+            factory: factory,
+            refreshes: { refreshes += 1 },
+            quits: { quits += 1 }
+        )
+        defer { controller.stop() }
+
+        try clickStatusItem(controller)
+        factory.active(keyCode: kVK_ANSI_R)?.fire()
+        XCTAssertEqual(refreshes, 1)
+        XCTAssertEqual(quits, 0)
+        factory.active(keyCode: kVK_ANSI_Q)?.fire()
+        XCTAssertEqual(quits, 1)
+        XCTAssertEqual(refreshes, 1)
+    }
+
+    func testAShowThatNeverHappensClaimsNothing() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        let popover = PopoverPresenterSpy()
+        popover.showSucceeds = false
+        let (controller, _, _) = makeShortcutController(harness: harness, factory: factory, popover: popover)
+        defer { controller.stop() }
+
+        try clickStatusItem(controller)
+        XCTAssertFalse(popover.isShown)
+        XCTAssertTrue(factory.made.isEmpty, "no popover, no didClose — so nothing may be claimed")
+    }
+
+    func testKeysAreClaimedOnDidShowNotOnTheShowRequest() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        let popover = PopoverPresenterSpy()
+        popover.defersNotifications = true
+        let (controller, _, _) = makeShortcutController(harness: harness, factory: factory, popover: popover)
+        defer { controller.stop() }
+
+        try clickStatusItem(controller)
+        XCTAssertTrue(factory.made.isEmpty)
+        popover.deliverPendingNotifications()
+        XCTAssertEqual(factory.active.count, 3)
+
+        // Closed before its didShow arrives: the late didShow claims nothing.
+        popover.performClose(nil)
+        popover.deliverPendingNotifications()
+        XCTAssertTrue(factory.active.isEmpty)
+        // Closed mid-animation: only the late didShow arrives (no didClose
+        // would follow to release anything it claimed).
+        try clickStatusItem(controller)
+        popover.sendsDidClose = false
+        popover.performClose(nil)
+        popover.deliverPendingNotifications()
+        XCTAssertTrue(factory.active.isEmpty, "a didShow landing after the close claims nothing")
+    }
+
+    func testALateDidCloseDoesNotReleaseTheNextPresentationsKeys() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        let popover = PopoverPresenterSpy()
+        let (controller, _, _) = makeShortcutController(harness: harness, factory: factory, popover: popover)
+        defer { controller.stop() }
+
+        try clickStatusItem(controller)
+        popover.defersNotifications = true
+        popover.performClose(nil)          // didClose still in flight
+        popover.defersNotifications = false
+        try clickStatusItem(controller)    // reopened, keys claimed
+        XCTAssertEqual(factory.active.count, 3)
+        popover.deliverPendingNotifications()
+        XCTAssertEqual(factory.active.count, 3, "the stale didClose belongs to the previous presentation")
+    }
+
+    func testADropRowWithNoStatusItemOnScreenOpensTheWindowInstead() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        let (controller, popover, _) = makeShortcutController(
+            harness: harness, factory: factory, statusItemIsAnchored: { false }
+        )
+        defer { controller.stop() }
+
+        controller.openPopoverFromDropForTesting()
+        XCTAssertFalse(popover.isShown)
+        XCTAssertTrue(controller.hasFallbackWindow)
+        XCTAssertTrue(factory.made.isEmpty)
+    }
+
+    func testKeyCodesFollowTheLayoutAtEachPresentation() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        var azerty = false
+        let (controller, popover, _) = makeShortcutController(
+            harness: harness,
+            factory: factory,
+            keyCode: { shortcut in
+                azerty && shortcut == .quit ? UInt32(kVK_ANSI_A) : shortcut.ansiKeyCode
+            }
+        )
+        defer { controller.stop() }
+
+        try clickStatusItem(controller)
+        XCTAssertNotNil(factory.active(keyCode: kVK_ANSI_Q))
+        popover.performClose(nil)
+
+        azerty = true
+        try clickStatusItem(controller)
+        XCTAssertNil(factory.active(keyCode: kVK_ANSI_Q))
+        XCTAssertNotNil(factory.active(keyCode: kVK_ANSI_A), "⌘Q is the key that types q")
+    }
+
+    func testOneFailedRegistrationDoesNotBlockTheOthers() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        factory.failingKeyCodes = [UInt32(kVK_ANSI_R)]
+        let (controller, _, optionCommandU) = makeShortcutController(harness: harness, factory: factory)
+        defer { controller.stop() }
+
+        try clickStatusItem(controller)
+        XCTAssertEqual(
+            Set(factory.active.map(\.registeredKeyCode)),
+            [UInt32(kVK_ANSI_Comma), UInt32(kVK_ANSI_Q)]
+        )
+        // A drop change mid-presentation must not retry the refused key.
+        controller.attentionPresence.set(true)
+        XCTAssertEqual(factory.made.filter { $0.attemptedKeyCode == UInt32(kVK_ANSI_R) }.count, 1)
+        XCTAssertTrue(optionCommandU.isRegistered)
+    }
+
+    /// On macOS 26 the popover's chrome is translucent Liquid Glass
+    /// (`NSGlassView`). Its appearance already follows the app, but the glass
+    /// still takes its colour from what is behind it — the dark menu bar — so
+    /// with the app in Light the chevron drew dark grey while the body looked
+    /// right only because SwiftUI paints `Theme.ink` over it. Full-size
+    /// content lets that ink extend into the chevron too.
+    func testPopoverContentExtendsIntoTheChevron() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+
+        let popover = PopoverPresenterSpy()
+        let controller = MenuBarController(
+            model: harness.model,
+            launchAtLogin: harness.launchAtLogin,
+            popover: popover,
+            hotKeyRegistrar: HotKeyRegistrarSpy()
+        )
+        controller.start()
+        defer { controller.stop() }
+
+        XCTAssertTrue(popover.hasFullSizeContent)
+    }
+
+    /// The popover must follow the APP's appearance, never the menu bar's.
+    /// With `appearance = nil` a shown popover inherits its positioning view
+    /// — the status button, i.e. the bar's vibrant appearance — so in System
+    /// mode on a dark menu bar with Light macOS it came up dark. Every show
+    /// and every apply must hand it a concrete aqua/darkAqua.
+    func testPopoverAppearanceFollowsTheAppNotTheMenuBar() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let savedAppAppearance = NSApp.appearance
+        defer { NSApp.appearance = savedAppAppearance }
+
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "PopoverAppearance-\(UUID())"))
+        let appearance = AppearanceController(defaults: defaults)
+        let popover = PopoverPresenterSpy()
+        var shownWith: [NSAppearance.Name?] = []
+        popover.onShow = { [unowned popover] in shownWith.append(popover.appearance?.name) }
+        let controller = MenuBarController(
+            model: harness.model,
+            launchAtLogin: harness.launchAtLogin,
+            appearance: appearance,
+            popover: popover,
+            hotKeyRegistrar: HotKeyRegistrarSpy()
+        )
+        controller.start()
+        defer { controller.stop() }
+        let button = try XCTUnwrap(controller.statusItem?.button)
+        let action = try XCTUnwrap(button.action)
+        func toggleOpen() {
+            XCTAssertTrue(NSApplication.shared.sendAction(action, to: button.target, from: button))
+            XCTAssertTrue(popover.isShown)
+            popover.close()
+        }
+        func systemName() -> NSAppearance.Name? {
+            NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
+        }
+
+        // System, straight from start(): concrete, and the OS's own choice.
+        XCTAssertNotNil(popover.appearance)
+        XCTAssertEqual(popover.appearance?.name, systemName())
+        toggleOpen()
+        XCTAssertEqual(shownWith.last, systemName())
+
+        appearance.setMode(.light)
+        XCTAssertEqual(popover.appearance?.name, .aqua)
+        toggleOpen()
+        XCTAssertEqual(shownWith.last, .aqua)
+
+        appearance.setMode(.dark)
+        XCTAssertEqual(popover.appearance?.name, .darkAqua)
+        toggleOpen()
+        XCTAssertEqual(shownWith.last, .darkAqua)
+
+        appearance.setMode(.system)
+        XCTAssertNotNil(popover.appearance, "System must not fall back to the menu bar's appearance")
+        XCTAssertEqual(popover.appearance?.name, systemName())
+        toggleOpen()
+        XCTAssertEqual(shownWith.last, systemName())
+    }
+
+    /// The same on a REAL popover shown from the real status item, with the
+    /// app forced to Light: the hosting view must cover the whole popover
+    /// frame (chevron included), and resolve to Aqua.
+    func testRealPopoverPaintsItsChevronInTheAppAppearance() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let savedAppAppearance = NSApp.appearance
+        defer { NSApp.appearance = savedAppAppearance }
+
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "PopoverChevron-\(UUID())"))
+        defaults.set(AppearanceMode.light.rawValue, forKey: AppearanceController.defaultsKey)
+        let popover = NSPopover()
+        let controller = MenuBarController(
+            model: harness.model,
+            launchAtLogin: harness.launchAtLogin,
+            appearance: AppearanceController(defaults: defaults),
+            popover: popover,
+            hotKeyRegistrar: HotKeyRegistrarSpy()
+        )
+        controller.start()
+        defer {
+            popover.close()
+            controller.stop()
+        }
+        let button = try XCTUnwrap(controller.statusItem?.button)
+        // A fresh status item has no menu-bar frame for a moment; showing a
+        // popover from it before then silently does nothing.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        let action = try XCTUnwrap(button.action)
+        XCTAssertTrue(NSApplication.shared.sendAction(action, to: button.target, from: button))
+
+        let content = try XCTUnwrap(popover.contentViewController?.view)
+        guard let window = content.window, let frameView = content.superview else {
+            throw XCTSkip("popover did not come on screen in this session")
+        }
+        XCTAssertEqual(window.effectiveAppearance.name, .aqua)
+        XCTAssertEqual(content.effectiveAppearance.name, .aqua)
+        XCTAssertEqual(content.frame, frameView.bounds, "content must reach into the chevron")
     }
 
     func testReopenShowsFallbackWindowAndSuppressesDefaultHandling() throws {
@@ -493,23 +895,75 @@ private final class PopoverPresenterSpy: PopoverPresenting {
     private(set) var isShown = false
     var behavior: NSPopover.Behavior = .applicationDefined
     var contentViewController: NSViewController?
+    var appearance: NSAppearance?
+    var hasFullSizeContent = false
+    weak var delegate: (any NSPopoverDelegate)?
     var onShow: (() -> Void)?
+    /// Whether closing reports `popoverDidClose`, as `NSPopover` does.
+    var sendsDidClose = true
+    /// False: `show` does nothing, as when AppKit cannot present.
+    var showSucceeds = true
+    /// True: didShow / didClose are held until `deliverPendingNotifications`,
+    /// as AppKit delivers them after the animation.
+    var defersNotifications = false
+    private var pending: [() -> Void] = []
+
+    func deliverPendingNotifications() {
+        let queued = pending
+        pending = []
+        queued.forEach { $0() }
+    }
+
+    private func notify(_ body: @escaping () -> Void) {
+        if defersNotifications { pending.append(body) } else { body() }
+    }
 
     func show(
         relativeTo positioningRect: NSRect,
         of positioningView: NSView,
         preferredEdge: NSRectEdge
     ) {
+        guard showSucceeds else { return }
         isShown = true
         onShow?()
+        notify { [weak self] in
+            self?.delegate?.popoverDidShow?(Notification(name: NSPopover.didShowNotification))
+        }
     }
 
     func performClose(_ sender: Any?) {
-        isShown = false
+        close()
     }
 
     func close() {
+        guard isShown else { return }
         isShown = false
+        if sendsDidClose {
+            notify { [weak self] in
+                self?.delegate?.popoverDidClose?(Notification(name: NSPopover.didCloseNotification))
+            }
+        }
+    }
+}
+
+/// Hands out a fresh `HotKeyRegistrarSpy` per popover hotkey, like the
+/// production factory hands out a `CarbonHotKeyRegistrar` per key.
+@MainActor
+private final class HotKeyRegistrarFactorySpy {
+    private(set) var made: [HotKeyRegistrarSpy] = []
+    var failingKeyCodes: Set<UInt32> = []
+
+    func make() -> any GlobalHotKeyRegistering {
+        let spy = HotKeyRegistrarSpy()
+        spy.refusedKeyCodes = failingKeyCodes
+        made.append(spy)
+        return spy
+    }
+
+    var active: [HotKeyRegistrarSpy] { made.filter(\.isRegistered) }
+
+    func active(keyCode: Int) -> HotKeyRegistrarSpy? {
+        active.first { $0.registeredKeyCode == UInt32(keyCode) }
     }
 }
 

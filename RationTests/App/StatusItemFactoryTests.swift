@@ -160,26 +160,30 @@ final class StatusItemFactoryTests: XCTestCase {
         }
 
         let gold = Provider.claude.markAccentNS
-        let full = StatusItemFactory.ringImage(fraction: 1, color: gold)
-        let empty = StatusItemFactory.ringImage(fraction: 0, color: gold)
+        let dark = try XCTUnwrap(NSAppearance(named: .darkAqua))
+        let full = StatusItemFactory.ringImage(fraction: 1, color: gold, appearance: dark)
+        let empty = StatusItemFactory.ringImage(fraction: 0, color: gold, appearance: dark)
         let size = Int(full.size.width)
         let topCenter = (x: size / 2, y: 1)
 
         let fullTop = try sample(full, topCenter.x, topCenter.y)
         let emptyTop = try sample(empty, topCenter.x, topCenter.y)
 
-        // Full ring: solid stroke at the top, in the provider color.
+        // Full ring: solid stroke at the top, in the provider color (dark gold
+        // — drawn for Dark explicitly). 0.1 like the dot test: the TIFF → sRGB
+        // round-trip moves D2 gold's mid-tone blue by ~0.07; the exact hex is
+        // pinned by `testMarkAccentNSPinsBrandHexes`.
         XCTAssertGreaterThan(fullTop.alphaComponent, 0.85)
-        XCTAssertEqual(fullTop.redComponent, 0xF5 / 255, accuracy: 0.06)
-        XCTAssertEqual(fullTop.greenComponent, 0xC5 / 255, accuracy: 0.06)
-        XCTAssertEqual(fullTop.blueComponent, 0x18 / 255, accuracy: 0.06)
+        XCTAssertEqual(fullTop.redComponent, 0xD9 / 255, accuracy: 0.1)
+        XCTAssertEqual(fullTop.greenComponent, 0xB4 / 255, accuracy: 0.1)
+        XCTAssertEqual(fullTop.blueComponent, 0x4A / 255, accuracy: 0.1)
         // Empty ring: only the faint track remains.
         XCTAssertLessThan(emptyTop.alphaComponent, 0.6)
 
         // A partial arc must be asymmetric: at 0.3 exactly one side of the
         // ring is stroked (which side is a drawing-direction detail; that
         // it differs is what proves the arc is proportional, not all-or-nothing).
-        let partial = StatusItemFactory.ringImage(fraction: 0.3, color: gold)
+        let partial = StatusItemFactory.ringImage(fraction: 0.3, color: gold, appearance: dark)
         let left = try sample(partial, 1, size / 2)
         let right = try sample(partial, size - 2, size / 2)
         let strokedSides = [left, right].filter { $0.alphaComponent > 0.85 }.count
@@ -199,8 +203,9 @@ final class StatusItemFactoryTests: XCTestCase {
         }
 
         let gold = Provider.claude.markAccentNS
-        let inUse = StatusItemFactory.ringImage(fraction: 0.5, color: gold, inUse: true)
-        let idle = StatusItemFactory.ringImage(fraction: 0.5, color: gold, inUse: false)
+        let dark = try XCTUnwrap(NSAppearance(named: .darkAqua))
+        let inUse = StatusItemFactory.ringImage(fraction: 0.5, color: gold, inUse: true, appearance: dark)
+        let idle = StatusItemFactory.ringImage(fraction: 0.5, color: gold, inUse: false, appearance: dark)
         let size = Int(inUse.size.width)
         let center = (x: size / 2, y: size / 2)
 
@@ -211,48 +216,93 @@ final class StatusItemFactoryTests: XCTestCase {
         let dot = try sample(inUse, center.x, center.y)
         XCTAssertGreaterThan(dot.alphaComponent, 0.85)
         XCTAssertEqual(dot.redComponent, 0x8F / 255, accuracy: 0.1)
-        XCTAssertEqual(dot.greenComponent, 0xD6 / 255, accuracy: 0.1)
-        XCTAssertEqual(dot.blueComponent, 0x94 / 255, accuracy: 0.1)
+        XCTAssertEqual(dot.greenComponent, 0xC7 / 255, accuracy: 0.1)
+        XCTAssertEqual(dot.blueComponent, 0x9A / 255, accuracy: 0.1)
 
         let clear = try sample(idle, center.x, center.y)
         XCTAssertLessThan(clear.alphaComponent, 0.1, "idle ring center must stay clear")
     }
 
-    /// Pins the AppKit mirror to `Theme.active`'s hex so the menu-bar dot can
-    /// never silently drift from the SwiftUI IN USE pill.
-    func testActiveNSPinsThemeActiveHex() throws {
-        let color = try XCTUnwrap(Theme.activeNS.usingColorSpace(.sRGB))
-        XCTAssertEqual(color.redComponent, 0x8F / 255, accuracy: 0.001)
-        XCTAssertEqual(color.greenComponent, 0xD6 / 255, accuracy: 0.001)
-        XCTAssertEqual(color.blueComponent, 0x94 / 255, accuracy: 0.001)
+    /// Rasterizes through `tiffRepresentation` — the drawing closure runs
+    /// THEN, so this is exactly the path that must honour the appearance the
+    /// image was built for.
+    private func sample(_ image: NSImage, _ x: CGFloat, _ y: CGFloat) throws -> NSColor {
+        let rep = try XCTUnwrap(
+            NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation))
+        )
+        let color = try XCTUnwrap(rep.colorAt(x: Int(x), y: Int(y)))
+        return try XCTUnwrap(color.usingColorSpace(.sRGB))
+    }
+
+    /// The menu bar's appearance, not the app's, picks the ring colours: the
+    /// app appearance is deliberately set opposite to the drawing one.
+    func testRingColoursFollowTheGivenAppearanceNotTheApp() throws {
+        let saved = NSApp.appearance
+        defer { NSApp.appearance = saved }
+        for (drawing, app, expectedDot) in [
+            (NSAppearance.Name.aqua, NSAppearance.Name.darkAqua, UInt32(0x3B7239)),
+            (.darkAqua, .aqua, 0x8FC79A)
+        ] {
+            NSApp.appearance = NSAppearance(named: app)
+            let image = StatusItemFactory.ringImage(
+                fraction: 0, color: Provider.claude.markAccentNS, inUse: true,
+                appearance: NSAppearance(named: drawing)!
+            )
+            let center = NSPoint(x: image.size.width / 2, y: image.size.height / 2)
+            let dot = try sample(image, center.x, center.y)
+            XCTAssertEqual(dot.redComponent, Double((expectedDot >> 16) & 0xFF) / 255, accuracy: 0.1, "\(drawing)")
+            XCTAssertEqual(dot.greenComponent, Double((expectedDot >> 8) & 0xFF) / 255, accuracy: 0.1, "\(drawing)")
+            XCTAssertEqual(dot.blueComponent, Double(expectedDot & 0xFF) / 255, accuracy: 0.1, "\(drawing)")
+        }
+    }
+
+    /// `applyGauges` draws for the status button's own appearance on every
+    /// flip with unchanged data — the path the `effectiveAppearance` KVO hook
+    /// in `MenuBarController` re-runs via `updateGauges()`.
+    func testApplyGaugesDrawsForTheButtonsAppearance() throws {
+        let statusBar = NSStatusBar.system
+        let item = StatusItemFactory.make(in: statusBar)
+        defer { statusBar.removeStatusItem(item) }
+        let button = try XCTUnwrap(item.button)
+        let saved = NSApp.appearance
+        defer { NSApp.appearance = saved }
+        NSApp.appearance = NSAppearance(named: .darkAqua)   // app deliberately opposite
+        let gauge = MenuBarGauge(provider: .claude, label: "AI",
+                                 fraction: 0.86, windowKind: .fiveHour, inUse: true)
+        for (name, expected) in [
+            (NSAppearance.Name.aqua, UInt32(0x3B7239)), (.darkAqua, 0x8FC79A), (.aqua, 0x3B7239)
+        ] {
+            button.appearance = NSAppearance(named: name)
+            StatusItemFactory.applyGauges([gauge], displaysRemaining: false, to: button)
+            let attachment = try XCTUnwrap(
+                button.attributedTitle.attribute(.attachment, at: 0, effectiveRange: nil)
+                    as? NSTextAttachment
+            )
+            let image = try XCTUnwrap(attachment.image)
+            let dot = try sample(image, image.size.width / 2, image.size.height / 2)
+            XCTAssertEqual(dot.greenComponent, Double((expected >> 8) & 0xFF) / 255, accuracy: 0.1, "\(name)")
+        }
+    }
+
+    /// Pins the AppKit mirror to `Theme.active`'s hex in both appearances so
+    /// the menu-bar dot can never silently drift from the SwiftUI IN USE pill.
+    func testActiveNSPinsThemeActiveHex() {
+        XCTAssertEqual(resolvedHex(Theme.activeNS, .darkAqua), 0x8FC79A)
+        XCTAssertEqual(resolvedHex(Theme.activeNS, .aqua), 0x3B7239)
     }
 
     /// Pins the NSColor mirrors to the exact brand hexes of `markAccent`
-    /// (Theme.gold / Theme.calm / Theme.iris), so the AppKit dots can never
-    /// silently drift from the SwiftUI marks.
-    func testMarkAccentNSPinsBrandHexes() throws {
-        let expected: [(Provider, UInt32)] = [
-            (.claude, 0xF5C518),
-            (.chatGPT, 0x6FB2A6),
-            (.cursor, 0x8C9EFF)
+    /// (Theme.gold / Theme.chatGPTGreen / Theme.iris) in both appearances, so the
+    /// AppKit dots can never silently drift from the SwiftUI marks.
+    func testMarkAccentNSPinsBrandHexes() {
+        let expected: [(Provider, UInt32, UInt32)] = [
+            (.claude, 0xD9B44A, 0x836400),
+            (.chatGPT, 0x5CC79F, 0x0F7657),
+            (.cursor, 0xB0A6EE, 0x5A55B5)
         ]
-        for (provider, hex) in expected {
-            let color = try XCTUnwrap(
-                provider.markAccentNS.usingColorSpace(.sRGB),
-                "\(provider) mark accent did not resolve to sRGB"
-            )
-            XCTAssertEqual(
-                color.redComponent, Double((hex >> 16) & 0xFF) / 255,
-                accuracy: 0.001, "\(provider) red"
-            )
-            XCTAssertEqual(
-                color.greenComponent, Double((hex >> 8) & 0xFF) / 255,
-                accuracy: 0.001, "\(provider) green"
-            )
-            XCTAssertEqual(
-                color.blueComponent, Double(hex & 0xFF) / 255,
-                accuracy: 0.001, "\(provider) blue"
-            )
+        for (provider, dark, light) in expected {
+            XCTAssertEqual(resolvedHex(provider.markAccentNS, .darkAqua), dark, "\(provider) dark")
+            XCTAssertEqual(resolvedHex(provider.markAccentNS, .aqua), light, "\(provider) light")
         }
     }
 }

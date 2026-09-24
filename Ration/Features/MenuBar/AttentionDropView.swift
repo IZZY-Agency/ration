@@ -36,6 +36,18 @@ final class AttentionDropModelObject: ObservableObject {
     var onSelect: (AttentionRow) -> Void = { _ in }
 }
 
+/// Whether the drop is on screen — published only when that CHANGES, so a
+/// surface that merely offers the keyboard dismiss (the popover) is not
+/// invalidated by every refresh of the drop's rows.
+@MainActor
+final class AttentionDropPresence: ObservableObject {
+    @Published private(set) var isShowing = false
+
+    func set(_ showing: Bool) {
+        if isShowing != showing { isShowing = showing }
+    }
+}
+
 struct AttentionDropView: View {
     @ObservedObject var model: AttentionDropModelObject
 
@@ -113,39 +125,35 @@ struct AttentionDropView: View {
 
     private var header: some View {
         HStack(spacing: 7) {
-            Text(limitRows.isEmpty ? "RESETS" : "NEARING LIMITS")
-                .font(Theme.mono(9))
-                .tracking(1.2)
-                .foregroundStyle(Theme.creamFaint)
-
-            if criticalCount > 0 {
-                Text("\(criticalCount) CRIT")
-                    .font(Theme.mono(9))
-                    .tracking(1.2)
-                    .foregroundStyle(Theme.crit)
+            // At the +2 pt sizes the title plus all three counts outgrow the
+            // 320 pt panel and the title wrapped to "NEARING / LIMITS",
+            // growing the header by a line. The counts alone already say what
+            // the panel is, so the title yields when it does not fit.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 7) {
+                    Text(limitRows.isEmpty ? "RESETS" : "NEARING LIMITS")
+                        .font(Theme.mono(11))
+                        .tracking(1.2)
+                        .foregroundStyle(Theme.creamFaint)
+                        .lineLimit(1)
+                        .fixedSize()
+                    counts
+                }
+                counts
             }
-            if criticalCount > 0 && warningCount > 0 {
-                Text("·").font(Theme.mono(9)).foregroundStyle(Theme.creamFaint)
-            }
-            if warningCount > 0 {
-                Text("\(warningCount) WARN")
-                    .font(Theme.mono(9))
-                    .tracking(1.2)
-                    .foregroundStyle(Theme.warn)
-            }
-            if resetRowCount > 0 && !limitRows.isEmpty {
-                Text("·").font(Theme.mono(9)).foregroundStyle(Theme.creamFaint)
-                Text("\(resetRowCount) RESET")
-                    .font(Theme.mono(9))
-                    .tracking(1.2)
-                    .foregroundStyle(Theme.resetAccent)
-            }
+            // One spoken element whichever branch is drawn: the fallback
+            // drops the title from the tree, but VoiceOver must still hear it.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.headerAccessibilityLabel(
+                critical: criticalCount, warning: warningCount,
+                resets: resetRowCount, hasLimitRows: !limitRows.isEmpty
+            ))
 
             Spacer(minLength: 8)
 
             Button { onDismissAll() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Theme.creamFaint)
                     // A 9pt glyph is not a hit target; pad it out to something
                     // clickable without changing the drawn size.
@@ -160,6 +168,89 @@ struct AttentionDropView: View {
         .padding(.trailing, 5)
         .padding(.vertical, 6)
         .accessibilityElement(children: .contain)
+    }
+
+    /// What VoiceOver reads for the header's title and counts — always the
+    /// title, even when the drawn header had room only for the counts.
+    static func headerAccessibilityLabel(
+        critical: Int, warning: Int, resets: Int, hasLimitRows: Bool
+    ) -> String {
+        var parts = [hasLimitRows ? "Nearing limits" : "Resets"]
+        if critical > 0 { parts.append("\(critical) critical") }
+        if warning > 0 { parts.append("\(warning) warning") }
+        if resets > 0 && hasLimitRows { parts.append("\(resets) reset\(resets == 1 ? "" : "s")") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// The same label, counted from the rows — what the controller posts as
+    /// the drop's VoiceOver announcement, so the announcement and the header
+    /// can never say different things.
+    static func headerAccessibilityLabel(rows: [AttentionRow]) -> String {
+        let limitRows = rows.filter { !$0.isResetCredit }
+        return headerAccessibilityLabel(
+            critical: limitRows.filter { $0.tier == .critical }.count,
+            warning: limitRows.filter { $0.tier == .warning }.count,
+            resets: rows.count - limitRows.count,
+            hasLimitRows: !limitRows.isEmpty
+        )
+    }
+
+    /// What VoiceOver reads for one row: words, never the drawn "5H" / "WK" /
+    /// "4h 12m" (read letter by letter).
+    static func rowAccessibilityLabel(
+        _ row: AttentionRow,
+        now: Date,
+        locale: Locale = .current
+    ) -> String {
+        func spoken(_ date: Date) -> String {
+            UsageFormatters.spokenDuration(until: date, relativeTo: now, locale: locale)
+        }
+        if case .resetCredit(_, let kind) = row.subject {
+            let count = row.resetCount ?? 1
+            let expires = row.resetsAt.map { ", expires in \(spoken($0))" } ?? ""
+            return "\(row.accountLabel), \(count) usage-limit reset\(count == 1 ? "" : "s") \(kind == .expiring ? "expiring" : "available")\(expires)"
+        }
+        let subject: String = switch row.subject {
+            case .window(let kind): kind.spokenName()
+            case .cursorSpend: "spend"
+            case .resetCredit: ""
+        }
+        let tierWord = row.tier == .critical ? "critical" : "warning"
+        let value = row.usedPercent.map { "\($0) percent used" }
+            ?? row.spentCents.map { "\(AlertMessage.dollars($0)) spent" }
+            ?? ""
+        let reset = row.resetsAt.map { ", resets in \(spoken($0))" } ?? ""
+        return "\(row.accountLabel), \(subject), \(value), \(tierWord)\(reset)"
+    }
+
+    @ViewBuilder
+    private var counts: some View {
+        HStack(spacing: 7) {
+            if criticalCount > 0 {
+                Text("\(criticalCount) CRIT")
+                    .font(Theme.mono(11))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.crit)
+            }
+            if criticalCount > 0 && warningCount > 0 {
+                Text("·").font(Theme.mono(11)).foregroundStyle(Theme.creamFaint)
+            }
+            if warningCount > 0 {
+                Text("\(warningCount) WARN")
+                    .font(Theme.mono(11))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.warn)
+            }
+            if resetRowCount > 0 && !limitRows.isEmpty {
+                Text("·").font(Theme.mono(11)).foregroundStyle(Theme.creamFaint)
+                Text("\(resetRowCount) RESET")
+                    .font(Theme.mono(11))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.resetAccent)
+            }
+        }
+        .lineLimit(1)
+        .fixedSize()
     }
 }
 
@@ -198,13 +289,13 @@ private struct AttentionDropRowView: View {
                     .frame(width: 5, height: 5)
 
                 Text(row.accountLabel)
-                    .font(Theme.display(13, .semibold))
+                    .font(Theme.display(15, .semibold))
                     .foregroundStyle(Theme.cream)
                     .lineLimit(1)
                     .layoutPriority(1)
 
                 Text(subjectLabel)
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .tracking(0.6)
                     .textCase(.uppercase)
                     .foregroundStyle(Theme.creamFaint)
@@ -214,18 +305,18 @@ private struct AttentionDropRowView: View {
                 meter
 
                 Text(valueLabel)
-                    .font(Theme.mono(12.5, bold: true))
+                    .font(Theme.mono(14.5, bold: true))
                     .monospacedDigit()
                     .foregroundStyle(tint)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
 
                 Text(resetLabel)
-                    .font(Theme.mono(11))
+                    .font(Theme.mono(13))
                     .monospacedDigit()
                     .foregroundStyle(Theme.resetAccent)
                     .lineLimit(1)
-                    .frame(width: 46, alignment: .trailing)
+                    .frame(width: AttentionDropGeometry.countdownColumnWidth, alignment: .trailing)
             }
             .padding(.horizontal, 13)
             .frame(
@@ -234,7 +325,7 @@ private struct AttentionDropRowView: View {
                 maxHeight: AttentionDropGeometry.rowHeight,
                 alignment: .leading
             )
-            .background(isHovering ? Theme.cream.opacity(0.04) : .clear)
+            .background(isHovering ? Theme.hover : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -251,12 +342,15 @@ private struct AttentionDropRowView: View {
         if let percent = row.usedPercent {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Theme.cream.opacity(0.09))
+                    Capsule().fill(Theme.track)
                     Capsule()
                         .fill(tint)
                         .frame(width: max(2, geometry.size.width * Double(percent) / 100))
                 }
             }
+            // A long account label (layout priority 1) otherwise squeezes the
+            // meter down to its 2 pt fill — a dot, not a meter.
+            .frame(minWidth: AttentionDropGeometry.meterMinWidth)
             .frame(height: 3)
         } else {
             Spacer(minLength: 8)
@@ -293,16 +387,6 @@ private struct AttentionDropRowView: View {
     }
 
     private var accessibilityLabel: String {
-        if case .resetCredit(_, let kind) = row.subject {
-            let count = row.resetCount ?? 1
-            let expires = row.resetsAt.map { "expires in \(UsageFormatters.resetCreditRemaining($0, relativeTo: now))" } ?? ""
-            return "\(row.accountLabel), \(count) usage-limit reset\(count == 1 ? "" : "s") \(kind == .expiring ? "expiring" : "available"), \(expires)"
-        }
-        let tierWord = row.tier == .critical ? "critical" : "warning"
-        let value = row.usedPercent.map { "\($0) percent used" }
-            ?? row.spentCents.map { "\(AlertMessage.dollars($0)) spent" }
-            ?? ""
-        let reset = row.resetsAt.map { ", resets in \(UsageFormatters.remainingUntilReset($0, relativeTo: now))" } ?? ""
-        return "\(row.accountLabel), \(subjectLabel), \(value), \(tierWord)\(reset)"
+        AttentionDropView.rowAccessibilityLabel(row, now: now)
     }
 }

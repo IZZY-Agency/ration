@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.2.0
+
+- Light and dark themes. Settings → General → Appearance: System (default),
+  Light or Dark. If your Mac is in light mode, Ration now opens light —
+  pick Dark to keep the old look.
+- Calmer colours: the neon cyan, gold and green are toned down, and every
+  text colour now meets WCAG AA contrast in both themes.
+- Larger text: every size Ration sets is 2 pt bigger. Native macOS controls
+  in Settings keep the system size.
+- ChatGPT has its own colour, OpenAI green. The "fine" usage colour is now a
+  quiet slate, so no provider shares a colour with a status.
+- The account you're using stands out in both themes.
+- The popover header tells the truth about your data: LIVE when every account
+  is current, STALE · N when some aren't, OFFLINE when none are.
+- Notifications: if Ration has never asked for permission, it now offers
+  Allow Notifications instead of pointing you at System Settings. Allowing or
+  revoking notifications takes effect without restarting Ration.
+- Keyboard: with the popover open, ⌘R refreshes, ⌘, opens Settings, ⌘Q quits
+  and ⌘D dismisses the alerts panel.
+- Accessibility: VoiceOver announces the alerts panel and reads durations and
+  limit names in full; Increase Contrast strengthens lines and faint text;
+  click a reset countdown to see the exact reset time.
+- Settings: limit names and headers no longer wrap, threshold fields look
+  editable, and the reset-expiry warning label fits.
+
 ## 1.1.0
 
 - Usage-limit resets. Claude and Codex now give free resets; each account card

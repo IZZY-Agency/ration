@@ -6,6 +6,19 @@ enum UsageWindowKind: String, Codable, CaseIterable, Sendable {
     case modelWeekly
 }
 
+extension UsageWindowKind {
+    /// The window's name as VoiceOver should say it — the drawn "5H" / "WK"
+    /// are read letter by letter. `label` is the API's model name and only
+    /// matters for `.modelWeekly` ("Fable" → "Fable weekly").
+    func spokenName(label: String? = nil) -> String {
+        switch self {
+        case .fiveHour: "5 hour"
+        case .weekly: "weekly"
+        case .modelWeekly: "\(label ?? "Fable") weekly"
+        }
+    }
+}
+
 struct UsageWindow: Codable, Equatable, Sendable {
     let kind: UsageWindowKind
     let remainingFraction: Double

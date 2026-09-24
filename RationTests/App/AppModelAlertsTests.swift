@@ -65,7 +65,7 @@ final class AppModelAlertsTests: XCTestCase {
         let account = try XCTUnwrap(fixture.model.accounts.first)
 
         try await fixture.model.setUsageAlertsEnabled(true)
-        XCTAssertTrue(fixture.model.usageAlertsAuthorized)
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true)
 
         let expectedID = AlertMessage.id(
             for: .threshold(kind: .fiveHour, tier: .critical, percent: 90),
@@ -123,7 +123,7 @@ final class AppModelAlertsTests: XCTestCase {
         let account = try XCTUnwrap(fixture.model.accounts.first)
 
         try await fixture.model.setUsageAlertsEnabled(true)
-        XCTAssertTrue(fixture.model.usageAlertsAuthorized)
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true)
 
         let expectedID = AlertMessage.id(
             for: .reset(kind: .fiveHour),
@@ -330,17 +330,17 @@ final class AppModelAlertsTests: XCTestCase {
         await firstFixture.model.flushAlertEvaluations()
 
         // "Relaunch": a fresh `AppModel` (and fresh stores) over the SAME
-        // persisted files. `usageAlertsAuthorized` starts false again (a
-        // fresh in-memory default) until `load()` queries the OS, and
+        // persisted files. `usageAlertsAuthorized` starts nil again (a
+        // fresh in-memory "not asked yet") until `load()` queries the OS, and
         // `alertStates` starts empty until `load()` seeds it from the store.
         let secondScheduler = NotificationSchedulingSpy()
         await secondScheduler.setAuthorizationStatusResult(true)
         let secondFixture = try makeAlertsFixture(directory: directory, scheduler: secondScheduler)
-        XCTAssertFalse(secondFixture.model.usageAlertsAuthorized)
+        XCTAssertNil(secondFixture.model.usageAlertsAuthorized)
 
         try await secondFixture.model.load(startBackgroundRefresh: false)
-        XCTAssertTrue(
-            secondFixture.model.usageAlertsAuthorized,
+        XCTAssertEqual(
+            secondFixture.model.usageAlertsAuthorized, true,
             "load() must query authorizationStatus() when the persisted setting is enabled"
         )
 
@@ -576,7 +576,7 @@ final class AppModelAlertsTests: XCTestCase {
         let account = try XCTUnwrap(fixture.model.accounts.first)
 
         try await fixture.model.setUsageAlertsEnabled(true)
-        XCTAssertTrue(fixture.model.usageAlertsAuthorized)
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true)
 
         let expectedID = AlertMessage.id(
             for: .threshold(kind: .fiveHour, tier: .critical, percent: 90),
@@ -710,7 +710,7 @@ final class AppModelAlertsTests: XCTestCase {
         let account = try XCTUnwrap(fixture.model.accounts.first)
 
         try await fixture.model.setUsageAlertsEnabled(true)
-        XCTAssertTrue(fixture.model.usageAlertsAuthorized)
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true)
 
         try await fixture.model.setUsageAlertsEnabled(false)
 
@@ -740,7 +740,7 @@ final class AppModelAlertsTests: XCTestCase {
         // it); `primeAllAlerts()` baselines the pre-existing warning crossing
         // silently, and only then does `alertsActive` flip back to `true`.
         try await fixture.model.setUsageAlertsEnabled(true)
-        XCTAssertTrue(fixture.model.usageAlertsAuthorized)
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true)
         XCTAssertEqual(
             fixture.model.alertStateForTesting(accountID: account.id)?.fiveHour.notifiedTier,
             .warning,
@@ -1255,7 +1255,7 @@ final class AppModelAlertsTests: XCTestCase {
             relaunchFixture.model.alertsActiveForTesting(),
             "load() must activate alerts once hydration completes, using the persisted enabled setting"
         )
-        XCTAssertTrue(relaunchFixture.model.usageAlertsAuthorized)
+        XCTAssertEqual(relaunchFixture.model.usageAlertsAuthorized, true)
 
         await relaunchFixture.model.flushAlertEvaluations()
         let posts = await relaunchFixture.scheduler.posts
@@ -1369,7 +1369,7 @@ final class AppModelAlertsTests: XCTestCase {
         await fixture.model.flushAlertEvaluations()
 
         XCTAssertTrue(fixture.model.settings.usageAlertsEnabled)
-        XCTAssertTrue(fixture.model.usageAlertsAuthorized, "no spurious hint")
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true, "no spurious hint")
         let promptCount = await scheduler.requestAuthorizationCallCount
         XCTAssertEqual(promptCount, 0, "I6: a cold-start tap never prompts")
 
@@ -1492,7 +1492,7 @@ final class AppModelAlertsTests: XCTestCase {
         await fixture.model.flushAlertEvaluations()
 
         XCTAssertTrue(fixture.model.settings.usageAlertsEnabled)
-        XCTAssertTrue(fixture.model.usageAlertsAuthorized)
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true)
         try await driveCriticalCrossing(fixture)
         let posts = await scheduler.posts
         XCTAssertFalse(posts.isEmpty, "scenario 3: final requested ON means runtime ON")
@@ -1524,7 +1524,7 @@ final class AppModelAlertsTests: XCTestCase {
         await fixture.model.flushAlertEvaluations()
 
         XCTAssertTrue(fixture.model.settings.usageAlertsEnabled)
-        XCTAssertTrue(fixture.model.usageAlertsAuthorized)
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true)
         let promptCount = await scheduler.requestAuthorizationCallCount
         XCTAssertEqual(
             promptCount,
@@ -1686,7 +1686,7 @@ final class AppModelAlertsTests: XCTestCase {
 
         // Load A converged, unharmed by the concurrent load B call.
         XCTAssertTrue(fixture.model.settings.usageAlertsEnabled)
-        XCTAssertTrue(fixture.model.usageAlertsAuthorized)
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true)
     }
 
     // MARK: - Regression coverage — park, cancellation, moot
@@ -1726,7 +1726,7 @@ final class AppModelAlertsTests: XCTestCase {
 
         // Parked + divergent (desired ON, durable OFF): startup refuses.
         XCTAssertFalse(fixture.model.settings.usageAlertsEnabled)
-        XCTAssertFalse(fixture.model.usageAlertsAuthorized)
+        XCTAssertNil(fixture.model.usageAlertsAuthorized)
 
         // One successful toggle heals everything.
         try await fixture.model.setUsageAlertsEnabled(true)
@@ -1807,7 +1807,7 @@ final class AppModelAlertsTests: XCTestCase {
 
         // Startup must refuse: setting OFF, nothing activated, no prompt.
         XCTAssertFalse(fixture.model.settings.usageAlertsEnabled)
-        XCTAssertFalse(fixture.model.usageAlertsAuthorized)
+        XCTAssertNil(fixture.model.usageAlertsAuthorized)
         let promptCount = await scheduler.requestAuthorizationCallCount
         XCTAssertEqual(promptCount, 0)
 
@@ -1853,11 +1853,23 @@ final class AppModelAlertsTests: XCTestCase {
 
         // desired ON == durable ON: the park is moot; startup converges.
         XCTAssertTrue(fixture.model.settings.usageAlertsEnabled)
-        XCTAssertTrue(fixture.model.usageAlertsAuthorized)
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true)
         XCTAssertTrue(
             fixture.model.alertsActiveForTesting(),
             "moot convergence must actually open the posting gate"
         )
+
+        // The park is moot, not divergent: mid-session rechecks must still
+        // follow the OS permission both ways.
+        await scheduler.setAuthorizationStatusResult(false)
+        await fixture.model.recheckNotificationAuthorization().value
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, false, "revoke → recheck must be seen")
+        XCTAssertFalse(fixture.model.alertsActiveForTesting(), "revoke → recheck must close the gate")
+
+        await scheduler.setAuthorizationStatusResult(true)
+        await fixture.model.recheckNotificationAuthorization().value
+        XCTAssertEqual(fixture.model.usageAlertsAuthorized, true, "grant → recheck must be seen")
+        XCTAssertTrue(fixture.model.alertsActiveForTesting(), "grant → recheck must reopen the gate")
     }
 
     func testStartupPassNeverWritesSettings() async throws {
@@ -1905,7 +1917,7 @@ final class AppModelAlertsTests: XCTestCase {
         await fixture.model.flushAlertEvaluations()
 
         XCTAssertFalse(fixture.model.settings.usageAlertsEnabled)
-        XCTAssertFalse(
+        XCTAssertNil(
             fixture.model.usageAlertsAuthorized,
             "a superseded enable must not commit an authorization result"
         )
@@ -2367,8 +2379,8 @@ final class AppModelAlertsTests: XCTestCase {
         try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
         let account = try XCTUnwrap(fixture.model.accounts.first)
         try await fixture.model.setUsageAlertsEnabled(true)
-        XCTAssertFalse(
-            fixture.model.usageAlertsAuthorized,
+        XCTAssertEqual(
+            fixture.model.usageAlertsAuthorized, false,
             "this test is only meaningful while authorization is denied"
         )
 
@@ -2875,8 +2887,8 @@ final class AppModelAlertsTests: XCTestCase {
         try await relaunch.model.load(startBackgroundRefresh: false)
         await relaunch.model.flushAlertEvaluations()
 
-        XCTAssertFalse(
-            relaunch.model.usageAlertsAuthorized,
+        XCTAssertEqual(
+            relaunch.model.usageAlertsAuthorized, false,
             "this test is only meaningful while authorization is denied"
         )
         XCTAssertEqual(
@@ -3057,7 +3069,7 @@ private final class SaveCallCounter {
 /// the published value stays stale while held), fail a save on demand, and
 /// count every save that reached persistence (I7 assertions).
 @MainActor
-private final class SettingsSaveGate {
+final class SettingsSaveGate {
     struct SaveFailed: Error {}
     private var armed = false
     private var failNext = false

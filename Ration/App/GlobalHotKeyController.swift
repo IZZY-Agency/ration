@@ -1,20 +1,36 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// Registers a single system-wide hotkey. The Carbon implementation uses
+/// Registers a single system-wide hotkey; one registrar per key, and several
+/// registrars may be live at once (⌥⌘U plus the popover's temporary keys), each
+/// unregistered on its own. The Carbon implementation uses
 /// `RegisterEventHotKey`, which works inside the app sandbox with no extra
 /// entitlement and without the Accessibility permission a `CGEventTap` would
 /// require. This keeps the Ration window reachable even when macOS 26
 /// declines to draw the menu-bar item.
 @MainActor
 protocol GlobalHotKeyRegistering: AnyObject {
+    /// `exclusive`: refuse the combination when anyone else already holds
+    /// it (`kEventHotKeyExclusive`), instead of silently sharing it.
+    @discardableResult
+    func register(
+        keyCode: UInt32,
+        modifiers: UInt32,
+        exclusive: Bool,
+        onFire: @escaping @MainActor () -> Void
+    ) -> Bool
+    func unregister()
+}
+
+extension GlobalHotKeyRegistering {
     @discardableResult
     func register(
         keyCode: UInt32,
         modifiers: UInt32,
         onFire: @escaping @MainActor () -> Void
-    ) -> Bool
-    func unregister()
+    ) -> Bool {
+        register(keyCode: keyCode, modifiers: modifiers, exclusive: false, onFire: onFire)
+    }
 }
 
 @MainActor
@@ -70,17 +86,59 @@ final class GlobalHotKeyController {
 /// action, so it never depends on which thread Carbon uses for delivery.
 private final class HotKeyCallbackContext: Sendable {
     private let onFire: @MainActor () -> Void
+    private let signature: OSType
+    private let id: UInt32
+    /// This registration's token. A press is queued onto the main queue, so it
+    /// can outlive `unregister()`; the token is revoked there and checked
+    /// right before the action runs. One token per registration, so a
+    /// re-registration (close → reopen) never revives a stale press.
+    let token = HotKeyRegistrationToken()
 
-    init(onFire: @escaping @MainActor () -> Void) {
+    init(hotKeyID: EventHotKeyID, onFire: @escaping @MainActor () -> Void) {
+        self.signature = hotKeyID.signature
+        self.id = hotKeyID.id
         self.onFire = onFire
+    }
+
+    /// Every registrar installs its own handler on the application target, and
+    /// Carbon offers each hotkey press to all of them, newest first. Claim
+    /// only this registrar's own press; pass the rest down the chain.
+    func handle(_ event: EventRef?) -> OSStatus {
+        guard let event else { return OSStatus(eventNotHandledErr) }
+        var pressed = EventHotKeyID()
+        let status = GetEventParameter(
+            event,
+            EventParamName(kEventParamDirectObject),
+            EventParamType(typeEventHotKeyID),
+            nil,
+            MemoryLayout<EventHotKeyID>.size,
+            nil,
+            &pressed
+        )
+        guard status == noErr, pressed.signature == signature, pressed.id == id else {
+            return OSStatus(eventNotHandledErr)
+        }
+        fire()
+        return noErr
     }
 
     func fire() {
         let onFire = self.onFire
+        let token = self.token
         DispatchQueue.main.async {
-            MainActor.assumeIsolated { onFire() }
+            MainActor.assumeIsolated {
+                guard token.isLive else { return }
+                onFire()
+            }
         }
     }
+}
+
+@MainActor
+private final class HotKeyRegistrationToken {
+    private(set) var isLive = true
+
+    func revoke() { isLive = false }
 }
 
 @MainActor
@@ -95,16 +153,24 @@ final class CarbonHotKeyRegistrar: GlobalHotKeyRegistering {
     // 'AGST' — an app-specific four-char signature for the hotkey identity.
     private static let signature = OSType(0x4147_5354)
 
+    /// Distinct per registration, so each handler can tell its press apart.
+    private static var nextID: UInt32 = 1
+
+    private(set) var registeredHotKeyID: EventHotKeyID?
+
     @discardableResult
     func register(
         keyCode: UInt32,
         modifiers: UInt32,
+        exclusive: Bool,
         onFire: @escaping @MainActor () -> Void
     ) -> Bool {
         unregister()
 
+        let hotKeyID = EventHotKeyID(signature: Self.signature, id: Self.nextID)
+        Self.nextID &+= 1
         let retainedContext = Unmanaged.passRetained(
-            HotKeyCallbackContext(onFire: onFire)
+            HotKeyCallbackContext(hotKeyID: hotKeyID, onFire: onFire)
         )
 
         var eventType = EventTypeSpec(
@@ -114,13 +180,12 @@ final class CarbonHotKeyRegistrar: GlobalHotKeyRegistering {
         var handlerRef: EventHandlerRef?
         let installStatus = InstallEventHandler(
             GetApplicationEventTarget(),
-            { _, _, userData in
+            { _, event, userData in
                 guard let userData else { return OSStatus(eventNotHandledErr) }
-                Unmanaged<HotKeyCallbackContext>
+                return Unmanaged<HotKeyCallbackContext>
                     .fromOpaque(userData)
                     .takeUnretainedValue()
-                    .fire()
-                return noErr
+                    .handle(event)
             },
             1,
             &eventType,
@@ -133,17 +198,17 @@ final class CarbonHotKeyRegistrar: GlobalHotKeyRegistering {
         }
 
         var newHotKeyRef: EventHotKeyRef?
-        let hotKeyID = EventHotKeyID(signature: Self.signature, id: 1)
         let registerStatus = RegisterEventHotKey(
             keyCode,
             modifiers,
             hotKeyID,
             GetApplicationEventTarget(),
-            0,
+            exclusive ? OptionBits(kEventHotKeyExclusive) : 0,
             &newHotKeyRef
         )
         guard registerStatus == noErr, let newHotKeyRef else {
             RemoveEventHandler(handlerRef)
+            retainedContext.takeUnretainedValue().token.revoke()
             retainedContext.release()
             return false
         }
@@ -151,6 +216,7 @@ final class CarbonHotKeyRegistrar: GlobalHotKeyRegistering {
         eventHandlerRef = handlerRef
         hotKeyRef = newHotKeyRef
         callbackContext = retainedContext
+        registeredHotKeyID = hotKeyID
         return true
     }
 
@@ -165,8 +231,10 @@ final class CarbonHotKeyRegistrar: GlobalHotKeyRegistering {
             RemoveEventHandler(eventHandlerRef)
             self.eventHandlerRef = nil
         }
+        callbackContext?.takeUnretainedValue().token.revoke()
         callbackContext?.release()
         callbackContext = nil
+        registeredHotKeyID = nil
     }
 
     // `isolated deinit` runs on the MainActor so it can touch the (non-Sendable)
@@ -181,6 +249,79 @@ final class CarbonHotKeyRegistrar: GlobalHotKeyRegistering {
         if let eventHandlerRef {
             RemoveEventHandler(eventHandlerRef)
         }
+        callbackContext?.takeUnretainedValue().token.revoke()
         callbackContext?.release()
+    }
+}
+
+/// Finds the key that types a character on the current layout. Cocoa key
+/// equivalents (the popover's `.keyboardShortcut`s) follow the character, but
+/// a Carbon hotkey names a physical key — so ⌘Q on AZERTY must register the
+/// key where ANSI has A, or ⌘A would quit.
+enum ShortcutKeyCodeResolver {
+    /// Keypad keys can type "," or "." too; never pick them over the main row.
+    private static let keypadKeyCodes: Set<UInt16> = Set(
+        UInt16(kVK_ANSI_KeypadDecimal)...UInt16(kVK_ANSI_Keypad9)
+    ).union([UInt16(kVK_JIS_KeypadComma)])
+
+    /// The ANSI key when it still types `character`, else the first
+    /// non-keypad key that does, else `fallback`.
+    static func keyCode(
+        for character: String,
+        fallback: UInt32,
+        translate: (UInt16) -> String?
+    ) -> UInt32 {
+        if translate(UInt16(fallback))?.lowercased() == character { return fallback }
+        for keyCode in UInt16(0)..<128 where !keypadKeyCodes.contains(keyCode) {
+            if translate(keyCode)?.lowercased() == character { return UInt32(keyCode) }
+        }
+        return fallback
+    }
+
+    /// Resolved against the current ASCII-capable layout — the one macOS uses
+    /// for ⌘ shortcuts — at each popover presentation.
+    @MainActor
+    static func liveKeyCode(for shortcut: PopoverShortcut) -> UInt32 {
+        keyCode(
+            for: shortcut.character,
+            fallback: shortcut.ansiKeyCode,
+            translate: liveTranslator()
+        )
+    }
+
+    @MainActor
+    private static func liveTranslator() -> (UInt16) -> String? {
+        guard
+            let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+            let rawData = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)
+        else {
+            return { _ in nil }
+        }
+        let data = Unmanaged<CFData>.fromOpaque(rawData).takeUnretainedValue() as Data
+        let keyboardType = UInt32(LMGetKbdType())
+        return { keyCode in
+            data.withUnsafeBytes { buffer -> String? in
+                guard let layout = buffer.baseAddress?.assumingMemoryBound(to: UCKeyboardLayout.self) else {
+                    return nil
+                }
+                var deadKeyState: UInt32 = 0
+                var length = 0
+                var characters = [UniChar](repeating: 0, count: 4)
+                let status = UCKeyTranslate(
+                    layout,
+                    keyCode,
+                    UInt16(kUCKeyActionDown),
+                    0,
+                    keyboardType,
+                    OptionBits(kUCKeyTranslateNoDeadKeysMask),
+                    &deadKeyState,
+                    characters.count,
+                    &length,
+                    &characters
+                )
+                guard status == noErr, length > 0 else { return nil }
+                return String(utf16CodeUnits: characters, count: length)
+            }
+        }
     }
 }

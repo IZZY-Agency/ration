@@ -7,15 +7,22 @@ struct AddAccountView: View {
 
     @State private var errorMessage: String?
 
+    /// Each provider row's icon wears that provider's identity accent (ChatGPT
+    /// and Cursor used to borrow Claude's gold).
+    static func iconAccent(for provider: Provider) -> Color { provider.markAccent }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Add account")
-                    .font(Theme.display(21, .bold))
+                    .font(Theme.display(23, .bold))
                     .foregroundStyle(Theme.cream)
                 Text("Each account gets a separate persistent browser profile.")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
+                    // ≈403 pt in Mono 12 against a 376 pt column: wrap to a
+                    // second line instead of truncating.
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             ForEach(Provider.allCases) { provider in
@@ -24,18 +31,18 @@ struct AddAccountView: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: provider == .claude ? "sparkles" : "hexagon")
-                            .foregroundStyle(Theme.gold)
+                            .foregroundStyle(Self.iconAccent(for: provider))
                             .frame(width: 28, height: 28)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(provider.displayName)
-                                .font(Theme.display(14, .semibold))
+                                .font(Theme.display(16, .semibold))
                                 .foregroundStyle(Theme.cream)
                             Text("Connect another \(provider.displayName) subscription")
-                                .font(Theme.mono(9))
+                                .font(Theme.mono(11))
                                 .foregroundStyle(Theme.creamDim)
                             if provider == .claude {
                                 Text(WarmUpDefaults.newClaudeAccountDisclosure)
-                                    .font(Theme.mono(9))
+                                    .font(Theme.mono(11))
                                     .foregroundStyle(Theme.creamDim)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -57,7 +64,7 @@ struct AddAccountView: View {
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.crit)
                     .textSelection(.enabled)
             }

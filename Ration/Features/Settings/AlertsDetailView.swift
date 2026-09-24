@@ -65,6 +65,11 @@ struct AlertsDetailView: View {
     /// determines which sections render (the grid is ragged; see
     /// `AlertsGridModel`).
     let providers: [Provider]
+    /// What macOS says about Ration's notifications. Unless allowed, every
+    /// Notify checkbox is dimmed — the stored channel settings are left
+    /// untouched, so allowing notifications restores them as they were.
+    var notificationPermission: NotificationPermission? = nil
+    var onAllowNotifications: () -> Void = {}
     // Field-level, not whole-pair: each commits ONE field against the
     // freshest stored value inside `AppSettings`'s serialized mutation, so a
     // second field's commit can never carry a stale sibling value back over
@@ -86,13 +91,41 @@ struct AlertsDetailView: View {
         }
     }
 
+    private var notificationProblem: NotificationAccess.Problem? {
+        NotificationAccess.problem(
+            alertsEnabled: settings.usageAlertsEnabled,
+            permission: notificationPermission
+        )
+    }
+
+    /// Non-nil while Notify can't deliver: the dimmed boxes' tooltip.
+    private var notifyBlockedNote: String? { notificationProblem?.alertsPaneNote }
+
     var body: some View {
         Form {
             if !settings.usageAlertsEnabled {
                 Section {
                     Text("Turn on Usage alerts in General to use these thresholds.")
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.warn)
+                }
+            }
+
+            if let notificationProblem {
+                Section {
+                    HStack(spacing: 10) {
+                        Text(notificationProblem.alertsPaneNote)
+                            .font(Theme.mono(12))
+                            .foregroundStyle(Theme.warn)
+                        Spacer()
+                        switch notificationProblem {
+                        case .blocked:
+                            Button(NotificationAccess.openSettingsTitle, action: NotificationSettingsOpener.open)
+                        case .needsPermission:
+                            Button(NotificationAccess.allowTitle, action: onAllowNotifications)
+                                .accessibilityIdentifier("alertsAllowNotificationsButton")
+                        }
+                    }
                 }
             }
 
@@ -103,6 +136,7 @@ struct AlertsDetailView: View {
                             row: row,
                             pair: settings.data.thresholds(provider: row.provider, window: row.window),
                             channels: settings.data.channels(forKey: row.id),
+                            notifyBlockedNote: notifyBlockedNote,
                             onSetWarningPercent: onSetWarningPercent,
                             onSetCriticalPercent: onSetCriticalPercent,
                             onSetDropEnabled: onSetDropEnabled,
@@ -117,6 +151,7 @@ struct AlertsDetailView: View {
                             provider: provider,
                             leadDays: settings.data.resetExpiryLeadDays(provider: provider),
                             channels: settings.data.channels(forKey: AppSettingsData.resetCreditsKey(provider: provider)),
+                            notifyBlockedNote: notifyBlockedNote,
                             onSetLeadDays: onSetResetLeadDays,
                             onSetDropEnabled: onSetDropEnabled,
                             onSetNotificationEnabled: onSetNotificationEnabled,
@@ -130,6 +165,7 @@ struct AlertsDetailView: View {
                 CursorSpendSection(
                     spend: settings.cursorSpend,
                     channels: settings.data.channels(forKey: AppSettingsData.cursorSpendKey),
+                    notifyBlockedNote: notifyBlockedNote,
                     onSetWarningCents: onSetSpendWarningCents,
                     onSetCriticalCents: onSetSpendCriticalCents,
                     onSetDropEnabled: onSetDropEnabled,
@@ -159,6 +195,7 @@ private struct ThresholdFieldsRow: View {
     let row: AlertsGridRow
     let pair: ThresholdPair
     let channels: AlertChannels
+    let notifyBlockedNote: String?
     let onSetWarningPercent: (Int, Provider, UsageWindowKind) async throws -> Void
     let onSetCriticalPercent: (Int, Provider, UsageWindowKind) async throws -> Void
     let onSetDropEnabled: (Bool, String) async throws -> Void
@@ -174,6 +211,7 @@ private struct ThresholdFieldsRow: View {
         row: AlertsGridRow,
         pair: ThresholdPair,
         channels: AlertChannels,
+        notifyBlockedNote: String?,
         onSetWarningPercent: @escaping (Int, Provider, UsageWindowKind) async throws -> Void,
         onSetCriticalPercent: @escaping (Int, Provider, UsageWindowKind) async throws -> Void,
         onSetDropEnabled: @escaping (Bool, String) async throws -> Void,
@@ -183,6 +221,7 @@ private struct ThresholdFieldsRow: View {
         self.row = row
         self.pair = pair
         self.channels = channels
+        self.notifyBlockedNote = notifyBlockedNote
         self.onSetWarningPercent = onSetWarningPercent
         self.onSetCriticalPercent = onSetCriticalPercent
         self.onSetDropEnabled = onSetDropEnabled
@@ -194,9 +233,11 @@ private struct ThresholdFieldsRow: View {
 
     var body: some View {
         LabeledContent(windowLabel(row.window)) {
-            HStack(spacing: 4) {
+            // First-text-baseline: the numbers sat above the "Warn"/"%" label
+            // baseline when the row centred a borderless field.
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("Warn")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
                 percentField(
                     $warningText,
@@ -204,11 +245,11 @@ private struct ThresholdFieldsRow: View {
                     identifier: "alertWarningField.\(row.id)"
                 )
                 Text("%")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
 
                 Text("Crit")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
                     .padding(.leading, 8)
                 percentField(
@@ -217,7 +258,7 @@ private struct ThresholdFieldsRow: View {
                     identifier: "alertCriticalField.\(row.id)"
                 )
                 Text("%")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
 
                 // Where a crossing is delivered. Both are offered: the panel
@@ -225,6 +266,7 @@ private struct ThresholdFieldsRow: View {
                 // one off must not imply the other.
                 ChannelToggles(
                     channels: channels,
+                    notifyBlockedNote: notifyBlockedNote,
                     key: row.id,
                     onSetDropEnabled: onSetDropEnabled,
                     onSetNotificationEnabled: onSetNotificationEnabled,
@@ -250,8 +292,10 @@ private struct ThresholdFieldsRow: View {
         identifier: String
     ) -> some View {
         TextField("", text: text)
+            // A visible field: borderless, the number read as plain text.
+            .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.trailing)
-            .frame(width: 34)
+            .frame(width: 44)
             .focused(focused)
             .onSubmit { focused.wrappedValue = false }
             .accessibilityIdentifier(identifier)
@@ -302,12 +346,23 @@ private struct ThresholdFieldsRow: View {
     }
 }
 
+/// Copy for the reset-expiry stepper, pulled out so it is testable.
+enum ResetExpiryCopy {
+    /// "Expiry warning: 1 day" / "… N days". The old "Warn N days before
+    /// expiry" truncated to "Warn 1 day before exp…" beside the stepper and
+    /// channel toggles at the +2 pt type.
+    static func stepperLabel(leadDays: Int) -> String {
+        "Expiry warning: \(leadDays) day\(leadDays == 1 ? "" : "s")"
+    }
+}
+
 /// "Resets" row: channels for the reset alerts plus how early to warn before
 /// a reset expires.
 private struct ResetCreditsSettingsRow: View {
     let provider: Provider
     let leadDays: Int
     let channels: AlertChannels
+    let notifyBlockedNote: String?
     let onSetLeadDays: (Int, Provider) async throws -> Void
     let onSetDropEnabled: (Bool, String) async throws -> Void
     let onSetNotificationEnabled: (Bool, String) async throws -> Void
@@ -317,17 +372,18 @@ private struct ResetCreditsSettingsRow: View {
         LabeledContent("Resets") {
             HStack(spacing: 4) {
                 Stepper(
-                    "Warn \(leadDays) day\(leadDays == 1 ? "" : "s") before expiry",
+                    ResetExpiryCopy.stepperLabel(leadDays: leadDays),
                     value: Binding(
                         get: { leadDays },
                         set: { value in Task { do { try await onSetLeadDays(value, provider) } catch { onError(error) } } }
                     ),
                     in: AppSettingsData.resetExpiryLeadDaysRange
                 )
-                .font(Theme.mono(10))
+                .font(Theme.mono(12))
                 .accessibilityIdentifier("resetLeadDaysStepper.\(provider.rawValue)")
                 ChannelToggles(
                     channels: channels,
+                    notifyBlockedNote: notifyBlockedNote,
                     key: AppSettingsData.resetCreditsKey(provider: provider),
                     onSetDropEnabled: onSetDropEnabled,
                     onSetNotificationEnabled: onSetNotificationEnabled,
@@ -383,6 +439,7 @@ private struct CursorSpendSection: View {
     // `SpendThresholds` from the locally-held `spend` would let one field's
     // commit clobber the other's if it hasn't round-tripped yet.
     let channels: AlertChannels
+    let notifyBlockedNote: String?
     let onSetWarningCents: (Int?) async throws -> Void
     let onSetCriticalCents: (Int?) async throws -> Void
     let onSetDropEnabled: (Bool, String) async throws -> Void
@@ -397,6 +454,7 @@ private struct CursorSpendSection: View {
     init(
         spend: SpendThresholds,
         channels: AlertChannels,
+        notifyBlockedNote: String?,
         onSetWarningCents: @escaping (Int?) async throws -> Void,
         onSetCriticalCents: @escaping (Int?) async throws -> Void,
         onSetDropEnabled: @escaping (Bool, String) async throws -> Void,
@@ -405,6 +463,7 @@ private struct CursorSpendSection: View {
     ) {
         self.spend = spend
         self.channels = channels
+        self.notifyBlockedNote = notifyBlockedNote
         self.onSetWarningCents = onSetWarningCents
         self.onSetCriticalCents = onSetCriticalCents
         self.onSetDropEnabled = onSetDropEnabled
@@ -415,7 +474,7 @@ private struct CursorSpendSection: View {
     }
 
     var body: some View {
-        Section("Cursor spend") {
+        Section(SettingsSectionTitle.cursorSpend) {
             LabeledContent("Warning") {
                 dollarField($warningText, focused: $warningFocused, identifier: "cursorSpendWarningField")
             }
@@ -425,6 +484,7 @@ private struct CursorSpendSection: View {
             LabeledContent("Deliver to") {
                 ChannelToggles(
                     channels: channels,
+                    notifyBlockedNote: notifyBlockedNote,
                     key: AppSettingsData.cursorSpendKey,
                     onSetDropEnabled: onSetDropEnabled,
                     onSetNotificationEnabled: onSetNotificationEnabled,
@@ -432,7 +492,7 @@ private struct CursorSpendSection: View {
                 )
             }
             Text("Cursor bills by usage-based spend, not a rate window. Leave these empty for no spend alerts.")
-                .font(Theme.mono(10))
+                .font(Theme.mono(12))
                 .foregroundStyle(Theme.creamDim)
         }
         .onChange(of: spend) { _, newValue in
@@ -453,6 +513,7 @@ private struct CursorSpendSection: View {
         identifier: String
     ) -> some View {
         TextField("off", text: text)
+            .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.trailing)
             .frame(width: 70)
             .focused(focused)
@@ -507,6 +568,11 @@ private struct CursorSpendSection: View {
 /// and the setter reads the sibling inside its serialized mutation.
 private struct ChannelToggles: View {
     let channels: AlertChannels
+    /// Non-nil while notifications can't be delivered (blocked, or never
+    /// asked) — the reason, shown as the tooltip. The Notify box is then
+    /// disabled and dimmed but keeps showing the STORED choice, which is
+    /// never rewritten here.
+    let notifyBlockedNote: String?
     let key: String
     let onSetDropEnabled: (Bool, String) async throws -> Void
     let onSetNotificationEnabled: (Bool, String) async throws -> Void
@@ -519,7 +585,9 @@ private struct ChannelToggles: View {
                 set: { submit($0, using: onSetNotificationEnabled) }
             ))
             .accessibilityIdentifier("alertNotifyToggle.\(key)")
-            .help("Send a system notification when this is crossed")
+            .help(notifyBlockedNote ?? "Send a system notification when this is crossed")
+            .disabled(notifyBlockedNote != nil)
+            .opacity(notifyBlockedNote != nil ? 0.45 : 1)
 
             Toggle("Drop", isOn: Binding(
                 get: { channels.drop },
@@ -529,7 +597,7 @@ private struct ChannelToggles: View {
             .help("Show this in the menu-bar drop")
         }
         .toggleStyle(.checkbox)
-        .font(Theme.mono(10))
+        .font(Theme.mono(12))
         .padding(.leading, 10)
     }
 

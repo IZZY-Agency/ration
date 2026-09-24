@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import Ration
 
@@ -273,33 +275,99 @@ final class HistoryOverlayTests: XCTestCase {
 
     func testPaletteGivesEachProviderItsOwnBrandLadder() {
         XCTAssertNotEqual(
-            HistoryOverlayPalette.hex(provider: .claude, shadeIndex: 0),
-            HistoryOverlayPalette.hex(provider: .chatGPT, shadeIndex: 0)
+            HistoryOverlayPalette.hex(provider: .claude, shadeIndex: 0, dark: true),
+            HistoryOverlayPalette.hex(provider: .chatGPT, shadeIndex: 0, dark: true)
         )
         XCTAssertNotEqual(
-            HistoryOverlayPalette.hex(provider: .cursor, shadeIndex: 0),
-            HistoryOverlayPalette.hex(provider: .claude, shadeIndex: 0)
+            HistoryOverlayPalette.hex(provider: .cursor, shadeIndex: 0, dark: true),
+            HistoryOverlayPalette.hex(provider: .claude, shadeIndex: 0, dark: true)
         )
     }
 
     func testPaletteFirstShadeIsTheProvidersBrandAccent() {
         // Slot 0 must match the accent the account card and Settings mark use,
-        // so one account reads identically across every surface.
-        XCTAssertEqual(HistoryOverlayPalette.hex(provider: .claude, shadeIndex: 0), 0xF5C518)
-        XCTAssertEqual(HistoryOverlayPalette.hex(provider: .chatGPT, shadeIndex: 0), 0x6FB2A6)
-        XCTAssertEqual(HistoryOverlayPalette.hex(provider: .cursor, shadeIndex: 0), 0x8C9EFF)
+        // so one account reads identically across every surface — in both
+        // appearances.
+        for dark in [true, false] {
+            let appearance: NSAppearance.Name = dark ? .darkAqua : .aqua
+            XCTAssertEqual(HistoryOverlayPalette.hex(provider: .claude, shadeIndex: 0, dark: dark), resolvedHex(Theme.goldNS, appearance))
+            XCTAssertEqual(HistoryOverlayPalette.hex(provider: .chatGPT, shadeIndex: 0, dark: dark), resolvedHex(Theme.chatGPTGreenNS, appearance))
+            XCTAssertEqual(HistoryOverlayPalette.hex(provider: .cursor, shadeIndex: 0, dark: dark), resolvedHex(Theme.irisNS, appearance))
+        }
+    }
+
+    /// Checks the colour actually DRAWN: the line at full strength and the
+    /// overlay point at `overlayPointOpacity` over the ground. A one-day
+    /// series is only its point, so the point alone must clear 3 : 1.
+    func testEveryShadeIsVisibleOnBothGrounds() {
+        for dark in [true, false] {
+            let appearance: NSAppearance.Name = dark ? .darkAqua : .aqua
+            let grounds = [resolvedHex(Theme.inkNS, appearance), resolvedHex(Theme.panelNS, appearance)]
+            for provider in Provider.allCases {
+                for shade in HistoryOverlayPalette.ladder(for: provider, dark: dark) {
+                    for ground in grounds {
+                        XCTAssertGreaterThanOrEqual(contrast(shade, ground), 3.0, "\(provider) \(String(shade, radix: 16)) dark=\(dark)")
+                        let point = composite(shade, alpha: HistoryOverlayPalette.overlayPointOpacity, over: ground)
+                        XCTAssertGreaterThanOrEqual(contrast(point, ground), 3.0, "\(provider) point \(String(shade, radix: 16)) dark=\(dark)")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Every slot of every ladder, pinned to its exact hex in both
+    /// appearances — a nudged shade must fail here, not slip by on the
+    /// >= 3 : 1 floor alone.
+    func testEveryLadderSlotIsPinned() {
+        let expected: [(Provider, dark: [UInt32], light: [UInt32])] = [
+            (.claude, [0xD9B44A, 0xF0D99A, 0xA88420, 0xE6C46E], [0x836400, 0xA68212, 0x5E4700, 0x957200]),
+            (.chatGPT, [0x5CC79F, 0xA3E3C8, 0x2FA27A, 0x7FD6B3], [0x0F7657, 0x2A8E6E, 0x0A5540, 0x2C7A66]),
+            (.cursor, [0xB0A6EE, 0xD6D0F7, 0x8779D6, 0xC3BBF2], [0x5A55B5, 0x7F7ACB, 0x3B3787, 0x6C67C2]),
+        ]
+        for (provider, dark, light) in expected {
+            XCTAssertEqual(HistoryOverlayPalette.ladder(for: provider, dark: true), dark, "\(provider) dark ladder")
+            XCTAssertEqual(HistoryOverlayPalette.ladder(for: provider, dark: false), light, "\(provider) light ladder")
+            for slot in 0..<4 {
+                let color = NSColor(HistoryOverlayPalette.color(provider: provider, shadeIndex: slot))
+                XCTAssertEqual(resolvedHex(color, .darkAqua), dark[slot], "\(provider) dark slot \(slot)")
+                XCTAssertEqual(resolvedHex(color, .aqua), light[slot], "\(provider) light slot \(slot)")
+            }
+        }
+        XCTAssertEqual(HistoryOverlayPalette.hex(provider: .claude, shadeIndex: 1, dark: false), 0xA68212)
+    }
+
+    /// Two ChatGPT accounts must not draw near-identical greens: every pair
+    /// of slots is >= 7 ΔE (CIE76) apart in both appearances.
+    func testChatGPTLadderSlotsAreDistinct() {
+        for dark in [true, false] {
+            let ladder = HistoryOverlayPalette.ladder(for: .chatGPT, dark: dark)
+            for i in ladder.indices {
+                for j in ladder.indices where j > i {
+                    let distance = deltaE76(ladder[i], ladder[j])
+                    XCTAssertGreaterThanOrEqual(distance, 7, "slots \(i)/\(j) ΔE \(distance) dark=\(dark)")
+                }
+            }
+        }
+    }
+
+    func testPaletteColorIsDynamic() {
+        let c = NSColor(HistoryOverlayPalette.color(provider: .chatGPT, shadeIndex: 2))
+        XCTAssertEqual(resolvedHex(c, .darkAqua), 0x2FA27A)
+        XCTAssertEqual(resolvedHex(c, .aqua), 0x0A5540)
     }
 
     func testPaletteShadesWithinAProviderAreDistinct() {
-        let shades = (0..<4).map { HistoryOverlayPalette.hex(provider: .claude, shadeIndex: $0) }
-        XCTAssertEqual(Set(shades).count, 4)
+        for dark in [true, false] {
+            let shades = (0..<4).map { HistoryOverlayPalette.hex(provider: .claude, shadeIndex: $0, dark: dark) }
+            XCTAssertEqual(Set(shades).count, 4, "dark=\(dark)")
+        }
     }
 
     func testPaletteCyclesBeyondTheLadderInsteadOfCrashing() {
         let ladderLength = 4
         XCTAssertEqual(
-            HistoryOverlayPalette.hex(provider: .claude, shadeIndex: ladderLength),
-            HistoryOverlayPalette.hex(provider: .claude, shadeIndex: 0)
+            HistoryOverlayPalette.hex(provider: .claude, shadeIndex: ladderLength, dark: true),
+            HistoryOverlayPalette.hex(provider: .claude, shadeIndex: 0, dark: true)
         )
     }
 
@@ -319,11 +387,13 @@ final class HistoryOverlayTests: XCTestCase {
     /// the eye actually reads — survives further than either encoding alone: the
     /// fifth account of one provider reuses gold but not gold-solid.
     func testPaletteColourAndDashPairStaysUniqueBeyondEitherLadder() {
-        let pairs = (0..<12).map { index in
-            "\(HistoryOverlayPalette.hex(provider: .claude, shadeIndex: index))"
-                + "/\(HistoryOverlayPalette.dash(shadeIndex: index))"
+        for dark in [true, false] {
+            let pairs = (0..<12).map { index in
+                "\(HistoryOverlayPalette.hex(provider: .claude, shadeIndex: index, dark: dark))"
+                    + "/\(HistoryOverlayPalette.dash(shadeIndex: index))"
+            }
+            XCTAssertEqual(Set(pairs).count, 12, "dark=\(dark)")
         }
-        XCTAssertEqual(Set(pairs).count, 12)
     }
 
     func testPaletteDashLadderCyclesOnItsOwnLength() {

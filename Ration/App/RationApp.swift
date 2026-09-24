@@ -9,6 +9,14 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyRegistrar: (any GlobalHotKeyRegistering)?
     /// Dock + ⌘-Tab presence while any Ration window is open — see `DockPresence`.
     private let dockPresence = DockPresenceController()
+    /// App activation / any window (the popover included) becoming key —
+    /// the moments a user may be back from changing the notification
+    /// permission in System Settings. See
+    /// `AppModel.recheckNotificationAuthorization()`.
+    private var authorizationRecheckObservers: [NSObjectProtocol] = []
+    /// The System/Light/Dark preference. Read synchronously from UserDefaults
+    /// at construction so it can be applied before any window exists.
+    let appearance = AppearanceController()
     /// Outstanding `.terminateLater` decisions. A COUNT, not a flag: quits can
     /// overlap, and one aborted quit must not declare the app safe while
     /// another decision is still pending.
@@ -88,11 +96,31 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         didFinishLaunching = true
-        // izzy Terminal Ledger is dark-only: force a dark appearance regardless
-        // of the system theme so the palette renders as designed.
-        NSApp.appearance = NSAppearance(named: .darkAqua)
+        // Appearance comes from UserDefaults so it is known synchronously,
+        // before MenuBarController builds any window.
+        appearance.apply()
         dockPresence.start()
+        startNotificationAuthorizationRechecks()
         startMenuBarIfReady()
+    }
+
+    private func startNotificationAuthorizationRechecks() {
+        guard authorizationRecheckObservers.isEmpty else { return }
+        let names: [Notification.Name] = [
+            NSApplication.didBecomeActiveNotification,
+            NSWindow.didBecomeKeyNotification
+        ]
+        authorizationRecheckObservers = names.map { name in
+            NotificationCenter.default.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.model?.recheckNotificationAuthorization()
+                }
+            }
+        }
     }
 
     func applicationShouldTerminate(
@@ -156,6 +184,7 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
         let controller = MenuBarController(
             model: model,
             launchAtLogin: launchAtLogin,
+            appearance: appearance,
             hotKeyRegistrar: hotKeyRegistrar ?? CarbonHotKeyRegistrar()
         )
         menuBarController = controller
@@ -240,7 +269,7 @@ struct RationApp: App {
         Window("Add Account", id: "add-account") {
             AddAccountWindowContent(model: model)
         }
-        .defaultSize(width: 420, height: 310)
+        .defaultSize(width: 420, height: 530)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
@@ -255,17 +284,18 @@ struct RationApp: App {
             SettingsWindowContent(
                 model: model,
                 launchAtLogin: launchAtLogin,
+                appearance: appDelegate.appearance,
                 onOpenSetupGuide: openSetupGuide
             )
         }
-        .defaultSize(width: 700, height: 520)
+        .defaultSize(width: SettingsView.minimumWindowWidth, height: 564)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
         Window("About Ration", id: "about") {
             AboutWindowContent()
         }
-        .defaultSize(width: 360, height: 270)
+        .defaultSize(width: 360, height: 286)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
         .windowResizability(.contentSize)
@@ -324,6 +354,15 @@ struct MenuBarContent: View {
     let onHistory: () -> Void
     let onOpenSignIn: (UUID) -> Void
     let onOpenSetupGuide: () -> Void
+    /// The attention drop's on-screen state, for the popover's keyboard route
+    /// to its ✕ — owned by whoever owns the surface (`MenuBarController`, or
+    /// the UI-testing scene's own instance).
+    @ObservedObject var attentionPresence: AttentionDropPresence
+    var onDismissAttentionDrop: () -> Void = {}
+    /// The footer's Refresh / Quit. The menu-bar controller passes its own, so
+    /// its popover hotkeys run the very same closures.
+    var onRefresh: (() -> Void)?
+    var onQuit: (() -> Void)?
 
     var body: some View {
         MenuBarView(
@@ -345,7 +384,7 @@ struct MenuBarContent: View {
                 }
             },
             onAddAccount: onAddAccount,
-            onRefresh: {
+            onRefresh: onRefresh ?? {
                 Task {
                     await model.refreshAll()
                 }
@@ -358,7 +397,7 @@ struct MenuBarContent: View {
                     await model.retryProfileCleanup()
                 }
             },
-            onQuit: {
+            onQuit: onQuit ?? {
                 NSApplication.shared.terminate(nil)
             },
             onReauthenticate: { accountID in
@@ -392,7 +431,15 @@ struct MenuBarContent: View {
                     ($0, settings.data.resetExpiryLeadDays(provider: $0))
                 }
             ),
-            onOpenSetupGuide: onOpenSetupGuide
+            onOpenSetupGuide: onOpenSetupGuide,
+            notificationProblem: NotificationAccess.problem(
+                alertsEnabled: settings.usageAlertsEnabled,
+                permission: model.notificationPermission
+            ),
+            onOpenNotificationSettings: NotificationSettingsOpener.open,
+            onAllowNotifications: { model.requestNotificationPermission() },
+            attentionDropShowing: attentionPresence.isShowing,
+            onDismissAttentionDrop: onDismissAttentionDrop
         )
         .tint(Theme.gold)
     }
@@ -428,6 +475,9 @@ private struct MenuBarSceneContent: View {
     // MenuBarController.showFallbackWindow's use of
     // `AccountPinSnapshot.shouldCapture`.
     @StateObject private var pinSnapshot: AccountPinSnapshot
+    /// This surface has no drop, so its presence never turns on — but it is
+    /// one retained instance, not a fresh object per `init`.
+    @StateObject private var attentionPresence = AttentionDropPresence()
 
     init(model: AppModel, onOpenSetupGuide: @escaping () -> Void) {
         self.model = model
@@ -467,7 +517,8 @@ private struct MenuBarSceneContent: View {
                 NSApplication.shared.activate()
                 openWindow(id: "sign-in", value: sessionID)
             },
-            onOpenSetupGuide: onOpenSetupGuide
+            onOpenSetupGuide: onOpenSetupGuide,
+            attentionPresence: attentionPresence
         )
     }
 }
@@ -496,12 +547,14 @@ private struct SettingsWindowContent: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: AppModel
     @ObservedObject var launchAtLogin: LaunchAtLoginController
+    let appearance: AppearanceController
     let onOpenSetupGuide: () -> Void
 
     var body: some View {
         SettingsView(
             model: model,
             launchAtLogin: launchAtLogin,
+            appearance: appearance,
             history: model.history,
             onAddAccount: {
                 NSApplication.shared.activate()

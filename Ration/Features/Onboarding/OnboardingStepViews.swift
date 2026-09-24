@@ -87,6 +87,10 @@ struct OnboardingConnectStep: View {
     let isWaitingForSignIn: Bool
     let signInError: String?
 
+    /// Each provider's icon wears that provider's identity accent, like Add
+    /// Account — it was Claude gold for every provider.
+    static func iconAccent(for provider: Provider) -> Color { provider.markAccent }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             OnboardingStepHeader(
@@ -102,17 +106,17 @@ struct OnboardingConnectStep: View {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 10) {
                             Image(systemName: guide.symbol)
-                                .foregroundStyle(Theme.gold)
+                                .foregroundStyle(Self.iconAccent(for: provider))
                                 .frame(width: 22, height: 22)
                             Text(provider.displayName)
-                                .font(Theme.display(14, .semibold))
+                                .font(Theme.display(16, .semibold))
                                 .foregroundStyle(Theme.cream)
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .foregroundStyle(Theme.creamFaint)
                         }
                         Text(guide.hint)
-                            .font(Theme.mono(9.5))
+                            .font(Theme.mono(11.5))
                             .foregroundStyle(Theme.creamDim)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
@@ -133,7 +137,7 @@ struct OnboardingConnectStep: View {
 
             if let signInError {
                 Label(signInError, systemImage: "exclamationmark.triangle.fill")
-                    .font(Theme.mono(9.5))
+                    .font(Theme.mono(11.5))
                     .foregroundStyle(Theme.crit)
                     .textSelection(.enabled)
             } else if isWaitingForSignIn {
@@ -141,7 +145,7 @@ struct OnboardingConnectStep: View {
                     "Waiting for sign-in… this step finishes by itself once the account is verified.",
                     systemImage: "clock"
                 )
-                .font(Theme.mono(9.5))
+                .font(Theme.mono(11.5))
                 .foregroundStyle(Theme.creamDim)
             }
         }
@@ -171,7 +175,7 @@ struct OnboardingLaunchAtLoginStep: View {
 
             if let explanation = launchAtLogin.explanation {
                 Text(explanation)
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
             }
 
@@ -183,7 +187,7 @@ struct OnboardingLaunchAtLoginStep: View {
 
             if let launchError = launchAtLogin.errorMessage {
                 Label(launchError, systemImage: "exclamationmark.triangle.fill")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.crit)
                     .textSelection(.enabled)
             }
@@ -251,10 +255,10 @@ struct OnboardingStepHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(Theme.display(21, .bold))
+                .font(Theme.display(23, .bold))
                 .foregroundStyle(Theme.cream)
             Text(subtitle)
-                .font(Theme.mono(10))
+                .font(Theme.mono(12))
                 .foregroundStyle(Theme.creamDim)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -269,15 +273,17 @@ struct OnboardingBullet: View {
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(Theme.gold)
-                .frame(width: 22)
+                // 28: the widest bullet glyphs at 16pt (lock.laptopcomputer,
+                // chevron.left.forwardslash.chevron.right) measure 27pt.
+                .frame(width: 28)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(Theme.display(13, .semibold))
+                    .font(Theme.display(15, .semibold))
                     .foregroundStyle(Theme.cream)
                 Text(detail)
-                    .font(Theme.mono(9.5))
+                    .font(Theme.mono(11.5))
                     .foregroundStyle(Theme.creamDim)
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -216,15 +216,25 @@ enum HistoryOverlay {
 /// later slots stay inside that provider's hue so a line's provider is readable
 /// before its label is.
 enum HistoryOverlayPalette {
-    static func ladder(for provider: Provider) -> [UInt32] {
-        switch provider {
-        // Wide lightness spread inside one hue family: the family says which
-        // provider, the lightness says which account. Deliberately avoids the
-        // semantic tier colours (warn/crit) and the cyan reset accent, so a
-        // series colour never reads as a state signal.
-        case .claude: [0xF5C518, 0xFFEBA8, 0xA8760A, 0xD9A520]
-        case .chatGPT: [0x6FB2A6, 0xBEEDE3, 0x2F6B61, 0x8FC9BF]
-        case .cursor: [0x8C9EFF, 0xD3D9FF, 0x4C5AB8, 0xA7B1F0]
+    /// One ladder per appearance: a dark palette for the dark ink ground and a
+    /// light palette for the light one. `color` pairs them into a single
+    /// dynamic colour, so a chart follows the appearance without a redraw.
+    static func ladder(for provider: Provider, dark: Bool) -> [UInt32] {
+        switch (provider, dark) {
+        // Slot 0 is the provider's brand token in that appearance. Wide
+        // lightness spread inside one hue family: the family says which
+        // provider, the lightness says which account; every shade stays
+        // >= 3 : 1 on ink and panel. Deliberately avoids the semantic tier
+        // colours (warn/crit) and the cyan reset accent, so a series colour
+        // never reads as a state signal. ChatGPT's greens share a hue family
+        // with `active`, but History never draws `active`, so no series can
+        // be mistaken for the in-use marker.
+        case (.claude, true): [0xD9B44A, 0xF0D99A, 0xA88420, 0xE6C46E]
+        case (.claude, false): [0x836400, 0xA68212, 0x5E4700, 0x957200]
+        case (.chatGPT, true): [0x5CC79F, 0xA3E3C8, 0x2FA27A, 0x7FD6B3]
+        case (.chatGPT, false): [0x0F7657, 0x2A8E6E, 0x0A5540, 0x2C7A66]
+        case (.cursor, true): [0xB0A6EE, 0xD6D0F7, 0x8779D6, 0xC3BBF2]
+        case (.cursor, false): [0x5A55B5, 0x7F7ACB, 0x3B3787, 0x6C67C2]
         }
     }
 
@@ -238,17 +248,27 @@ enum HistoryOverlayPalette {
     /// accounts of one provider instead of 4.
     static let dashLadder: [[CGFloat]] = [[], [6, 3], [2, 3]]
 
+    /// Opacity of an overlay chart's per-account points. The ladder's 3 : 1
+    /// guarantee holds only at full strength, and a one-day series is ONLY its
+    /// point, so this must stay 1 — `testEveryShadeIsVisibleOnBothGrounds`
+    /// checks the colour actually drawn.
+    static let overlayPointOpacity: Double = 1
+
     static func dash(shadeIndex: Int) -> [CGFloat] {
         dashLadder[wrap(shadeIndex, count: dashLadder.count)]
     }
 
-    static func hex(provider: Provider, shadeIndex: Int) -> UInt32 {
-        let ladder = ladder(for: provider)
+    static func hex(provider: Provider, shadeIndex: Int, dark: Bool) -> UInt32 {
+        let ladder = ladder(for: provider, dark: dark)
         return ladder[wrap(shadeIndex, count: ladder.count)]
     }
 
+    /// Dynamic: resolves to the dark or light ladder by the drawing appearance.
     static func color(provider: Provider, shadeIndex: Int) -> Color {
-        Color(hex: hex(provider: provider, shadeIndex: shadeIndex))
+        Color(nsColor: Theme.dynamic(
+            dark: hex(provider: provider, shadeIndex: shadeIndex, dark: true),
+            light: hex(provider: provider, shadeIndex: shadeIndex, dark: false)
+        ))
     }
 
     private static func wrap(_ index: Int, count: Int) -> Int {

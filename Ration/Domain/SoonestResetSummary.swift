@@ -11,6 +11,15 @@ struct SoonestReset: Equatable, Sendable {
     let label: String?
 }
 
+extension SoonestReset {
+    /// The header's next-reset line as VoiceOver says it — "Next reset, Max
+    /// weekly, in 45 minutes" — never the drawn "WK · 45m".
+    func accessibilityLabel(now: Date, locale: Locale = .current) -> String {
+        let when = UsageFormatters.spokenDuration(until: resetsAt, relativeTo: now, locale: locale)
+        return "Next reset, \(accountLabel) \(kind.spokenName(label: label)), in \(when)"
+    }
+}
+
 /// The single nearest upcoming window reset across all accounts and all window
 /// kinds. Pure; ignores nil and past resets; ties resolve to presentation order.
 enum SoonestResetSummary {

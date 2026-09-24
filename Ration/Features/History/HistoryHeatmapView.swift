@@ -17,7 +17,7 @@ struct HistoryHeatmapView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Hour of Day")
-                .font(Theme.mono(10, bold: true))
+                .font(Theme.mono(12, bold: true))
                 .tracking(1.0)
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.creamFaint)
@@ -53,7 +53,7 @@ struct HistoryHeatmapView: View {
         Group {
             if hour.hour % 6 == 0 {
                 Text("\(hour.hour)")
-                    .font(Theme.mono(8))
+                    .font(Theme.mono(10))
                     .foregroundStyle(Theme.creamFaint)
                     .frame(maxWidth: .infinity)
             } else {

@@ -67,7 +67,7 @@ struct OnboardingView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             Text("STEP \(flow.position.index) OF \(flow.position.total)")
-                .font(Theme.mono(9))
+                .font(Theme.mono(11))
                 .tracking(1.4)
                 .foregroundStyle(Theme.creamFaint)
 
@@ -76,7 +76,7 @@ struct OnboardingView: View {
             if !flow.isFinalStep {
                 Button("Skip setup") { onFinish() }
                     .buttonStyle(.plain)
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
             }
         }
@@ -112,13 +112,13 @@ struct OnboardingView: View {
 
             if flow.isFinalStep {
                 Button("Done") { onFinish() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.goldProminent)
                     .keyboardShortcut(.defaultAction)
             } else {
                 Button(flow.step == .connect ? "Skip for now" : "Continue") {
                     flow.advance()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.goldProminent)
                 .keyboardShortcut(.defaultAction)
             }
         }

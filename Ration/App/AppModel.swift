@@ -347,7 +347,16 @@ final class AppModel: ObservableObject {
             ? ProfileCleanupCopy.blockingQuitOnSignIn
             : nil
     }
-    @Published private(set) var usageAlertsAuthorized = false
+    /// What macOS last said about Ration's notifications. `nil` = not read
+    /// yet (launch, or a startup pass that returned early — parked, load
+    /// failed, superseded). Surfaces show a problem only on a known answer,
+    /// so nothing flashes or sticks on a guess; `.notDetermined` offers to
+    /// ask rather than pointing at a System Settings list Ration isn't in.
+    @Published private(set) var notificationPermission: NotificationPermission? = nil
+
+    /// Posting-gate view of `notificationPermission`: `true` only when
+    /// allowed; `false` for denied AND not-yet-asked.
+    var usageAlertsAuthorized: Bool? { notificationPermission.map { $0 == .allowed } }
 
     /// The last warm-up attempt per account, recorded ONLY when it failed and
     /// removed the moment a later attempt succeeds. Facts, not copy: the banner
@@ -491,12 +500,17 @@ final class AppModel: ObservableObject {
     /// authorized, AND primed — safe to POST." Flipped ONLY synchronously,
     /// never inside an `await`ed span:
     /// - `true` at the end of a current-version `.userRequest` reconcile
-    ///   pass's enable path (after authorization is granted AND
+    ///   pass's enable path (after the re-read status is allowed AND
     ///   `primeAllAlerts()` has run), and at the end of a current-version
     ///   `.startup` pass on its OFF→ON edge (same authorize-then-prime
     ///   sequence, run once per activation).
     /// - `false` synchronously at the tap in `requestSetUsageAlerts(false)`
     ///   (I4), and whenever authorization resolves denied in either pass.
+    /// - Either way by a current-version `recheckNotificationAuthorization()`
+    ///   pass, when the OS permission changed mid-session, and by a
+    ///   current-version `requestNotificationPermission()` (Allow
+    ///   Notifications) pass, per the status macOS reports after its prompt
+    ///   (prime first on the way to `true`, in both).
     /// - Starts `false`.
     ///
     /// This is the single mechanism that closes the async side-effect races
@@ -505,7 +519,18 @@ final class AppModel: ObservableObject {
     /// this SAME synchronously-flipped flag, there is no suspension window
     /// in which a disable/remove can land without being observed by either
     /// the evaluation or the post it guards.
-    private var alertsActive = false
+    private var alertsActive = false {
+        didSet {
+            if oldValue != alertsActive { alertsActivationGeneration += 1 }
+        }
+    }
+    /// Bumped on every `alertsActive` edge (open or close). A post captures it
+    /// at enqueue time and runs only if it still matches, so a post born in
+    /// one activation can never be delivered in a later one — e.g. a crossing
+    /// observed while notifications were denied, still queued behind a slow
+    /// save when a recheck opens the gate. Priming cannot catch that: it
+    /// guards future decisions, not posts already in the queue.
+    private var alertsActivationGeneration = 0
     /// STARTUP READINESS BARRIER. `false` until `load()` has fully hydrated
     /// the app's initial state — accounts, snapshots, and the one-time
     /// `alertStates` seed from `alertStateStore` — then flipped to `true`
@@ -1255,6 +1280,113 @@ final class AppModel: ObservableObject {
         return task
     }
 
+    /// Re-reads the OS notification permission mid-session — called when the
+    /// app becomes active or one of its windows (popover included) becomes
+    /// key. Without it the posting gate was decided once per process (the
+    /// `.startup` pass) or per toggle tap, so allowing notifications in
+    /// System Settings kept posts dropped until relaunch, and revoking left
+    /// `alertsActive == true` with posts vanishing and no banner.
+    ///
+    /// A pass on `alertsLifecycleChain` like any other (I5), but it does NOT
+    /// claim a version: it is an observation, not a request, so it must never
+    /// supersede a tap. It captures the current version and yields to any
+    /// request claimed while it waits. Prompt-free (status query only), never
+    /// writes settings, and does nothing unless alerts are hydrated, desired
+    /// and not divergently parked — the startup pass's own preconditions.
+    @discardableResult
+    func recheckNotificationAuthorization() -> Task<Void, Never> {
+        let version = alertsDesiredVersion
+        let prev = alertsLifecycleChain
+        let task = Task { [self] in
+            _ = await prev?.value
+            await recheckAuthorizationPass(version: version)
+        }
+        alertsLifecycleChain = task
+        return task
+    }
+
+    private func recheckAuthorizationPass(version: Int) async {
+        // Parked is rejected only when divergent — the startup pass's own
+        // moot-convergence predicate. A park whose desired value already
+        // matches the durable setting converged at startup without clearing
+        // the flag; refusing it here would disable rechecks for the session.
+        guard version == alertsDesiredVersion,
+              alertsHydrated, alertsDesired,
+              !alertsLifecycleParked || alertsDesired == appSettings.usageAlertsEnabled
+        else { return }
+        let permission = await notificationScheduler.authorizationStatus()
+        guard version == alertsDesiredVersion else { return }
+        // Only on change: this runs on every focus change, and each
+        // assignment would re-publish the model.
+        if notificationPermission != permission { notificationPermission = permission }
+        if permission == .allowed {
+            // Same authorize-then-prime-then-open order as the other passes.
+            // The sink kept evaluating while unauthorized (it gates on the
+            // master switch, not on this gate), so the prime normally finds
+            // nothing new — and it posts nothing by construction either way.
+            if !alertsActive {
+                primeAllAlerts()
+                alertsActive = true
+            }
+        } else if alertsActive {
+            alertsActive = false
+        }
+    }
+
+    /// The **Allow Notifications** click — the ONLY path that may show the
+    /// macOS permission prompt without a Usage-alerts toggle. For the
+    /// never-asked case: startup and rechecks only read the status, and an
+    /// app appears in System Settings › Notifications only once it has asked,
+    /// so pointing a never-asked user there strands them.
+    ///
+    /// Shaped like `recheckNotificationAuthorization()`: a link on
+    /// `alertsLifecycleChain` that claims NO version (it changes no desired
+    /// state and never writes settings), so a toggle landing while the
+    /// prompt is up supersedes it and its late answer is dropped. Same
+    /// preconditions too — a stale button with alerts off does nothing.
+    @discardableResult
+    func requestNotificationPermission() -> Task<Void, Never> {
+        let version = alertsDesiredVersion
+        let prev = alertsLifecycleChain
+        let task = Task { [self] in
+            _ = await prev?.value
+            await notificationPermissionRequestPass(version: version)
+        }
+        alertsLifecycleChain = task
+        return task
+    }
+
+    private func notificationPermissionRequestPass(version: Int) async {
+        // The recheck's preconditions. Known gap, kept on purpose: after a
+        // toggle-off whose write failed (desired OFF, durable still ON) the
+        // UI — which reads the durable setting — still shows Allow, but the
+        // click is a no-op here: the session's last request was "off", and
+        // prompting for it would contradict that.
+        guard version == alertsDesiredVersion,
+              alertsHydrated, alertsDesired,
+              !alertsLifecycleParked || alertsDesired == appSettings.usageAlertsEnabled
+        else { return }
+        _ = await notificationScheduler.requestAuthorization()
+        guard version == alertsDesiredVersion else { return }
+        // Publish what macOS reports, not the request's Bool: an errored
+        // request returns false while the status is still `.notDetermined`,
+        // and `.denied` would swap Allow for a Settings link that can't help.
+        let permission = await notificationScheduler.authorizationStatus()
+        guard version == alertsDesiredVersion else { return }
+        notificationPermission = permission
+        if permission == .allowed {
+            // Authorize-then-prime-then-open, as in every pass. The flip bumps
+            // the activation generation, so a crossing queued while not asked
+            // can't post in this activation either.
+            if !alertsActive {
+                primeAllAlerts()
+                alertsActive = true
+            }
+        } else if alertsActive {
+            alertsActive = false
+        }
+    }
+
     /// Compatibility wrapper — same shape as `setAutoStart`'s: forwards
     /// caller cancellation into the unstructured request Task.
     func setUsageAlertsEnabled(_ enabled: Bool) async throws {
@@ -1293,10 +1425,14 @@ final class AppModel: ObservableObject {
                 alertsActive = false
                 return
             }
-            let authorized = await notificationScheduler.requestAuthorization()
+            _ = await notificationScheduler.requestAuthorization()
             guard version == alertsDesiredVersion else { return }
-            usageAlertsAuthorized = authorized
-            guard authorized else {
+            // What macOS reports, not the request's Bool — see
+            // `notificationPermissionRequestPass`.
+            let permission = await notificationScheduler.authorizationStatus()
+            guard version == alertsDesiredVersion else { return }
+            notificationPermission = permission
+            guard permission == .allowed else {
                 alertsActive = false
                 // Authorization gates POSTING, not evaluation. Prime anyway so
                 // alert memory has a baseline from the moment alerts are
@@ -1319,10 +1455,12 @@ final class AppModel: ObservableObject {
                 alertsActive = false
                 return
             }
-            let authorized = await notificationScheduler.authorizationStatus()
+            // Status only: a launch never prompts, `.notDetermined` included
+            // — asking takes an explicit click (`requestNotificationPermission`).
+            let permission = await notificationScheduler.authorizationStatus()
             guard version == alertsDesiredVersion else { return }
-            usageAlertsAuthorized = authorized
-            guard authorized else {
+            notificationPermission = permission
+            guard permission == .allowed else {
                 alertsActive = false
                 // Same rule as the denied branch above, and this is the pass
                 // where it matters most. At launch the snapshot store has
@@ -1334,26 +1472,18 @@ final class AppModel: ObservableObject {
                 primeAllAlerts()
                 return
             }
-            // I3 defense-in-depth: reaching this line means `version ==
-            // alertsDesiredVersion` still held after the `authorizationStatus()`
-            // await above, i.e. no request has claimed a newer version since
-            // this pass captured its own. The only way `alertsActive` could
-            // already be `true` here is a concurrent `.userRequest` pass
-            // activating it — but claiming a request bumps
-            // `alertsDesiredVersion` synchronously, at the tap, which would
-            // have failed that very guard. This argument depends on there
-            // being exactly ONE `.startup` pass per process: `load()` is
-            // single-flight (see `loadStarted`), so a concurrent second
-            // `load()` call returns immediately instead of spawning a
-            // second startup reconcile pass that could otherwise legally
-            // reach this line with `alertsActive` already `true` from the
-            // first pass. Given that premise, `alertsActive` is structurally
-            // guaranteed `false` on this line in the shipped wiring, and the
-            // `if !alertsActive` check's "already active" (skip re-prime)
-            // branch can never actually trigger — it is kept anyway as
-            // defense-in-depth mandated by spec I3
-            // ("startup-after-converged-enable does not re-prime") in case
-            // future reordering ever reopens the window.
+            // I3: startup-after-converged-enable does not re-prime. Reaching
+            // this line means no request claimed a newer version since this
+            // pass captured its own, so no `.userRequest` pass can have opened
+            // the gate meanwhile (claiming bumps the version synchronously, at
+            // the tap). `load()` is single-flight (`loadStarted`), so there is
+            // no second startup pass either. The one thing that CAN have
+            // opened it is `recheckNotificationAuthorization()`: it claims no
+            // version, and one requested before hydration completes may still
+            // be queued AHEAD of this pass (behind a slow deferred persist)
+            // when `alertsHydrated` flips — it then runs first, finds alerts
+            // desired and authorized, primes and opens the gate. Then this
+            // branch is live and must not prime twice.
             if !alertsActive {
                 primeAllAlerts()
                 alertsActive = true
@@ -1768,12 +1898,19 @@ final class AppModel: ObservableObject {
             }
         }
 
+        // Posting eligibility is decided at ENQUEUE time too: a decision made
+        // while the gate is shut advances the watermark and posts nothing
+        // (the same outcome priming produces), rather than queueing a post
+        // that a later activation could release.
+        guard alertsActive else { return }
+        let activation = alertsActivationGeneration
         for event in events {
             let notificationID = AlertMessage.id(for: event, accountID: accountID)
             alertSideEffectQueue.enqueue { [weak self] in
                 guard
                     let self,
                     self.alertsActive,
+                    self.alertsActivationGeneration == activation,
                     // The per-cell notification channel. Resolved at EXECUTION
                     // time like every other gate here, so toggling the checkbox
                     // while an item waits behind earlier side effects is
@@ -2033,9 +2170,10 @@ final class AppModel: ObservableObject {
             }
             alertsLifecycleChain = Task { _ = await startup.value }
             // The baseline must be primed before launch refresh can drive
-            // the sink. Everything ahead of this pass in the chain is
-            // .coldStartDeferred (persist-only, prompt-free), so this await is
-            // bounded by settings-save round-trips.
+            // the sink. Everything ahead of this pass in the chain is either
+            // .coldStartDeferred (persist-only) or a notification recheck
+            // (one status query) — both prompt-free — so this await is
+            // bounded by settings-save and status-query round-trips.
             _ = await startup.value
 
             await historyStore.load(activeAccountIDs: Set(accountStore.accounts.map(\.id)))

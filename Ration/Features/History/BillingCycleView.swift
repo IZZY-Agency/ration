@@ -103,6 +103,7 @@ struct BillingCycleView: View {
 private struct BillingCycleCardView: View {
     let card: BillingCycleCard
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -110,7 +111,7 @@ private struct BillingCycleCardView: View {
             case let .noRenewalDay(_, label, provider):
                 header(label: label, provider: provider, subtitle: "No billing cycle set")
                 Text("Set a renewal day in Settings to track this subscription's cycle.")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
                 BillingCTAButton(title: "Set a renewal day", prominent: false) {
                     openWindow(id: "settings")
@@ -122,10 +123,10 @@ private struct BillingCycleCardView: View {
                     sufficientBody(summary, fable: fable)
                 } else {
                     Text("Not enough data yet")
-                        .font(Theme.display(15, .semibold))
+                        .font(Theme.display(17, .semibold))
                         .foregroundStyle(Theme.creamDim)
                     Text("watched \(summary.observedHours) of \(summary.elapsedHours) hrs · Day \(cycle.dayIndex)/\(cycle.totalDays)")
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamFaint)
                 }
             }
@@ -139,13 +140,13 @@ private struct BillingCycleCardView: View {
     private func header(label: String, provider: Provider, subtitle: String) -> some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 7)
-                .fill(provider.markAccent.opacity(0.16))
+                .fill(provider.markAccent.opacity(Theme.markFillOpacity(colorScheme)))
                 .overlay(RoundedRectangle(cornerRadius: 7).stroke(provider.markAccent.opacity(0.4)))
                 .frame(width: 28, height: 28)
-                .overlay(Text(provider.markLetter).font(Theme.mono(12, bold: true)).foregroundStyle(provider.markAccent))
+                .overlay(Text(provider.markLetter).font(Theme.mono(14, bold: true)).foregroundStyle(provider.markAccent))
             VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(Theme.display(14, .semibold)).foregroundStyle(Theme.cream)
-                Text(subtitle).font(Theme.mono(9)).foregroundStyle(Theme.creamFaint)
+                Text(label).font(Theme.display(16, .semibold)).foregroundStyle(Theme.cream)
+                Text(subtitle).font(Theme.mono(11)).foregroundStyle(Theme.creamFaint)
             }
             Spacer()
         }
@@ -154,15 +155,15 @@ private struct BillingCycleCardView: View {
     private func sufficientBody(_ s: CycleUtilizationSummary, fable: FableSecondary?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("≥ \(Int((s.capacityUtilization * 100).rounded()))%")
-                .font(Theme.display(26, .bold))
+                .font(Theme.display(28, .bold))
                 .foregroundStyle(Theme.tierColor(usedFraction: min(s.capacityUtilization, 1)))
             Text("observed lower bound")
-                .font(Theme.mono(9))
+                .font(Theme.mono(11))
                 .tracking(0.5)
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.creamFaint)
             Text("\(allowanceLabel(s)) · Used \(s.daysUsed) days · At ≥95% \(s.atCapDays) days · watched \(min(s.observedHours, s.elapsedHours))/\(s.elapsedHours) hrs")
-                .font(Theme.mono(10))
+                .font(Theme.mono(12))
                 .foregroundStyle(Theme.creamDim)
             // Fable is a supporting sub-limit line, never the headline. `fable` is
             // nil only when Fable isn't present at all for this account; when
@@ -171,11 +172,11 @@ private struct BillingCycleCardView: View {
             if let fable {
                 if let fableSummary = fable.summary {
                     Text("\(fable.label) ≥ \(Int((fableSummary.capacityUtilization * 100).rounded()))% this cycle")
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
                 } else {
                     Text("\(fable.label) · not enough data yet this cycle")
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamFaint)
                 }
             }
@@ -204,10 +205,10 @@ private struct BillingCTAButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(Theme.mono(10.5, bold: true))
+                .font(Theme.mono(12.5, bold: true))
                 .textCase(.uppercase)
                 .tracking(0.5)
-                .foregroundStyle(prominent ? Theme.ink : Theme.gold)
+                .foregroundStyle(prominent ? Theme.onGold : Theme.gold)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
                 .background {

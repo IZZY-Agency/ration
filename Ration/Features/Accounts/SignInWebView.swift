@@ -211,10 +211,10 @@ struct SignInSessionView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Sign in to \(session.provider.displayName)")
-                        .font(Theme.display(17, .semibold))
+                        .font(Theme.display(19, .semibold))
                         .foregroundStyle(Theme.cream)
                     Text("This browser profile belongs only to this account.")
-                        .font(Theme.mono(9.5))
+                        .font(Theme.mono(11.5))
                         .foregroundStyle(Theme.creamDim)
                 }
                 Spacer()
@@ -249,11 +249,11 @@ struct SignInSessionView: View {
                             magicLinkError,
                             systemImage: "exclamationmark.triangle.fill"
                         )
-                        .font(Theme.mono(9.5))
+                        .font(Theme.mono(11.5))
                         .foregroundStyle(Theme.crit)
                     } else {
                         Text("Magic links must open in this isolated browser profile.")
-                            .font(Theme.mono(9.5))
+                            .font(Theme.mono(11.5))
                             .foregroundStyle(Theme.creamDim)
                     }
                 }
@@ -295,17 +295,17 @@ struct SignInSessionView: View {
                             "Cookie applied — once the page shows you signed in, add the account below.",
                             systemImage: "checkmark.circle.fill"
                         )
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(Theme.calm)
+                        .font(Theme.mono(11.5))
+                        .foregroundStyle(Theme.active)
                     case let .failed(message):
                         Label(message, systemImage: "exclamationmark.triangle.fill")
-                            .font(Theme.mono(9.5))
+                            .font(Theme.mono(11.5))
                             .foregroundStyle(Theme.crit)
                     case nil:
                         Text(
                             "Passkeys can't run in this view. Log in at chatgpt.com in your browser, then copy the \(ChatGPTSessionCookiePaste.sessionTokenName) cookie value (DevTools → Application → Cookies) and paste it here. If your browser shows numbered chunks (…session-token.0 and .1), paste BOTH as name=value pairs separated by a semicolon. It stays in this account's isolated profile."
                         )
-                        .font(Theme.mono(9.5))
+                        .font(Theme.mono(11.5))
                         .foregroundStyle(Theme.creamDim)
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -321,22 +321,22 @@ struct SignInSessionView: View {
             // see the real host the web view is on before typing a password.
             HStack(spacing: 6) {
                 Image(systemName: "lock.fill")
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(Theme.creamDim)
                 Text(currentHost ?? "loading…")
-                    .font(Theme.mono(11, bold: true))
+                    .font(Theme.mono(13, bold: true))
                     .foregroundStyle(Theme.cream)
                     .textSelection(.enabled)
                     .lineLimit(1)
                 if session.provider.matchesAppHost(currentHost) {
                     Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(.green)
                         .accessibilityLabel("Verified \(session.provider.displayName) domain")
                 }
                 Spacer(minLength: 8)
                 Text("Check this address before entering your password.")
-                    .font(Theme.mono(9))
+                    .font(Theme.mono(11))
                     .foregroundStyle(Theme.creamDim)
                     .lineLimit(1)
             }
@@ -367,13 +367,13 @@ struct SignInSessionView: View {
                     Text(isOnProviderPage
                         ? "Provider page detected. Verify when sign-in is complete."
                         : "Finish sign-in, then return to the provider page.")
-                        .font(Theme.mono(9.5))
+                        .font(Theme.mono(11.5))
                         .foregroundStyle(Theme.creamDim)
                 }
 
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(Theme.mono(9.5))
+                        .font(Theme.mono(11.5))
                         .foregroundStyle(Theme.crit)
                         .textSelection(.enabled)
                 }
@@ -391,7 +391,7 @@ struct SignInSessionView: View {
                     Button("Verify Account") {
                         verify()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.goldProminent)
                     .disabled(
                         isVerifying
                             || label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

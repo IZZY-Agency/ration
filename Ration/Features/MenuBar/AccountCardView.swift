@@ -9,9 +9,16 @@ struct AccountCardView: View {
     var now: Date = .now
     var resetLeadDays: Int = 1
 
-    /// Identity accent for the provider dot only. The in-use frame and pill
-    /// use `Theme.active` — state and identity are separate color channels.
-    private var accent: Color { presentation.account.provider.markAccent }
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Identity accent: the provider dot and the provider chip (its text and
+    /// its border). The in-use frame and pill use `Theme.active` — state and
+    /// identity are separate color channels.
+    private var accent: Color { Self.providerChipAccent(for: presentation.account.provider) }
+
+    /// The provider chip's border: its accent, faint enough to frame the chip
+    /// without competing with the account name.
+    static let providerChipBorderOpacity = 0.16
 
     var body: some View {
         TimelineView(.periodic(from: now, by: 60)) { context in
@@ -21,14 +28,18 @@ struct AccountCardView: View {
 
     static func isHighlighted(phase: InUsePhase) -> Bool { phase != .none }
 
+    /// The provider chip (CLAUDE / CHATGPT / CURSOR) names the provider, so it
+    /// wears that provider's identity accent — it was Claude gold for all.
+    static func providerChipAccent(for provider: Provider) -> Color { provider.markAccent }
+
     /// Frame color for the activity highlight: the SAME `Theme.active` green
     /// as the menu-bar dot and the IN USE pill — one pattern across surfaces.
     /// Full green while in use; the last-used tail dims the same hue so
     /// intensity encodes recency without introducing a second color.
-    static func highlightStroke(phase: InUsePhase) -> Color {
+    static func highlightStroke(phase: InUsePhase, scheme: ColorScheme) -> Color {
         switch phase {
         case .inUse: Theme.active
-        case .lastUsed: Theme.active.opacity(0.35)
+        case .lastUsed: Theme.active.opacity(Theme.lastUsedFrameOpacity(scheme))
         case .none: .clear
         }
     }
@@ -45,7 +56,7 @@ struct AccountCardView: View {
                     .accessibilityHidden(true)
 
                 Text(presentation.account.label)
-                    .font(Theme.display(15, .semibold))
+                    .font(Theme.display(17, .semibold))
                     .foregroundStyle(Theme.cream)
                     .lineLimit(1)
                     .accessibilityLabel(
@@ -54,15 +65,15 @@ struct AccountCardView: View {
                     )
 
                 Text(presentation.account.provider.rawValue)
-                    .font(Theme.mono(9))
+                    .font(Theme.mono(11))
                     .tracking(0.8)
                     .textCase(.uppercase)
-                    .foregroundStyle(Theme.gold)
+                    .foregroundStyle(accent)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1.5)
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
-                            .stroke(Theme.goldSoft, lineWidth: 1)
+                            .stroke(accent.opacity(Self.providerChipBorderOpacity), lineWidth: 1)
                     )
                     .accessibilityHidden(true)
 
@@ -101,7 +112,8 @@ struct AccountCardView: View {
                             LimitRowView(
                                 title: AccountLimitLayout.title(for: kind, snapshot: presentation.snapshot),
                                 window: window,
-                                now: currentDate
+                                now: currentDate,
+                                kind: kind
                             )
                             // Only add the sparkline subview when there's a
                             // meaningful trend to show — a flat window's row
@@ -136,10 +148,17 @@ struct AccountCardView: View {
         .padding(.horizontal, AccountListMetrics.cardInset)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(highlighted ? Theme.active.opacity(0.05) : Color.clear)
+                .fill(highlighted ? Theme.cardHighlightBase : Color.clear)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Self.highlightStroke(phase: phase), lineWidth: 1)
+                        .fill(highlighted ? Theme.active.opacity(Theme.cardHighlightOpacity(colorScheme)) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(
+                            Self.highlightStroke(phase: phase, scheme: colorScheme),
+                            lineWidth: Theme.highlightFrameWidth(colorScheme)
+                        )
                 )
         )
     }

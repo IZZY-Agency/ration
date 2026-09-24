@@ -28,4 +28,15 @@ struct ResetCreditsSummary: Equatable {
         let usable = noneUsable ? " · not usable yet" : ""
         return "↻ \(totalCount) \(noun) · \(next)expires \(when)\(usable)"
     }
+
+    /// The line as VoiceOver says it: words for the countdown ("in 18 hours",
+    /// never "in 18h") and the month spelled out.
+    func accessibilityText(now: Date, locale: Locale = .current) -> String {
+        let next = totalCount > 1 ? "next " : ""
+        let when = withinLeadWindow
+            ? "in \(UsageFormatters.spokenDuration(until: soonestExpiry, relativeTo: now, locale: locale))"
+            : soonestExpiry.formatted(.dateTime.month(.wide).day().locale(locale))
+        let usable = noneUsable ? ", not usable yet" : ""
+        return "Usage-limit resets: \(totalCount), \(next)expires \(when)\(usable)"
+    }
 }

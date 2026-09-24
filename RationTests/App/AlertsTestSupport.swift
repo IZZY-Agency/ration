@@ -244,7 +244,7 @@ actor NotificationSchedulingSpy: NotificationScheduling {
     var authorizationResult = true
     /// Backs `authorizationStatus`: the OS-level status queried on
     /// `load()`, independent of (and not implied by) `requestAuthorization`.
-    var authorizationStatusResult = true
+    var authorizationStatusResult: NotificationPermission = .allowed
 
     /// Version-guard race test seam: when armed, the NEXT call to
     /// `requestAuthorization()` suspends until `releaseAuthorizationRequest`
@@ -254,6 +254,7 @@ actor NotificationSchedulingSpy: NotificationScheduling {
     /// authorization request — the exact shape of the stale-enable race —
     /// without relying on a sleep or on incidental Task-scheduling order.
     private var gateArmed = false
+    private var failNextRequest = false
     private var pendingAuthorizationContinuation: CheckedContinuation<Bool, Never>?
     private var suspendedSignal: CheckedContinuation<Void, Never>?
 
@@ -262,10 +263,13 @@ actor NotificationSchedulingSpy: NotificationScheduling {
     /// releaseStatusQuery, so a test can pin taps to land while load()'s
     /// startup path sits inside its status query.
     private var statusGateArmed = false
-    private var pendingStatusContinuation: CheckedContinuation<Bool, Never>?
+    private var pendingStatusContinuation: CheckedContinuation<NotificationPermission, Never>?
     private var statusSuspendedSignal: CheckedContinuation<Void, Never>?
     /// I6 assertion support: counts prompt-capable authorization requests.
     private(set) var requestAuthorizationCallCount = 0
+    /// Counts prompt-free status queries, so a no-op recheck can be told
+    /// apart from one that queried and then discarded the answer.
+    private(set) var authorizationStatusCallCount = 0
 
     func armStatusGate() {
         statusGateArmed = true
@@ -278,23 +282,48 @@ actor NotificationSchedulingSpy: NotificationScheduling {
         }
     }
 
-    func releaseStatusQuery(_ result: Bool = true) {
+    func releaseStatusQuery(_ result: NotificationPermission) {
         pendingStatusContinuation?.resume(returning: result)
         pendingStatusContinuation = nil
     }
 
-    func requestAuthorization() async -> Bool {
-        requestAuthorizationCallCount += 1
-        guard gateArmed else { return authorizationResult }
-        gateArmed = false
-        return await withCheckedContinuation { continuation in
-            pendingAuthorizationContinuation = continuation
-            suspendedSignal?.resume()
-            suspendedSignal = nil
-        }
+    /// Bool shorthand for the suites written before the tri-state: `false`
+    /// is a refusal, never "not asked yet".
+    func releaseStatusQuery(_ result: Bool = true) {
+        releaseStatusQuery(result ? NotificationPermission.allowed : .denied)
     }
 
-    func authorizationStatus() async -> Bool {
+    func requestAuthorization() async -> Bool {
+        requestAuthorizationCallCount += 1
+        if failNextRequest {
+            // An errored request: false, and macOS records no answer.
+            failNextRequest = false
+            return false
+        }
+        let result: Bool
+        if gateArmed {
+            gateArmed = false
+            result = await withCheckedContinuation { continuation in
+                pendingAuthorizationContinuation = continuation
+                suspendedSignal?.resume()
+                suspendedSignal = nil
+            }
+        } else {
+            result = authorizationResult
+        }
+        // Like macOS: an answered prompt is what the status reports next.
+        authorizationStatusResult = result ? .allowed : .denied
+        return result
+    }
+
+    /// The next `requestAuthorization()` returns false WITHOUT changing the
+    /// reported status — the shape of a request that errored.
+    func failNextRequestWithoutAnswer() {
+        failNextRequest = true
+    }
+
+    func authorizationStatus() async -> NotificationPermission {
+        authorizationStatusCallCount += 1
         guard statusGateArmed else { return authorizationStatusResult }
         statusGateArmed = false
         return await withCheckedContinuation { continuation in
@@ -304,8 +333,13 @@ actor NotificationSchedulingSpy: NotificationScheduling {
         }
     }
 
-    func setAuthorizationStatusResult(_ value: Bool) {
+    func setAuthorizationStatusResult(_ value: NotificationPermission) {
         authorizationStatusResult = value
+    }
+
+    /// Bool shorthand (see `releaseStatusQuery(_: Bool)`).
+    func setAuthorizationStatusResult(_ value: Bool) {
+        authorizationStatusResult = value ? .allowed : .denied
     }
 
     func setAuthorizationResult(_ value: Bool) {

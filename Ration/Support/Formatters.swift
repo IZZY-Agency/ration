@@ -101,4 +101,55 @@ enum UsageFormatters {
         guard totalSeconds >= 86_400 else { return "\(totalSeconds / 3_600)h" }
         return "\(totalSeconds / 86_400)d"
     }
+
+    /// The countdown as VoiceOver should say it — "4 hours, 12 minutes", never
+    /// "4h 12m". Same units and flooring as `remainingUntilReset` (days and
+    /// hours from a day up, hours and minutes below), so what is heard and
+    /// what is drawn never disagree about the time left. The one shared
+    /// spoken formatter: every accessibility label that speaks a duration
+    /// goes through here.
+    static func spokenDuration(
+        until date: Date,
+        relativeTo now: Date = .now,
+        locale: Locale = .current
+    ) -> String {
+        let totalSeconds = Int(date.timeIntervalSince(now).rounded(.down))
+        guard totalSeconds > 0 else { return "now" }
+        let totalMinutes = totalSeconds / 60
+        guard totalMinutes > 0 else { return "less than a minute" }
+
+        var components = DateComponents()
+        let hours = totalMinutes / 60
+        if hours >= 24 {
+            components.day = hours / 24
+            components.hour = hours % 24
+        } else {
+            components.hour = hours
+            components.minute = totalMinutes % 60
+        }
+
+        let formatter = DateComponentsFormatter()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        formatter.calendar = calendar
+        formatter.unitsStyle = .full
+        formatter.allowedUnits = [.day, .hour, .minute]
+        formatter.maximumUnitCount = 2
+        formatter.zeroFormattingBehavior = .dropAll
+        return formatter.string(from: components) ?? remainingUntilReset(date, relativeTo: now)
+    }
+
+    /// The reset as a compact absolute time — "Jan 15, 12:12 PM" — for the
+    /// countdown's click-to-reveal state, where the full `exactReset` (with
+    /// the year) would not fit the column.
+    static func shortReset(
+        _ resetDate: Date,
+        locale: Locale = .current,
+        timeZone: TimeZone = .current
+    ) -> String {
+        var style = Date.FormatStyle.dateTime.month(.abbreviated).day().hour().minute()
+            .locale(locale)
+        style.timeZone = timeZone
+        return resetDate.formatted(style)
+    }
 }

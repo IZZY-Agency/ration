@@ -54,7 +54,7 @@ struct AccountStateBadge: View {
                 .accessibilityLabel("Current")
         case .stale:
             Label("stale", systemImage: "clock.badge.exclamationmark")
-                .font(Theme.mono(10))
+                .font(Theme.mono(12))
                 .foregroundStyle(Theme.warn)
         case .reauthenticationRequired:
             reauthControl(compact: true)
@@ -64,15 +64,15 @@ struct AccountStateBadge: View {
                     ?? "rate limited",
                 systemImage: "hourglass"
             )
-            .font(Theme.mono(10))
+            .font(Theme.mono(12))
             .foregroundStyle(Theme.warn)
         case .integrationChanged:
             Label("needs update", systemImage: "wrench.and.screwdriver")
-                .font(Theme.mono(10))
+                .font(Theme.mono(12))
                 .foregroundStyle(Theme.crit)
         case .unavailable:
             Label("unavailable", systemImage: "exclamationmark.circle")
-                .font(Theme.mono(10))
+                .font(Theme.mono(12))
                 .foregroundStyle(Theme.creamFaint)
         }
     }
@@ -110,7 +110,7 @@ struct AccountStateBadge: View {
     private func reauthControl(compact: Bool) -> some View {
         if let onReauthenticate {
             Button("Sign In", action: onReauthenticate)
-                .font(Theme.mono(compact ? 11 : 12))
+                .font(Theme.mono(compact ? 13 : 14))
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.gold)
         } else {
@@ -127,7 +127,7 @@ struct AccountStateBadge: View {
 
     private func labelText(_ text: String, _ color: Color) -> some View {
         Text(text)
-            .font(Theme.mono(11))
+            .font(Theme.mono(13))
             .tracking(0.4)
             .foregroundStyle(color)
     }

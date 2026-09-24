@@ -16,17 +16,17 @@ struct AboutView: View {
                 .accessibilityHidden(true)
 
             Text(info.displayName)
-                .font(Theme.display(22, .bold))
+                .font(Theme.display(24, .bold))
                 .foregroundStyle(Theme.cream)
                 .accessibilityIdentifier("aboutProductName")
 
             Text(info.versionText)
-                .font(Theme.mono(11))
+                .font(Theme.mono(13))
                 .foregroundStyle(Theme.gold)
                 .accessibilityIdentifier("aboutVersion")
 
             Text(info.copyrightText)
-                .font(Theme.mono(9.5))
+                .font(Theme.mono(11.5))
                 .foregroundStyle(Theme.creamFaint)
                 .accessibilityIdentifier("aboutCopyright")
 
@@ -34,13 +34,13 @@ struct AboutView: View {
                 ForEach(Array(AppLinks.all.enumerated()), id: \.element.url) { index, entry in
                     if index > 0 {
                         Text("·")
-                            .font(Theme.mono(10))
+                            .font(Theme.mono(12))
                             .foregroundStyle(Theme.creamFaint)
                             .accessibilityHidden(true)
                     }
                     Link(destination: entry.url) {
                         Text(entry.title)
-                            .font(Theme.mono(10))
+                            .font(Theme.mono(12))
                             .foregroundStyle(Theme.gold)
                             .underline()
                     }

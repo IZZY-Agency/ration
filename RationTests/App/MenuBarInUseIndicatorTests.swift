@@ -212,6 +212,55 @@ final class MenuBarInUseIndicatorTests: XCTestCase {
         XCTAssertNil(controller.inUseTimer)
     }
 
+    /// The menu bar's OWN appearance flipping (macOS light/dark, wallpaper
+    /// tint) must redraw the rings with no data change and no call to
+    /// `updateGauges` — only the controller's `effectiveAppearance` KVO can
+    /// do that. The redraw is synchronous inside the KVO callback, so nothing
+    /// queued can run after `stop()`; after `stop()` a flip draws nothing.
+    func testButtonAppearanceFlipRedrawsRingsThroughKVO() async throws {
+        let account = makeIndicatorAccount(.claude, order: 0)
+        let harness = try await makeIndicatorHarness(seedAccounts: [account])
+        recordIndicatorActivity(for: account, in: harness.model.history, endingAt: .now)
+        try await harness.seedSnapshot(for: account, fiveHourRemaining: 0.14)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "KVORings-\(UUID())"))
+
+        let controller = MenuBarController(
+            model: harness.model,
+            launchAtLogin: LaunchAtLoginController(),
+            appearance: AppearanceController(defaults: defaults),
+            hotKeyRegistrar: HotKeyRegistrarSpy()
+        )
+        controller.start()
+        let button = try XCTUnwrap(controller.statusItem?.button)
+        XCTAssertEqual(button.attributedTitle.string, ring)
+
+        for (name, expected) in [
+            (NSAppearance.Name.aqua, UInt32(0x3B7239)), (.darkAqua, 0x8FC79A), (.aqua, 0x3B7239)
+        ] {
+            button.appearance = NSAppearance(named: name)
+            // No run-loop spin: the KVO callback must have redrawn already.
+            XCTAssertEqual(try ringDotGreen(button), Double((expected >> 8) & 0xFF) / 255,
+                           accuracy: 0.1, "\(name)")
+        }
+
+        controller.stop()
+        let stale = button.attributedTitle
+        button.appearance = NSAppearance(named: .darkAqua)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(button.attributedTitle, stale, "no redraw after stop()")
+    }
+
+    /// Green channel of the first ring attachment's centre (the in-use dot).
+    private func ringDotGreen(_ button: NSStatusBarButton) throws -> Double {
+        let attachment = try XCTUnwrap(
+            button.attributedTitle.attribute(.attachment, at: 0, effectiveRange: nil) as? NSTextAttachment
+        )
+        let image = try XCTUnwrap(attachment.image)
+        let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
+        let color = try XCTUnwrap(rep.colorAt(x: Int(image.size.width / 2), y: Int(image.size.height / 2)))
+        return try XCTUnwrap(color.usingColorSpace(.sRGB)).greenComponent
+    }
+
     /// Lets main-queue work (Combine `.receive(on: DispatchQueue.main)`
     /// deliveries) drain between checks.
     private func waitUntil(

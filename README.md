@@ -50,6 +50,9 @@ shows, from your own signed-in session, on your Mac.
   during the hours and holidays you mark quiet, and never when the weekly
   allowance is already spent. On by default for newly added Claude accounts;
   switch it off per account.
+- **Light or dark.** Follows macOS, or pick Light or Dark in Settings. Every
+  text colour meets WCAG AA contrast in both, and Increase Contrast and
+  VoiceOver are supported.
 
 ## Privacy
 
@@ -78,7 +81,8 @@ The cask lives in [IZZY-Agency/homebrew-tap](https://github.com/IZZY-Agency/home
 and installs the same signed, notarized build; `brew upgrade` keeps it current.
 
 Ration lives in the menu bar; there is no Dock icon. Press ⌥⌘U to open its
-window from anywhere, and ⌘, for Settings.
+window from anywhere, and ⌘, for Settings. With the popover open, ⌘R
+refreshes, ⌘D dismisses the alerts panel and ⌘Q quits.
 
 ## Build from source
 

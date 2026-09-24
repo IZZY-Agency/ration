@@ -114,7 +114,7 @@ struct HistoryView: View {
     private var header: some View {
         HStack(spacing: 14) {
             Text("History")
-                .font(Theme.display(17, .semibold))
+                .font(Theme.display(19, .semibold))
                 .foregroundStyle(Theme.cream)
 
             Picker("Mode", selection: $mode) {
@@ -184,14 +184,14 @@ struct HistoryView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Text("Daily Burn")
-                    .font(Theme.mono(10, bold: true))
+                    .font(Theme.mono(12, bold: true))
                     .tracking(1.0)
                     .textCase(.uppercase)
                     .foregroundStyle(Theme.creamFaint)
 
                 if let exclusionNote {
                     Text(exclusionNote)
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(11))
                         .foregroundStyle(Theme.creamDim)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -233,7 +233,7 @@ struct HistoryView: View {
                         // be invisible.
                         .foregroundStyle(by: .value("Account", line.label))
                         .symbolSize(isOverlay ? 18 : 40)
-                        .opacity(isOverlay ? 0.9 : 0)
+                        .opacity(isOverlay ? HistoryOverlayPalette.overlayPointOpacity : 0)
                     }
 
                     if !isOverlay {
@@ -259,7 +259,7 @@ struct HistoryView: View {
                     AxisGridLine().foregroundStyle(Theme.line)
                     AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                         .foregroundStyle(Theme.creamDim)
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(11))
                 }
             }
             .chartYAxis {
@@ -267,7 +267,7 @@ struct HistoryView: View {
                     AxisGridLine().foregroundStyle(Theme.line)
                     AxisValueLabel()
                         .foregroundStyle(Theme.creamDim)
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(11))
                 }
             }
             .frame(height: 200)

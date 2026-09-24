@@ -43,12 +43,13 @@ struct QuietHoursGrid: View {
                     toggleDay(column.weekdayValue)
                 } label: {
                     Text(column.symbol)
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(11))
                         .foregroundStyle(Theme.creamDim)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
                 .help("Toggle all of \(column.symbol)")
+                .accessibilityLabel(Self.dayToggleAccessibilityLabel(weekday: column.weekdayValue, calendar: calendar))
             }
         }
     }
@@ -59,12 +60,13 @@ struct QuietHoursGrid: View {
                 toggleHour(hour)
             } label: {
                 Text(String(format: "%02d", hour))
-                    .font(Theme.mono(9))
+                    .font(Theme.mono(11))
                     .foregroundStyle(Theme.creamDim)
                     .frame(width: 28, alignment: .trailing)
             }
             .buttonStyle(.plain)
             .help("Toggle \(String(format: "%02d", hour)):00 on every day")
+            .accessibilityLabel(Self.hourToggleAccessibilityLabel(hour: hour, locale: calendar.locale ?? .current))
 
             ForEach(columns) { column in
                 cell(weekday: column.weekdayValue, symbol: column.symbol, hour: hour)
@@ -87,6 +89,34 @@ struct QuietHoursGrid: View {
         .accessibilityLabel("\(symbol) \(String(format: "%02d", hour)):00")
         .accessibilityValue(isQuiet ? "quiet" : "warm-up allowed")
         .accessibilityAddTraits(.isToggle)
+    }
+
+    /// The day header's spoken label — "Toggle all Monday", the full day
+    /// name rather than the drawn "Mon" (whose meaning was tooltip-only).
+    static func dayToggleAccessibilityLabel(weekday: Int, calendar: Calendar) -> String {
+        let names = calendar.weekdaySymbols // index 0 == Sunday
+        let name = names.indices.contains(weekday - 1) ? names[weekday - 1] : "\(weekday)"
+        return "Toggle all \(name)"
+    }
+
+    /// The hour header's spoken label — "Toggle all 9 AM" in a 12-hour
+    /// locale, "Toggle all 09:00" in a 24-hour one — never the bare "09".
+    static func hourToggleAccessibilityLabel(hour: Int, locale: Locale) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        // "j" is the locale's preferred hour; it carries a day period ("a")
+        // only in 12-hour locales. A 24-hour hour alone reads "09", so those
+        // get hour AND minutes.
+        let preferred = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: locale) ?? ""
+        formatter.setLocalizedDateFormatFromTemplate(preferred.contains("a") ? "j" : "Hm")
+        let date = Date(timeIntervalSince1970: TimeInterval(hour * 3_600))
+        // The formatter separates "9" and "AM" with a narrow no-break space;
+        // a plain one keeps the label ordinary text.
+        let hourText = formatter.string(from: date)
+            .replacingOccurrences(of: "\u{202F}", with: " ")
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+        return "Toggle all \(hourText)"
     }
 
     private func toggle(_ index: Int) {

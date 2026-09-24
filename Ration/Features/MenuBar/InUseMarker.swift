@@ -57,7 +57,7 @@ struct InUseMarkerContent: View {
                     // The pill already carries the full a11y label; the age is
                     // decorative next to it.
                     Text("· \(rel)")
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(11))
                         .foregroundStyle(Theme.creamDim)
                         .accessibilityHidden(true)
                 }
@@ -65,7 +65,7 @@ struct InUseMarkerContent: View {
         case let .lastUsed(age):
             if style == .full {
                 Text("last used · \(relative(age, at: date))")
-                    .font(Theme.mono(9))
+                    .font(Theme.mono(11))
                     .foregroundStyle(Theme.creamDim)
                     .accessibilityLabel("last used \(relative(age, at: date))")
             }
@@ -80,8 +80,11 @@ struct InUseMarkerContent: View {
         // per-caller accent is how the surfaces drifted apart (provider gold/
         // teal here vs green in the menu bar) before 0.26.1 unified them.
         Text("IN USE")
-            .font(Theme.mono(9, bold: true))
+            .font(Theme.mono(11, bold: true))
             .tracking(0.8)
+            // Never "IN U…": if the row is short of room, the label gives way.
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(Theme.ink)
             .padding(.horizontal, 5)
             .padding(.vertical, 1.5)

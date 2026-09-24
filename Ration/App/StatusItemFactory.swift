@@ -57,7 +57,12 @@ enum StatusItemFactory {
             button.attributedTitle = NSAttributedString()
             button.imagePosition = .imageOnly
         } else {
-            button.attributedTitle = ringsTitle(for: gauges)
+            // The menu bar's own appearance, not the app's: a forced-Dark app
+            // still sits in a light menu bar (and vice versa), and macOS tints
+            // the bar per wallpaper.
+            button.attributedTitle = ringsTitle(
+                for: gauges, appearance: button.effectiveAppearance
+            )
             button.imagePosition = .imageLeft
         }
         let toolTip = toolTip(for: gauges, displaysRemaining: displaysRemaining)
@@ -67,14 +72,18 @@ enum StatusItemFactory {
 
     static let ringPointSize: CGFloat = 13
 
-    static func ringsTitle(for gauges: [MenuBarGauge]) -> NSAttributedString {
+    static func ringsTitle(
+        for gauges: [MenuBarGauge],
+        appearance: NSAppearance
+    ) -> NSAttributedString {
         let title = NSMutableAttributedString()
         for (index, gauge) in gauges.enumerated() {
             let attachment = NSTextAttachment()
             attachment.image = ringImage(
                 fraction: gauge.fraction,
                 color: gauge.provider.markAccentNS,
-                inUse: gauge.inUse
+                inUse: gauge.inUse,
+                appearance: appearance
             )
             // Dropped baseline so the ring optically centers on the icon.
             attachment.bounds = CGRect(
@@ -96,7 +105,17 @@ enum StatusItemFactory {
     /// `fraction`, over a faint same-color track so an almost-empty ring still
     /// reads as a ring. `inUse` fills the ring's center with a green dot —
     /// `Theme.active`, the same semantic green as the popover IN USE pill.
-    static func ringImage(fraction: Double, color: NSColor, inUse: Bool = false) -> NSImage {
+    ///
+    /// Dynamic colours resolve against `appearance` at DRAW time: the image's
+    /// drawing handler runs whenever it is rasterized, long after this call,
+    /// under whatever appearance is current then — so the whole body runs
+    /// inside `performAsCurrentDrawingAppearance`.
+    static func ringImage(
+        fraction: Double,
+        color: NSColor,
+        inUse: Bool = false,
+        appearance: NSAppearance
+    ) -> NSImage {
         let side = ringPointSize
         let stroke: CGFloat = 2.5
         let clamped = min(max(fraction, 0), 1)
@@ -104,39 +123,44 @@ enum StatusItemFactory {
             size: NSSize(width: side, height: side),
             flipped: false
         ) { rect in
-            let center = NSPoint(x: rect.midX, y: rect.midY)
-            let radius = (min(rect.width, rect.height) - stroke) / 2
+            appearance.performAsCurrentDrawingAppearance {
+                let center = NSPoint(x: rect.midX, y: rect.midY)
+                let radius = (min(rect.width, rect.height) - stroke) / 2
 
-            let track = NSBezierPath()
-            track.appendArc(
-                withCenter: center, radius: radius, startAngle: 0, endAngle: 360
-            )
-            track.lineWidth = stroke
-            color.withAlphaComponent(0.28).setStroke()
-            track.stroke()
+                let track = NSBezierPath()
+                track.appendArc(
+                    withCenter: center, radius: radius, startAngle: 0, endAngle: 360
+                )
+                track.lineWidth = stroke
+                // `withAlphaComponent` on a dynamic colour stays dynamic; it
+                // resolves here, inside the block, like the rest.
+                color.withAlphaComponent(0.28).setStroke()
+                track.stroke()
 
-            if inUse {
-                let dotRadius: CGFloat = 2
-                let dot = NSBezierPath(ovalIn: NSRect(
-                    x: center.x - dotRadius, y: center.y - dotRadius,
-                    width: dotRadius * 2, height: dotRadius * 2
-                ))
-                Theme.activeNS.setFill()
-                dot.fill()
+                if inUse {
+                    let dotRadius: CGFloat = 2
+                    let dot = NSBezierPath(ovalIn: NSRect(
+                        x: center.x - dotRadius, y: center.y - dotRadius,
+                        width: dotRadius * 2, height: dotRadius * 2
+                    ))
+                    Theme.activeNS.setFill()
+                    dot.fill()
+                }
+
+                if clamped > 0 {
+                    let arc = NSBezierPath()
+                    // Non-flipped coordinates: 90° is 12 o'clock; a clockwise
+                    // sweep matches how every macOS gauge fills.
+                    arc.appendArc(
+                        withCenter: center, radius: radius,
+                        startAngle: 90, endAngle: 90 - clamped * 360, clockwise: true
+                    )
+                    arc.lineWidth = stroke
+                    arc.lineCapStyle = .round
+                    color.setStroke()
+                    arc.stroke()
+                }
             }
-
-            guard clamped > 0 else { return true }
-            let arc = NSBezierPath()
-            // Non-flipped coordinates: 90° is 12 o'clock; a clockwise sweep
-            // matches how every macOS gauge fills.
-            arc.appendArc(
-                withCenter: center, radius: radius,
-                startAngle: 90, endAngle: 90 - clamped * 360, clockwise: true
-            )
-            arc.lineWidth = stroke
-            arc.lineCapStyle = .round
-            color.setStroke()
-            arc.stroke()
             return true
         }
     }

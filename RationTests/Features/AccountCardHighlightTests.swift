@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import Ration
 
@@ -19,14 +20,16 @@ final class AccountCardHighlightTests: XCTestCase {
     /// recency, not a different pattern.
     func testHighlightStrokeIsActiveGreenByPhase() {
         XCTAssertEqual(
-            AccountCardView.highlightStroke(phase: .inUse(age: 10)),
+            AccountCardView.highlightStroke(phase: .inUse(age: 10), scheme: .dark),
             Theme.active
         )
-        XCTAssertEqual(
-            AccountCardView.highlightStroke(phase: .lastUsed(age: 4000)),
-            Theme.active.opacity(0.35)
-        )
-        XCTAssertEqual(AccountCardView.highlightStroke(phase: .none), .clear)
+        for scheme in [ColorScheme.dark, .light] {
+            XCTAssertEqual(
+                AccountCardView.highlightStroke(phase: .lastUsed(age: 4000), scheme: scheme),
+                Theme.active.opacity(Theme.lastUsedFrameOpacity(scheme))
+            )
+            XCTAssertEqual(AccountCardView.highlightStroke(phase: .none, scheme: scheme), .clear)
+        }
     }
 
     func testInsetConstantsDocumentTheOriginalThirteenPointSplit() {

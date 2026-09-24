@@ -263,6 +263,19 @@ final class AttentionDropGeometryTests: XCTestCase {
         )
     }
 
+    /// `AttentionDropModelObject` starts with an UNBOUNDED allowance
+    /// (`.greatestFiniteMagnitude`) until the controller measures a screen;
+    /// a view rendered before that must not trap converting it to `Int`.
+    func testUnboundedAllowanceShowsEveryRowWithoutTrapping() {
+        for available in [CGFloat.greatestFiniteMagnitude, .infinity, .nan] {
+            XCTAssertEqual(
+                AttentionDropGeometry.rowsAreaHeight(rowCount: 6, availableHeight: available),
+                6 * AttentionDropGeometry.rowHeight, accuracy: 0.01, "\(available)"
+            )
+            XCTAssertFalse(AttentionDropGeometry.rowsScroll(rowCount: 6, availableHeight: available))
+        }
+    }
+
     /// Showing everything is only safe because the frame still clamps: a
     /// pathological number of crossings must not run off the display.
     func testAVeryTallPanelIsStillClampedToTheScreen() {
@@ -275,5 +288,44 @@ final class AttentionDropGeometryTests: XCTestCase {
         )
         XCTAssertGreaterThanOrEqual(frame.minY, visible.minY)
         XCTAssertLessThanOrEqual(frame.maxY, visible.maxY)
+    }
+
+    // MARK: - Countdown column
+
+    /// The drop's trailing countdown sits in a fixed-width column so the
+    /// meters line up. It must hold the widest string the formatters really
+    /// produce at the drop's type size (Space Mono 13 after the +2 pt pass),
+    /// otherwise the countdown truncates to "23h 5…".
+    ///
+    /// Strings come from the real formatters, not literals: the widest are
+    /// seven characters — "23h 59m" (under a day) and "30d 23h" (Cursor's
+    /// monthly period). Space Mono is monospaced, so any other seven-character
+    /// output is the same width.
+    @MainActor
+    func testCountdownColumnFitsWidestRealCountdown() throws {
+        AppFonts.register(in: .main)
+        let font = try XCTUnwrap(NSFont(name: "SpaceMono-Regular", size: 13))
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let windowSeconds: [TimeInterval] = [
+            59 * 60,                          // "59m"
+            23 * 3600 + 59 * 60,              // "23h 59m"
+            6 * 86_400 + 23 * 3600,           // "6d 23h" — weekly window
+            30 * 86_400 + 23 * 3600           // "30d 23h" — Cursor monthly
+        ]
+        let creditSeconds: [TimeInterval] = [30 * 60, 23 * 3600, 29 * 86_400]
+        let window: [String] = windowSeconds.map {
+            UsageFormatters.remainingUntilReset(now.addingTimeInterval($0), relativeTo: now)
+        }
+        let credit: [String] = creditSeconds.map {
+            UsageFormatters.resetCreditRemaining(now.addingTimeInterval($0), relativeTo: now)
+        }
+        XCTAssertTrue(window.contains("23h 59m"))
+        XCTAssertTrue(window.contains("30d 23h"))
+        let widest = try XCTUnwrap(
+            (window + credit)
+                .map { ($0 as NSString).size(withAttributes: [.font: font]).width }
+                .max()
+        )
+        XCTAssertGreaterThanOrEqual(AttentionDropGeometry.countdownColumnWidth, ceil(widest))
     }
 }

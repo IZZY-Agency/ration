@@ -16,7 +16,7 @@ extension Provider {
     var markAccent: Color {
         switch self {
         case .claude: Theme.gold
-        case .chatGPT: Theme.calm
+        case .chatGPT: Theme.chatGPTGreen
         case .cursor: Theme.iris
         }
     }

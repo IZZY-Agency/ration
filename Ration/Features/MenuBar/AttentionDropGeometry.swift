@@ -13,8 +13,19 @@ enum AttentionDropGeometry {
 
     /// Fixed height of one crossing row. Pinned rather than left to intrinsic
     /// sizing so the panel height is an exact multiple of it rather than
-    /// something only measurable after layout.
-    static let rowHeight: CGFloat = 30
+    /// something only measurable after layout. 34 leaves the tallest line in
+    /// a row (Space Mono Bold 14.5, 21pt line) 6.5pt of air above and below.
+    static let rowHeight: CGFloat = 34
+
+    /// Width of the trailing countdown column in a row. Fixed so the meters
+    /// line up; sized to the widest string the formatters really produce —
+    /// seven characters ("23h 59m", "30d 23h") in Space Mono 13, which
+    /// measures 55.7pt — rounded up plus 2pt of slack.
+    static let countdownColumnWidth: CGFloat = 58
+
+    /// Narrowest a row's meter may get. The account label outranks it for
+    /// space, and without a floor a long label left a 2 pt dot.
+    static let meterMinWidth: CGFloat = 28
 
     /// Height of the rows area.
     ///
@@ -33,6 +44,11 @@ enum AttentionDropGeometry {
     static func rowsAreaHeight(rowCount: Int, availableHeight: CGFloat) -> CGFloat {
         let wanted = max(rowCount, 0)
         guard wanted > 0 else { return 0 }
+        // Unbounded (the model's initial `.greatestFiniteMagnitude`, or not a
+        // number at all) means "no cap" — and `Int(_:)` would trap on it.
+        guard availableHeight.isFinite, availableHeight < CGFloat(wanted) * rowHeight else {
+            return CGFloat(wanted) * rowHeight
+        }
         let fits = max(1, Int(availableHeight / rowHeight))
         return CGFloat(min(wanted, fits)) * rowHeight
     }
@@ -51,7 +67,10 @@ enum AttentionDropGeometry {
 
     /// Ticker + header + divider + the rows area's own vertical padding.
     /// Deliberately generous: over-reserving costs one row, under-reserving
-    /// puts the last row under the screen edge.
+    /// puts the last row under the screen edge. At the +2pt sizes the real
+    /// chrome is ≈42pt: ticker 7 + header 34 (the 22pt ✕ hit target outgrows
+    /// the 16pt Space Mono 11 line, plus 6pt padding top and bottom) +
+    /// divider 1 — so 60 still leaves ~18pt of margin.
     static let chromeAllowance: CGFloat = 60
 
     enum Anchor: Equatable {

@@ -6,3 +6,6 @@ Ration.xcodeproj/
 *.xcuserstate
 xcuserdata/
 # Machine-local ignores live in .git/info/exclude.
+
+# Impeccable per-developer overrides
+.impeccable/config.local.json

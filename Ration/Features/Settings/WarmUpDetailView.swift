@@ -68,19 +68,19 @@ struct WarmUpDetailView: View {
 
     var body: some View {
         Form {
-            Section("QUIET HOURS") {
+            Section(SettingsSectionTitle.quietHours) {
                 QuietHoursGrid(selection: gridSelection, calendar: calendar)
                 Text("Selected hours never trigger a warm-up, and the menu-bar drop stays hidden until they pass. Notifications still arrive. Click a day or an hour to select the whole column or row.")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
                 if scope.governsNothing {
                     Text("No account has auto-start enabled and no alert delivers to the drop, so quiet hours have no effect yet.")
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.warn)
                 }
             }
 
-            Section("HOLIDAYS") {
+            Section(SettingsSectionTitle.holidays) {
                 ForEach(settings.holidays) { holiday in
                     HolidayRow(
                         holiday: holiday,
@@ -102,7 +102,7 @@ struct WarmUpDetailView: View {
                 }
                 if settings.holidays.isEmpty {
                     Text("Warm-up never fires on these dates, and the menu-bar drop stays hidden.")
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
                 }
             }

@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import SwiftUI
 
@@ -7,6 +8,9 @@ protocol PopoverPresenting: AnyObject {
     var isShown: Bool { get }
     var behavior: NSPopover.Behavior { get set }
     var contentViewController: NSViewController? { get set }
+    var appearance: NSAppearance? { get set }
+    var hasFullSizeContent: Bool { get set }
+    var delegate: (any NSPopoverDelegate)? { get set }
 
     func show(
         relativeTo positioningRect: NSRect,
@@ -23,6 +27,10 @@ extension NSPopover: PopoverPresenting {}
 final class MenuBarController: NSObject {
     private let model: AppModel
     private let launchAtLogin: LaunchAtLoginController
+    private let appearance: AppearanceController
+    /// The single appearance listener registered in `start()`, removed in
+    /// `stop()`.
+    private var appearanceListenerID: UUID?
     private(set) var statusItem: NSStatusItem?
     private let popover: any PopoverPresenting
     private let hotKeyRegistrar: any GlobalHotKeyRegistering
@@ -41,6 +49,27 @@ final class MenuBarController: NSObject {
     /// Clock for the in-use indicator; injectable so tests can age the phase
     /// without waiting the bright-threshold out in real time.
     private let now: () -> Date
+    /// One Carbon registrar per popover shortcut (see `PopoverShortcut`).
+    private let makePopoverHotKeyRegistrar: () -> any GlobalHotKeyRegistering
+    /// The Refresh and Quit footer actions — injectable so tests can observe
+    /// them without refreshing real accounts or terminating the test host.
+    private let refreshAction: () -> Void
+    private let terminateApp: () -> Void
+    /// The popover shortcuts claimed for the current presentation, by key.
+    /// Empty whenever the popover is closed.
+    private var popoverHotKeys: [PopoverShortcut: any GlobalHotKeyRegistering] = [:]
+    /// Keys another app refused us during this presentation — not retried
+    /// until the popover is presented again.
+    private var refusedPopoverShortcuts: Set<PopoverShortcut> = []
+    private var popoverShortcutsActive = false
+    /// Key codes resolved from the keyboard layout for the current
+    /// presentation.
+    private var popoverKeyCodes: [PopoverShortcut: UInt32] = [:]
+    private let popoverKeyCode: @MainActor (PopoverShortcut) -> UInt32
+    /// Whether the status item sits in the menu bar where a popover can hang
+    /// from it. Nil: ask the real geometry.
+    private let statusItemIsAnchoredOverride: (() -> Bool)?
+    private var attentionPresenceCancellable: AnyCancellable?
     private var inUseCancellables: Set<AnyCancellable> = []
     /// Test seam: the periodic tick that expires a dot on its own once the
     /// last burn ages past the bright IN USE threshold. Nil after `stop()`.
@@ -56,9 +85,22 @@ final class MenuBarController: NSObject {
     /// Identifies the current presentation, so a settle timer from a panel
     /// that has since been closed cannot re-enable mouse input on a newer one.
     private var attentionSettleToken: UUID?
+    /// Row ids the drop showed at its last refresh — the dedupe for its
+    /// VoiceOver announcement (see `AttentionDropAnnouncement`).
+    private var attentionAnnouncedIDs: Set<AttentionRow.ID> = []
+    /// Whether the drop is on screen, for the popover's keyboard route to the
+    /// panel's ✕. Its own object so the popover is not invalidated by every
+    /// refresh tick of the drop's rows.
+    let attentionPresence = AttentionDropPresence()
     private var attentionObservers: [any NSObjectProtocol] = []
 
     private var statusItemFrameObservation: NSKeyValueObservation?
+    /// Redraws the rings when the menu bar's OWN appearance changes (macOS
+    /// light/dark switch, wallpaper tint) — independent of the app setting,
+    /// whose changes arrive through the appearance apply listener.
+    private var buttonAppearanceObservation: NSKeyValueObservation?
+    /// Re-resolves the popover's System appearance when macOS flips.
+    private var systemAppearanceObservation: NSKeyValueObservation?
 
     /// Cadence of the expiry tick — the same 60s the popover's `InUseMarker`
     /// uses, so both surfaces age out within a minute of each other.
@@ -71,19 +113,33 @@ final class MenuBarController: NSObject {
     init(
         model: AppModel,
         launchAtLogin: LaunchAtLoginController,
+        appearance: AppearanceController = AppearanceController(),
         popover: any PopoverPresenting = NSPopover(),
         hotKeyRegistrar: any GlobalHotKeyRegistering = CarbonHotKeyRegistrar(),
         popoverPin: AccountPinSnapshot = AccountPinSnapshot(),
         fallbackPin: AccountPinSnapshot = AccountPinSnapshot(),
-        now: @escaping () -> Date = { .now }
+        now: @escaping () -> Date = { .now },
+        makePopoverHotKeyRegistrar: @escaping () -> any GlobalHotKeyRegistering = { CarbonHotKeyRegistrar() },
+        refreshAll: (() -> Void)? = nil,
+        terminateApp: @escaping () -> Void = { NSApplication.shared.terminate(nil) },
+        statusItemIsAnchored: (() -> Bool)? = nil,
+        popoverKeyCode: @escaping @MainActor (PopoverShortcut) -> UInt32 = ShortcutKeyCodeResolver.liveKeyCode
     ) {
         self.model = model
         self.launchAtLogin = launchAtLogin
+        self.appearance = appearance
         self.popover = popover
         self.hotKeyRegistrar = hotKeyRegistrar
         self.popoverPin = popoverPin
         self.fallbackPin = fallbackPin
         self.now = now
+        self.makePopoverHotKeyRegistrar = makePopoverHotKeyRegistrar
+        self.refreshAction = refreshAll ?? { [model] in
+            Task { await model.refreshAll() }
+        }
+        self.terminateApp = terminateApp
+        self.statusItemIsAnchoredOverride = statusItemIsAnchored
+        self.popoverKeyCode = popoverKeyCode
         super.init()
     }
 
@@ -96,14 +152,64 @@ final class MenuBarController: NSObject {
         if let button = item.button {
             button.target = self
             button.action = #selector(togglePopover(_:))
+            // Redraw synchronously inside the callback (it arrives on the main
+            // thread, like the frame observer's): a hop through `Task` could
+            // land after `stop()` and resurrect the drop on a dead controller.
+            buttonAppearanceObservation = button.observe(\.effectiveAppearance) { [weak self] _, _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.statusItem != nil else { return }
+                    self.updateGauges()
+                }
+            }
         }
 
         popover.behavior = .transient
+        popover.delegate = self
         popover.contentViewController = NSHostingController(
             rootView: makeMenuBarContent(pinSnapshot: popoverPin)
         )
+        popover.appearance = popoverAppearance()
+        // The popover chrome is translucent Liquid Glass: its appearance
+        // follows the app, but its colour comes from what is behind it — the
+        // menu bar — so in Light-on-a-dark-menu-bar the chevron drew dark grey.
+        // Full-size content lets the content's `Theme.ink` background (which
+        // ignores safe areas) paint the chevron too; the safe-area insets keep
+        // the actual content inside the body.
+        popover.hasFullSizeContent = true
+
+        // Live switching: `AppearanceController.apply()` restyles every
+        // window itself; this covers what it cannot reach — the popover (not
+        // in `NSApp.windows` while closed), the drop panel, window grounds
+        // assigned once, and the status item's drawn gauges.
+        appearanceListenerID = appearance.addApplyListener { [weak self] resolved in
+            guard let self else { return }
+            popover.appearance = popoverAppearance()
+            attentionPanel?.appearance = resolved
+            for controller in managedWindowControllers {
+                controller.window?.backgroundColor = Theme.inkNS
+            }
+            updateGauges()
+        }
+
+        // System mode: macOS flipping light/dark while the popover is open
+        // must restyle it too — it holds a CONCRETE appearance (see
+        // `popoverAppearance()`), which no longer tracks the OS by itself.
+        systemAppearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                guard let self, self.statusItem != nil else { return }
+                self.popover.appearance = self.popoverAppearance()
+            }
+        }
 
         startInUseIndicator()
+
+        // ⌘D follows the drop while the popover is open. `@Published` emits
+        // before the value is stored, so the new value is passed through.
+        attentionPresenceCancellable = attentionPresence.$isShowing
+            .removeDuplicates()
+            .sink { [weak self] showing in
+                self?.syncPopoverShortcuts(dropShowing: showing)
+            }
 
         // ⌥⌘U opens the window even when macOS 26 hides the status item.
         let hotKeyController = GlobalHotKeyController(
@@ -277,11 +383,7 @@ final class MenuBarController: NSObject {
 
         if attentionPanel == nil {
             attentionModel.onDismissAll = { [weak self] in
-                guard let self else { return }
-                // Dismiss exactly what is on screen — re-deriving here could
-                // pick up a row that appeared after the user decided to clear.
-                self.model.snoozeAttentionDrop(self.attentionModel.rows)
-                self.refreshAttentionDrop()
+                self?.dismissAttentionDrop()
             }
             attentionModel.onSelect = { [weak self] row in
                 guard let self else { return }
@@ -291,6 +393,7 @@ final class MenuBarController: NSObject {
             }
             let hosting = NSHostingView(rootView: AttentionDropView(model: attentionModel))
             let panel = AttentionDropPanel()
+            panel.appearance = appearance.mode.nsAppearance
             panel.contentView = hosting
             attentionHostingView = hosting
             attentionPanel = panel
@@ -330,6 +433,28 @@ final class MenuBarController: NSObject {
 
         positionAttentionPanel()
         attentionPanel?.orderFrontRegardless()
+        attentionPresence.set(true)
+
+        // The panel never becomes key, so VoiceOver would never find it on
+        // its own — announce it, once per appearance or new row.
+        let announcement = AttentionDropAnnouncement.evaluate(
+            rows: rows,
+            previouslySeen: attentionAnnouncedIDs
+        )
+        attentionAnnouncedIDs = announcement.seen
+        if let text = announcement.announcement {
+            AttentionDropAnnouncement.post(text)
+        }
+    }
+
+    /// The panel's ✕, and the popover's keyboard route to it: snoozes the
+    /// drop (acknowledging its reset rows) and closes it.
+    func dismissAttentionDrop() {
+        guard !attentionModel.rows.isEmpty else { return }
+        // Dismiss exactly what is on screen — re-deriving here could pick up
+        // a row that appeared after the user decided to clear.
+        model.snoozeAttentionDrop(attentionModel.rows)
+        refreshAttentionDrop()
     }
 
     /// The status-item button's frame in screen coordinates, or nil.
@@ -432,6 +557,8 @@ final class MenuBarController: NSObject {
 
     private func closeAttentionPanel() {
         attentionSettleToken = nil
+        attentionAnnouncedIDs = []
+        attentionPresence.set(false)
         attentionModel.rows = []
         attentionPanel?.orderOut(nil)
         attentionPanel?.contentView = nil
@@ -442,10 +569,23 @@ final class MenuBarController: NSObject {
     /// Opening the popover from a drop row: the drop never activates the app
     /// on its own, but a click is explicit intent, so this behaves exactly
     /// like clicking the status item.
+    ///
+    /// When the status item is not in the menu bar (hidden behind the notch,
+    /// parked by the system) there is nothing to hang a popover from — the
+    /// window opens instead.
     private func showPopoverFromDrop() {
-        guard let button = statusItem?.button, !popover.isShown else { return }
-        capturePin(popoverPin)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        guard !popover.isShown else { return }
+        guard let button = statusItem?.button, statusItemIsAnchored() else {
+            showFallbackWindow()
+            return
+        }
+        presentPopover(from: button)
+    }
+
+    private func statusItemIsAnchored() -> Bool {
+        if let statusItemIsAnchoredOverride { return statusItemIsAnchoredOverride() }
+        if case .statusItem = currentAnchor() { return true }
+        return false
     }
 
     /// Recomputes the usage gauges — a ring per visible account, the in-use
@@ -506,6 +646,10 @@ final class MenuBarController: NSObject {
 
         statusItemFrameObservation?.invalidate()
         statusItemFrameObservation = nil
+        buttonAppearanceObservation?.invalidate()
+        buttonAppearanceObservation = nil
+        systemAppearanceObservation?.invalidate()
+        systemAppearanceObservation = nil
         for observer in attentionObservers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -514,16 +658,17 @@ final class MenuBarController: NSObject {
 
         hotKeyController?.unregister()
         hotKeyController = nil
+        attentionPresenceCancellable = nil
         popover.close()
+        // `close()` is not guaranteed to report `popoverDidClose`; releasing
+        // is idempotent, so the popover keys never outlive the controller.
+        endPopoverShortcuts()
+        popover.delegate = nil
 
-        let windowControllers = [
-            fallbackWindowController,
-            addAccountWindowController,
-            settingsWindowController,
-            aboutWindowController,
-            historyWindowController,
-            onboardingWindowController
-        ].compactMap { $0 } + Array(signInWindowControllers.values)
+        appearanceListenerID.map(appearance.removeApplyListener)
+        appearanceListenerID = nil
+
+        let windowControllers = managedWindowControllers
 
         fallbackWindowController = nil
         addAccountWindowController = nil
@@ -549,17 +694,114 @@ final class MenuBarController: NSObject {
         }
     }
 
+    /// The popover's appearance: ALWAYS concrete. Left `nil` (System), a
+    /// shown popover inherits its positioning view — the status button, whose
+    /// appearance is the MENU BAR's — so on a dark bar with Light macOS it
+    /// came up dark beside light windows. System resolves to what macOS
+    /// itself is (`NSApp.effectiveAppearance`, app appearance being nil),
+    /// reduced to plain aqua/darkAqua so no vibrant variant leaks in.
+    private func popoverAppearance() -> NSAppearance? {
+        if let explicit = appearance.mode.nsAppearance { return explicit }
+        let name = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) ?? .aqua
+        return NSAppearance(named: name)
+    }
+
+    /// Every AppKit window controller this controller owns.
+    private var managedWindowControllers: [NSWindowController] {
+        [
+            fallbackWindowController,
+            addAccountWindowController,
+            settingsWindowController,
+            aboutWindowController,
+            historyWindowController,
+            onboardingWindowController
+        ].compactMap { $0 } + Array(signInWindowControllers.values)
+    }
+
     @objc
     private func togglePopover(_ sender: NSStatusBarButton) {
         if popover.isShown {
             popover.performClose(sender)
         } else {
-            capturePin(popoverPin)
-            popover.show(
-                relativeTo: sender.bounds,
-                of: sender,
-                preferredEdge: .minY
-            )
+            presentPopover(from: sender)
+        }
+    }
+
+    /// The one way the popover is shown — the status item and a drop row both
+    /// come here.
+    ///
+    /// Ration is an LSUIElement app and is NOT activated here: since macOS 14
+    /// `activate()` is only a request the frontmost app may ignore (it did —
+    /// the popover never became key), and activation drags Space/Dock side
+    /// effects along. The popover's ⌘ shortcuts are instead claimed as
+    /// global hotkeys for exactly as long as it is shown — claimed on
+    /// `popoverDidShow`, so a show AppKit never performs claims nothing.
+    private func presentPopover(from button: NSStatusBarButton) {
+        capturePin(popoverPin)
+        popover.appearance = popoverAppearance()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    // MARK: - Popover shortcuts
+
+    private func beginPopoverShortcuts() {
+        endPopoverShortcuts()
+        popoverShortcutsActive = true
+        popoverKeyCodes = Dictionary(
+            uniqueKeysWithValues: PopoverShortcut.allCases.map { ($0, popoverKeyCode($0)) }
+        )
+        syncPopoverShortcuts(dropShowing: attentionPresence.isShowing)
+    }
+
+    /// Claims exactly the keys the open popover offers — ⌘D only while the
+    /// drop is up, so ⌘D is never taken from the frontmost app for a button
+    /// that is not even on screen.
+    private func syncPopoverShortcuts(dropShowing: Bool) {
+        guard popoverShortcutsActive else { return }
+        let wanted = Set(PopoverShortcut.allCases.filter { $0 != .dismissAlerts || dropShowing })
+
+        for shortcut in popoverHotKeys.keys where !wanted.contains(shortcut) {
+            popoverHotKeys.removeValue(forKey: shortcut)?.unregister()
+        }
+        for shortcut in PopoverShortcut.allCases
+        where wanted.contains(shortcut)
+            && popoverHotKeys[shortcut] == nil
+            && !refusedPopoverShortcuts.contains(shortcut) {
+            let registrar = makePopoverHotKeyRegistrar()
+            let registered = registrar.register(
+                keyCode: popoverKeyCodes[shortcut] ?? shortcut.ansiKeyCode,
+                modifiers: PopoverShortcut.modifiers,
+                exclusive: true
+            ) { [weak self] in
+                self?.perform(shortcut)
+            }
+            if registered {
+                popoverHotKeys[shortcut] = registrar
+            } else {
+                refusedPopoverShortcuts.insert(shortcut)
+                NSLog("Ration: \(shortcut) hotkey is owned by another app; skipped while the popover is open.")
+            }
+        }
+    }
+
+    /// The single release point for the popover keys: `popoverDidClose`
+    /// (toggle, click-away, Esc, opening a window) and `stop()`.
+    private func endPopoverShortcuts() {
+        popoverShortcutsActive = false
+        refusedPopoverShortcuts = []
+        for registrar in popoverHotKeys.values {
+            registrar.unregister()
+        }
+        popoverHotKeys = [:]
+    }
+
+    /// The same paths the popover's buttons run.
+    private func perform(_ shortcut: PopoverShortcut) {
+        switch shortcut {
+        case .refresh: refreshAction()
+        case .settings: showSettings()
+        case .quit: terminateApp()
+        case .dismissAlerts: dismissAttentionDrop()
         }
     }
 
@@ -573,8 +815,11 @@ final class MenuBarController: NSObject {
 
         let controller = makeWindowController(
             title: "Add Account",
-            defaultSize: NSSize(width: 420, height: 310),
-            minimumSize: NSSize(width: 420, height: 310),
+            // 530: the content measured 495 pt with a one-line subtitle; the
+            // wrapped second line adds ≈18 pt, plus a little slack so the
+            // Cancel row never sits on the edge.
+            defaultSize: NSSize(width: 420, height: 530),
+            minimumSize: NSSize(width: 420, height: 530),
             styleMask: standardWindowStyle,
             rootView: AddAccountView(
                 model: model,
@@ -604,13 +849,14 @@ final class MenuBarController: NSObject {
 
         let controller = makeWindowController(
             title: "Settings",
-            defaultSize: NSSize(width: 600, height: 480),
-            minimumSize: NSSize(width: 560, height: 440),
+            defaultSize: NSSize(width: SettingsView.minimumWindowWidth, height: 564),
+            minimumSize: NSSize(width: SettingsView.minimumWindowWidth, height: 470),
             styleMask: standardWindowStyle,
             escClosable: true,
             rootView: SettingsView(
                 model: model,
                 launchAtLogin: launchAtLogin,
+                appearance: appearance,
                 history: model.history,
                 onAddAccount: { [weak self] in
                     self?.showAddAccount()
@@ -639,7 +885,10 @@ final class MenuBarController: NSObject {
             return
         }
 
-        let contentSize = NSSize(width: 360, height: 270)
+        // 286: at the +2pt sizes the About stack measures ≈283pt (28pt
+        // padding ×2, 88pt icon, 4×13pt spacing, then the name/version/
+        // copyright/link lines) — 270 no longer held it.
+        let contentSize = NSSize(width: 360, height: 286)
         let controller = makeWindowController(
             title: "About Ration",
             defaultSize: contentSize,
@@ -670,6 +919,15 @@ final class MenuBarController: NSObject {
     /// termination test non-vacuous — the latch stays false whether or not a
     /// window was actually shown.
     var hasOnboardingWindow: Bool { onboardingWindowController != nil }
+
+    var hasSettingsWindow: Bool { settingsWindowController != nil }
+
+    var hasFallbackWindow: Bool { fallbackWindowController != nil }
+
+    /// Test seam: a click on a drop row.
+    func openPopoverFromDropForTesting() {
+        showPopoverFromDrop()
+    }
 
     /// Test seam: closes the Setup Guide the way the traffic light does, so a
     /// test can re-arm and assert a second presentation.
@@ -800,6 +1058,16 @@ final class MenuBarController: NSObject {
             },
             onOpenSetupGuide: { [weak self] in
                 self?.showOnboarding()
+            },
+            attentionPresence: attentionPresence,
+            onDismissAttentionDrop: { [weak self] in
+                self?.dismissAttentionDrop()
+            },
+            onRefresh: { [weak self] in
+                self?.refreshAction()
+            },
+            onQuit: { [weak self] in
+                self?.terminateApp()
             }
         )
     }
@@ -831,6 +1099,7 @@ final class MenuBarController: NSObject {
         )
         window.title = title
         window.backgroundColor = Theme.inkNS
+        window.appearance = appearance.mode.nsAppearance
         // Blend the title bar into the izzy ground: transparent bar over the ink
         // background, no native title text — only the traffic lights remain.
         window.titleVisibility = .hidden
@@ -861,6 +1130,60 @@ final class MenuBarController: NSObject {
         }
         windowCloseObservers[key] = observer
         window.delegate = observer
+    }
+}
+
+extension MenuBarController: NSPopoverDelegate {
+    /// AppKit reports both after the animation, so either can land late: a
+    /// didShow after the popover already closed, or a didClose after it was
+    /// shown again. Each acts only if the popover's state still agrees.
+    func popoverDidShow(_ notification: Notification) {
+        guard popover.isShown else { return }
+        beginPopoverShortcuts()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        guard !popover.isShown else { return }
+        endPopoverShortcuts()
+    }
+}
+
+/// The popover's ⌘ shortcuts, claimed as global hotkeys while it is shown.
+enum PopoverShortcut: CaseIterable, CustomStringConvertible {
+    case refresh
+    case settings
+    case quit
+    case dismissAlerts
+
+    static let modifiers = UInt32(cmdKey)
+
+    /// The character the shortcut types — what Cocoa key equivalents match.
+    var character: String {
+        switch self {
+        case .refresh: "r"
+        case .settings: ","
+        case .quit: "q"
+        case .dismissAlerts: "d"
+        }
+    }
+
+    /// The US-layout key, used when the layout cannot be read.
+    var ansiKeyCode: UInt32 {
+        switch self {
+        case .refresh: UInt32(kVK_ANSI_R)
+        case .settings: UInt32(kVK_ANSI_Comma)
+        case .quit: UInt32(kVK_ANSI_Q)
+        case .dismissAlerts: UInt32(kVK_ANSI_D)
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .refresh: "⌘R"
+        case .settings: "⌘,"
+        case .quit: "⌘Q"
+        case .dismissAlerts: "⌘D"
+        }
     }
 }
 

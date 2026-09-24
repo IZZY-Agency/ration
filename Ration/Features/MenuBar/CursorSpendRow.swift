@@ -27,6 +27,23 @@ enum CursorSpendRow {
         }
         return (headline: headline, caption: parts.joined(separator: " · "), isAvailable: true)
     }
+
+    /// What VoiceOver reads for the row — the countdown in words ("resets in
+    /// 4 days, 3 hours"), never the drawn "4d 3h".
+    static func accessibilityDescription(
+        for spend: CursorSpend?,
+        now: Date,
+        locale: Locale = .current
+    ) -> String {
+        guard let spend else { return "Cursor spend, unavailable" }
+        let headline = text(for: spend, now: now).headline
+        var parts = ["Cursor spend", headline, spend.planLabel]
+        parts.append(spend.spentCents == 0 ? "no usage-based charges" : "this cycle")
+        if let reset = spend.futureReset(relativeTo: now) {
+            parts.append("resets in " + UsageFormatters.spokenDuration(until: reset, relativeTo: now, locale: locale))
+        }
+        return parts.joined(separator: ", ")
+    }
 }
 
 /// The Cursor card's single content row: `$`-spend headline, a muted reset
@@ -45,14 +62,14 @@ struct CursorSpendRowView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text(text.headline)
-                    .font(Theme.display(20, .semibold))
+                    .font(Theme.display(22, .semibold))
                     .monospacedDigit()
                     .foregroundStyle(text.isAvailable ? Theme.cream : Theme.creamFaint)
                     .contentTransition(.numericText())
 
                 if let planLabel = spend?.planLabel {
                     Text(planLabel)
-                        .font(Theme.mono(9))
+                        .font(Theme.mono(11))
                         .tracking(0.6)
                         .textCase(.uppercase)
                         .foregroundStyle(Theme.creamFaint)
@@ -67,7 +84,7 @@ struct CursorSpendRowView: View {
 
             if !text.caption.isEmpty {
                 Text(text.caption)
-                    .font(Theme.mono(12, bold: true))
+                    .font(Theme.mono(14, bold: true))
                     .monospacedDigit()
                     .foregroundStyle(Theme.resetAccent)
                     .lineLimit(1)
@@ -78,7 +95,6 @@ struct CursorSpendRowView: View {
     }
 
     private var accessibilityDescription: String {
-        guard let spend else { return "Cursor spend, unavailable" }
-        return "Cursor spend, \(text.headline) \(spend.planLabel), \(text.caption)"
+        CursorSpendRow.accessibilityDescription(for: spend, now: now)
     }
 }

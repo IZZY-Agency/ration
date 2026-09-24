@@ -10,7 +10,7 @@ protocol NotificationScheduling: Sendable {
     /// on `AppModel.load()` (relaunch) since the user may have granted or
     /// revoked notification permission in System Settings since the app last
     /// called `requestAuthorization`.
-    func authorizationStatus() async -> Bool
+    func authorizationStatus() async -> NotificationPermission
     func post(id: String, title: String, body: String) async
 }
 
@@ -29,10 +29,8 @@ final class UserNotificationScheduler: NotificationScheduling {
         (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
     }
 
-    func authorizationStatus() async -> Bool {
-        let settings = await center.notificationSettings()
-        return settings.authorizationStatus == .authorized
-            || settings.authorizationStatus == .provisional
+    func authorizationStatus() async -> NotificationPermission {
+        NotificationPermission(await center.notificationSettings().authorizationStatus)
     }
 
     func post(id: String, title: String, body: String) async {
@@ -43,5 +41,19 @@ final class UserNotificationScheduler: NotificationScheduling {
 
         let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
         try? await center.add(request)
+    }
+}
+
+extension NotificationPermission {
+    /// Only a grant opens the posting gate. `.notDetermined` stays apart from
+    /// `.denied`: the fix for it is asking, not System Settings.
+    init(_ status: UNAuthorizationStatus) {
+        switch status {
+        case .authorized, .provisional: self = .allowed
+        case .notDetermined: self = .notDetermined
+        case .denied: self = .denied
+        // `.ephemeral` is iOS-only (App Clips) — unavailable on macOS, so unmapped.
+        @unknown default: self = .denied
+        }
     }
 }

@@ -4,8 +4,9 @@ import SwiftUI
 /// Content moved verbatim (in behavior) from the old Settings "App" section.
 struct GeneralDetailView: View {
     @ObservedObject var launchAtLogin: LaunchAtLoginController
+    @ObservedObject var appearance: AppearanceController
     @ObservedObject var settings: AppSettings
-    let usageAlertsAuthorized: Bool
+    let notificationPermission: NotificationPermission?
     let onSetSortByWeeklyReset: (Bool) -> Void
     let onSetUsageAlertsEnabled: (Bool) -> Void
     let onSetRedactNotifications: (Bool) -> Void
@@ -13,14 +14,24 @@ struct GeneralDetailView: View {
     let onSetMenuBarWindow: (Provider, UsageWindowKind) -> Void
     let onSetMenuBarDisplaysRemaining: (Bool) -> Void
     let onOpenSetupGuide: () -> Void
+    let onAllowNotifications: () -> Void
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         Form {
-            Section("General") {
+            Section(SettingsSectionTitle.general) {
+                Picker("Appearance", selection: Binding(
+                    get: { appearance.mode },
+                    set: { appearance.setMode($0) }
+                )) {
+                    ForEach(AppearanceMode.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("appearancePicker")
+
                 LabeledContent("Open window shortcut") {
                     Text("⌥⌘U")
-                        .font(Theme.mono(12, bold: true))
+                        .font(Theme.mono(14, bold: true))
                         .foregroundStyle(Theme.gold)
                 }
                 .accessibilityIdentifier("openWindowShortcut")
@@ -53,7 +64,7 @@ struct GeneralDetailView: View {
 
                 if let explanation = launchAtLogin.explanation {
                     Text(explanation)
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
                 }
 
@@ -65,7 +76,7 @@ struct GeneralDetailView: View {
 
                 if let launchError = launchAtLogin.errorMessage {
                     Label(launchError, systemImage: "exclamationmark.triangle.fill")
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.crit)
                         .textSelection(.enabled)
                 }
@@ -82,7 +93,7 @@ struct GeneralDetailView: View {
                 .accessibilityIdentifier("sortByWeeklyResetToggle")
 
                 Text("Orders accounts within each provider; manual drag is disabled while on.")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
 
                 Toggle(
@@ -97,13 +108,27 @@ struct GeneralDetailView: View {
                 .accessibilityIdentifier("usageAlertsToggle")
 
                 Text("Notifies you at your configured thresholds, on reset, and when an account needs attention. Set them in Alerts.")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
 
-                if settings.usageAlertsEnabled && !usageAlertsAuthorized {
-                    Text("Allow notifications for Ration in System Settings › Notifications.")
-                        .font(Theme.mono(10))
-                        .foregroundStyle(Theme.warn)
+                if let problem = NotificationAccess.problem(
+                    alertsEnabled: settings.usageAlertsEnabled,
+                    permission: notificationPermission
+                ) {
+                    HStack(spacing: 10) {
+                        Text(problem.generalNote)
+                            .font(Theme.mono(12))
+                            .foregroundStyle(Theme.warn)
+                        Spacer()
+                        switch problem {
+                        case .blocked:
+                            Button(NotificationAccess.openSettingsTitle, action: NotificationSettingsOpener.open)
+                                .accessibilityIdentifier("openNotificationSettingsButton")
+                        case .needsPermission:
+                            Button(NotificationAccess.allowTitle, action: onAllowNotifications)
+                                .accessibilityIdentifier("allowNotificationsButton")
+                        }
+                    }
                 }
 
                 if settings.usageAlertsEnabled {
@@ -119,12 +144,12 @@ struct GeneralDetailView: View {
                     .accessibilityIdentifier("redactNotificationsToggle")
 
                     Text("Keeps account labels and exact usage off the lock screen; the app still shows which account when you open it.")
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
                 }
             }
 
-            Section("Menu bar") {
+            Section(SettingsSectionTitle.menuBar) {
                 Toggle(
                     "Show usage rings in the menu bar",
                     isOn: Binding(
@@ -137,7 +162,7 @@ struct GeneralDetailView: View {
                 .accessibilityIdentifier("showInUseInMenuBarToggle")
 
                 Text("A ring per account, next to the menu bar icon, filled by the window below; accounts currently in use get a green center dot. Hover for exact values. Cursor has no rate windows and never shows.")
-                    .font(Theme.mono(10))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
 
                 if settings.showInUseInMenuBar {
@@ -172,18 +197,18 @@ struct GeneralDetailView: View {
                     .accessibilityIdentifier("menuBarClaudeWindowPicker")
 
                     Text("Fable applies to Max accounts; accounts without the selected window fall back to their finest one.")
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
 
                     LabeledContent("ChatGPT window") {
                         Text("Weekly")
-                            .font(Theme.mono(12))
+                            .font(Theme.mono(14))
                             .foregroundStyle(Theme.creamDim)
                     }
                     .accessibilityIdentifier("menuBarChatGPTWindowRow")
 
                     Text("ChatGPT reports only a weekly limit.")
-                        .font(Theme.mono(10))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
                 }
             }

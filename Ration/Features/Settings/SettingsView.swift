@@ -1,8 +1,16 @@
 import SwiftUI
 
 struct SettingsView: View {
+    /// The sidebar's ideal width plus the 450 pt of detail pane the window
+    /// had before the sidebar grew for the +2 pt type (660 − 210).
+    static let minimumWindowWidth: CGFloat = 720
+
     @ObservedObject var model: AppModel
     @ObservedObject var launchAtLogin: LaunchAtLoginController
+    /// Passed through to `GeneralDetailView` (which observes it) as an init
+    /// parameter, like every other dependency here — no EnvironmentObject, so
+    /// a missing injection is a compile error rather than a runtime crash.
+    let appearance: AppearanceController
     @ObservedObject var history: UsageHistoryStore
     let onAddAccount: () -> Void
     let onOpenSignIn: (UUID) -> Void
@@ -36,14 +44,18 @@ struct SettingsView: View {
                 onMove: move,
                 onAddAccount: onAddAccount
             )
-            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
+            .navigationSplitViewColumnWidth(
+                min: SettingsSidebar.minColumnWidth,
+                ideal: SettingsSidebar.idealColumnWidth,
+                max: SettingsSidebar.maxColumnWidth
+            )
         } detail: {
             detail
                 .overlay(alignment: .bottom) { errorBanner }
         }
         .tint(Theme.gold)
         .background(Theme.ink)
-        .frame(minWidth: 660, minHeight: 470)
+        .frame(minWidth: Self.minimumWindowWidth, minHeight: 470)
         .task { ensureSelection() }
         .onChange(of: model.accounts.map(\.id)) { _, _ in ensureSelection() }
         .alert(
@@ -141,8 +153,9 @@ struct SettingsView: View {
         case .general:
             GeneralDetailView(
                 launchAtLogin: launchAtLogin,
+                appearance: appearance,
                 settings: model.settings,
-                usageAlertsAuthorized: model.usageAlertsAuthorized,
+                notificationPermission: model.notificationPermission,
                 onSetSortByWeeklyReset: { enabled in
                     perform { try await model.setSortByWeeklyReset(enabled) }
                 },
@@ -161,12 +174,15 @@ struct SettingsView: View {
                 onSetMenuBarDisplaysRemaining: { enabled in
                     perform { try await model.setMenuBarDisplaysRemaining(enabled) }
                 },
-                onOpenSetupGuide: onOpenSetupGuide
+                onOpenSetupGuide: onOpenSetupGuide,
+                onAllowNotifications: { model.requestNotificationPermission() }
             )
         case .alerts:
             AlertsDetailView(
                 settings: model.settings,
                 providers: model.accounts.map(\.provider),
+                notificationPermission: model.notificationPermission,
+                onAllowNotifications: { model.requestNotificationPermission() },
                 onSetWarningPercent: { value, provider, window in
                     try await model.setWarningPercent(value, provider: provider, window: window)
                 },
@@ -219,7 +235,7 @@ struct SettingsView: View {
     private var errorBanner: some View {
         if let errorMessage {
             Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                .font(Theme.mono(10))
+                .font(Theme.mono(12))
                 .foregroundStyle(Theme.crit)
                 .textSelection(.enabled)
                 .padding(10)
