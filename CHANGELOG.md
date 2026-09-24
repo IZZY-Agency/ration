@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- Ration builds from source with Xcode 26.6 again. No change to how the app
+  works.
+
 ## 1.2.0
 
 - Light and dark themes. Settings → General → Appearance: System (default),

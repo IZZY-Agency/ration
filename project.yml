@@ -27,8 +27,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: agency.izzy.ration
         PRODUCT_NAME: Ration
         PRODUCT_MODULE_NAME: Ration
-        MARKETING_VERSION: "1.2.0"
-        CURRENT_PROJECT_VERSION: 77
+        MARKETING_VERSION: "1.2.1"
+        CURRENT_PROJECT_VERSION: 78
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Ration
         INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 IZZY.Agency"

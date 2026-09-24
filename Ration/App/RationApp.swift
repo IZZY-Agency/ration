@@ -116,8 +116,11 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
+                // Discard the returned Task explicitly: Xcode 26.6's Swift
+                // otherwise infers the closure's result type from it and
+                // fails to match `assumeIsolated`'s Void body.
                 MainActor.assumeIsolated {
-                    self?.model?.recheckNotificationAuthorization()
+                    _ = self?.model?.recheckNotificationAuthorization()
                 }
             }
         }
