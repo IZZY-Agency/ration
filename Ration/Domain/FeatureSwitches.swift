@@ -30,28 +30,43 @@ enum FeatureSwitch: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .resets: "Resets"
-        case .switchAdvice: "Switch suggestions"
-        case .warmUp: "Claude warm-up"
-        case .inUse: "In-use detection"
+    var title: String { title(locale: .current) }
+
+    func title(locale: Locale) -> String {
+        let resource: LocalizedStringResource = switch self {
+        case .resets: .featureSwitchTitleResets
+        case .switchAdvice: .featureSwitchTitleSwitchAdvice
+        case .warmUp: .featureSwitchTitleWarmUp
+        case .inUse: .featureSwitchTitleInUse
         }
+        return resource.string(in: locale)
     }
 
-    var summary: String {
-        switch self {
-        case .resets: "Shows usage-limit resets on cards and in account settings, and alerts about them."
-        case .switchAdvice: "Suggests which account to move to when the one you're on nears its limit."
-        case .warmUp: "Starts Claude 5-hour windows automatically for accounts with Auto-start on."
-        case .inUse: "Marks the account you're working in: IN USE tags, menu-bar dots, Focus hero."
+    var summary: String { summary(locale: .current) }
+
+    func summary(locale: Locale) -> String {
+        let resource: LocalizedStringResource = switch self {
+        case .resets: .featureSwitchSummaryResets
+        case .switchAdvice: .featureSwitchSummarySwitchAdvice
+        case .warmUp: .featureSwitchSummaryWarmUp
+        case .inUse: .featureSwitchSummaryInUse
         }
+        return resource.string(in: locale)
     }
 
     /// Shown under a switch that cannot take effect on its own.
-    static let switchAdviceNeedsInUseNote = "Needs in-use detection"
+    static var switchAdviceNeedsInUseNote: String { switchAdviceNeedsInUseNote(locale: .current) }
+
+    static func switchAdviceNeedsInUseNote(locale: Locale) -> String {
+        LocalizedStringResource.featureSwitchNoteSwitchAdviceNeedsInUse.string(in: locale)
+    }
+
     /// Shown under each account's Auto-start toggle while warm-up is off.
-    static let warmUpOffNote = "Warm-up is off in General"
+    static var warmUpOffNote: String { warmUpOffNote(locale: .current) }
+
+    static func warmUpOffNote(locale: Locale) -> String {
+        LocalizedStringResource.featureSwitchNoteWarmUpOff.string(in: locale)
+    }
 
     func isOn(in features: FeatureSwitches) -> Bool {
         switch self {

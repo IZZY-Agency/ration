@@ -353,7 +353,7 @@ struct SignInSessionView: View {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.creamDim)
-                Text(currentHost ?? "loading…")
+                Text(SignInCopy.hostText(currentHost))
                     .font(Theme.mono(13, bold: true))
                     .foregroundStyle(Theme.cream)
                     .textSelection(.enabled)
@@ -394,9 +394,11 @@ struct SignInSessionView: View {
                         ? "checkmark.circle.fill"
                         : "globe")
                         .foregroundStyle(isOnProviderPage ? .green : .secondary)
+                    // Explicit keys: a ternary of two literals would otherwise be
+                    // free to resolve to the verbatim `String` initializer.
                     Text(isOnProviderPage
-                        ? "Provider page detected. Verify when sign-in is complete."
-                        : "Finish sign-in, then return to the provider page.")
+                        ? LocalizedStringKey("Provider page detected. Verify when sign-in is complete.")
+                        : LocalizedStringKey("Finish sign-in, then return to the provider page."))
                         .font(Theme.mono(11.5))
                         .foregroundStyle(Theme.creamDim)
                 }
@@ -474,11 +476,9 @@ struct SignInSessionView: View {
                 }
             } catch SessionCookiePasteError.nothingToApply,
                     SessionCookiePasteError.missingSessionToken {
-                sessionCookieStatus = .failed(
-                    "That doesn't look like a session cookie — copy the value of \(ChatGPTSessionCookiePaste.sessionTokenName)."
-                )
+                sessionCookieStatus = .failed(SignInCopy.notASessionCookie())
             } catch {
-                sessionCookieStatus = .failed("Could not apply the cookie. Try copying it again.")
+                sessionCookieStatus = .failed(SignInCopy.cookieApplyFailed())
             }
         }
     }
@@ -492,7 +492,7 @@ struct SignInSessionView: View {
             }
         )
         guard didOpen else {
-            magicLinkError = "Paste the secure claude.ai magic link from your email."
+            magicLinkError = SignInCopy.invalidMagicLink()
             return
         }
 
@@ -534,5 +534,29 @@ struct SignInSessionView: View {
         } else {
             dismiss()
         }
+    }
+}
+
+/// Sign-in window text built in code rather than drawn from a view literal.
+/// Only Ration's own chrome: the web view's content is the provider's.
+enum SignInCopy {
+    /// The address bar: the page's host, never translated, or a loading
+    /// placeholder before the page has one.
+    static func hostText(_ host: String?, locale: Locale = .current) -> String {
+        if let host { return host }
+        return LocalizedStringResource.signInLoading.string(in: locale)
+    }
+
+    static func notASessionCookie(locale: Locale = .current) -> String {
+        LocalizedStringResource.signInCookieNotASessionCookie(ChatGPTSessionCookiePaste.sessionTokenName)
+            .string(in: locale)
+    }
+
+    static func cookieApplyFailed(locale: Locale = .current) -> String {
+        LocalizedStringResource.signInCookieApplyFailed.string(in: locale)
+    }
+
+    static func invalidMagicLink(locale: Locale = .current) -> String {
+        LocalizedStringResource.signInMagicLinkInvalid.string(in: locale)
     }
 }

@@ -74,6 +74,12 @@ struct FocusView: View {
         let limits: String = FocusModel.limitsLine(
             resetsAt: hero.resetsAt,
             limits: hero.otherLimits,
+            now: now,
+            compact: true
+        )
+        let fullLimits: String = FocusModel.limitsLine(
+            resetsAt: hero.resetsAt,
+            limits: hero.otherLimits,
             now: now
         )
         return VStack(alignment: .leading, spacing: 0) {
@@ -126,6 +132,11 @@ struct FocusView: View {
                     .foregroundStyle(Theme.creamDim)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    // A tooltip only when the drawn line is the shortened
+                    // one (French, Ukrainian); none in English. VoiceOver
+                    // never hears it: the hero is one element
+                    // (`children: .ignore`) whose label has every limit.
+                    .modifier(FullTextTooltip(full: limits == fullLimits ? nil : fullLimits))
             }
 
             GeometryReader { proxy in
@@ -179,8 +190,8 @@ struct FocusView: View {
 
     /// An in-use line's prefix: the provider only ("ChatGPT: "); the plan is
     /// the tag after the name.
-    static func linePrefix(_ account: AccountRecord) -> String {
-        "\(account.provider.displayName): "
+    static func linePrefix(_ account: AccountRecord, locale: Locale = .current) -> String {
+        LocalizedStringResource.focusLinePrefix(account.provider.displayName).string(in: locale)
     }
 
     /// The switch line's action: show the advised TARGET as the hero — the
@@ -189,8 +200,27 @@ struct FocusView: View {
         onShowHero(advice.toAccountID)
     }
 
-    static func switchLineAccessibilityLabel(_ advice: SwitchAdvice) -> String {
-        "Show \(advice.toLabel)"
+    static func switchLineAccessibilityLabel(_ advice: SwitchAdvice, locale: Locale = .current) -> String {
+        showLabel(advice.toLabel, locale: locale)
+    }
+
+    /// "Show Client": a row that shows its account as the hero.
+    static func showLabel(_ name: String, locale: Locale = .current) -> String {
+        LocalizedStringResource.focusShow(name).string(in: locale)
+    }
+
+    /// The switch line's lead: "Next Claude: " (the target's label follows).
+    static func switchLineLead(_ provider: Provider, locale: Locale = .current) -> String {
+        LocalizedStringResource.focusSwitchLineLead(provider.displayName).string(in: locale)
+    }
+
+    /// The switch line's right side: "14% left →".
+    static func switchLineLeft(_ percent: Int, locale: Locale = .current) -> String {
+        LocalizedStringResource.focusSwitchLineLeft(percent).string(in: locale)
+    }
+
+    static func pausedText(locale: Locale = .current) -> String {
+        LocalizedStringResource.focusPaused.string(in: locale)
     }
 
     /// "Claude", or "Claude Max 20x" once the plan is known.
@@ -199,35 +229,77 @@ struct FocusView: View {
         return "\(account.provider.displayName) \(plan.displayName)"
     }
 
-    static func tagText(_ tag: FocusModel.Hero.Tag) -> String? {
+    static func tagText(_ tag: FocusModel.Hero.Tag, locale: Locale = .current) -> String? {
         switch tag {
-        case .inUse: "IN USE"
-        case .lastUsed: "LAST USED"
+        case .inUse: InUseMarkerContent.pillText(locale: locale)
+        case .lastUsed: LocalizedStringResource.focusTagLastUsed.string(in: locale)
         case .none: nil
         }
     }
 
-    static func heroAccessibilityLabel(_ hero: FocusModel.Hero, now: Date) -> String {
+    static func heroAccessibilityLabel(_ hero: FocusModel.Hero, now: Date, locale: Locale = .current) -> String {
         var parts: [String] = [hero.account.label]
         switch hero.tag {
-        case .inUse: parts.append("in use")
-        case .lastUsed: parts.append("last used")
+        case .inUse: parts.append(LocalizedStringResource.focusSpokenInUse.string(in: locale))
+        case .lastUsed: parts.append(LocalizedStringResource.focusSpokenLastUsed.string(in: locale))
         case .none: break
         }
         parts.append(Self.providerAndPlan(hero.account))
-        let percent: String = FocusModel.percentText(hero.headroom)
-        parts.append("\(percent) \(FocusModel.caption(hero.bindingKind, label: hero.bindingLabel))")
+        let percent: String = FocusModel.percentText(hero.headroom, locale: locale)
+        let caption: String = FocusModel.caption(hero.bindingKind, label: hero.bindingLabel, locale: locale)
+        parts.append("\(percent) \(caption)")
         if let resetsAt = hero.resetsAt {
-            parts.append("resets \(UsageFormatters.relativeReset(resetsAt, relativeTo: now))")
+            parts.append(resetsSpoken(resetsAt, now: now, locale: locale))
         }
         for limit in hero.otherLimits {
-            let percent = Int((limit.headroom * 100).rounded())
-            parts.append("\(percent) percent of the \(limit.kind.spokenName(label: limit.label)) limit left")
+            parts.append(limitLeftSpoken(headroom: limit.headroom, kind: limit.kind, label: limit.label, locale: locale))
         }
         if hero.isPinned {
-            parts.append("chosen by you")
+            parts.append(LocalizedStringResource.focusSpokenChosenByYou.string(in: locale))
         }
         return parts.joined(separator: ", ")
+    }
+
+    /// "40 percent of the weekly limit left".
+    static func limitLeftSpoken(
+        headroom: Double,
+        kind: UsageWindowKind,
+        label: String?,
+        locale: Locale = .current
+    ) -> String {
+        let percent = Int((headroom * 100).rounded())
+        let name: String = kind.spokenName(label: label, locale: locale)
+        return LocalizedStringResource.focusSpokenLimitLeft(percent: percent, name).string(in: locale)
+    }
+
+    /// "resets in 3 hours".
+    static func resetsSpoken(_ resetsAt: Date, now: Date, locale: Locale = .current) -> String {
+        let relative: String = UsageFormatters.relativeReset(resetsAt, relativeTo: now, locale: locale)
+        return LocalizedStringResource.focusSpokenResets(relative).string(in: locale)
+    }
+
+    /// An in-use line's VoiceOver value: "Claude Max 20x, in use, 25 percent
+    /// of the weekly limit left".
+    static func inUseLineSpoken(_ line: FocusModel.Line, locale: Locale = .current) -> String {
+        let value: String = spokenValue(line.value, snapshot: line.presentation.snapshot, locale: locale)
+        return LocalizedStringResource.focusSpokenInUseLine(providerAndPlan(line.account), value).string(in: locale)
+    }
+
+    /// A warning line's VoiceOver value: "nearly spent, 1 percent of the
+    /// weekly limit left, resets in 3 hours".
+    static func warningSpoken(_ warning: FocusModel.Warning, now: Date, locale: Locale = .current) -> String {
+        let left: String = limitLeftSpoken(headroom: warning.headroom, kind: warning.kind, label: warning.label, locale: locale)
+        var spoken: String = LocalizedStringResource.focusSpokenNearlySpent(left).string(in: locale)
+        if let resetsAt = warning.resetsAt {
+            spoken += ", " + resetsSpoken(resetsAt, now: now, locale: locale)
+        }
+        return spoken
+    }
+
+    /// An entry's VoiceOver value: "Claude, paused".
+    static func entrySpoken(_ entry: FocusModel.Entry, locale: Locale = .current) -> String {
+        let value: String = spokenValue(entry.value, snapshot: entry.presentation.snapshot, locale: locale)
+        return "\(entry.account.provider.displayName), \(value)"
     }
 
     // MARK: Lines
@@ -251,14 +323,15 @@ struct FocusView: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Show \(name)")
+            .accessibilityLabel(Self.showLabel(name))
             .accessibilityValue(spoken)
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier(identifier)
         } else {
+            let label: String = "\(name), \(spoken)"
             content()
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(name), \(spoken)")
+                .accessibilityLabel(label)
                 .accessibilityIdentifier(identifier)
         }
     }
@@ -269,8 +342,7 @@ struct FocusView: View {
                 id: line.presentation.id,
                 name: line.account.label,
                 canBeHero: line.canBeHero,
-                spoken: "\(Self.providerAndPlan(line.account)), in use, "
-                    + Self.spokenValue(line.value, snapshot: line.presentation.snapshot),
+                spoken: Self.inUseLineSpoken(line),
                 identifier: "focusLine.\(line.presentation.id)"
             ) {
                 HStack(spacing: 10) {
@@ -343,12 +415,7 @@ struct FocusView: View {
             windowLabel: warning.label
         )
         let reset: String? = FocusModel.resetText(warning.resetsAt, now: now)
-        let percent = Int((warning.headroom * 100).rounded())
-        var spoken: String = "nearly spent, \(percent) percent of the "
-            + "\(warning.kind.spokenName(label: warning.label)) limit left"
-        if let resetsAt = warning.resetsAt {
-            spoken += ", resets \(UsageFormatters.relativeReset(resetsAt, relativeTo: now))"
-        }
+        let spoken: String = Self.warningSpoken(warning, now: now)
         return showButton(
             id: warning.presentation.id,
             name: warning.account.label,
@@ -382,7 +449,7 @@ struct FocusView: View {
             switchLineContent(advice).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Show \(advice.toLabel)")
+        .help(Self.showLabel(advice.toLabel))
         .padding(.horizontal, Self.inset)
         .padding(.vertical, 10)
         .accessibilityElement(children: .ignore)
@@ -395,7 +462,7 @@ struct FocusView: View {
     private func switchLineContent(_ advice: SwitchAdvice) -> some View {
         HStack(spacing: 10) {
             HStack(spacing: 0) {
-                Text("Next \(advice.provider.displayName): ")
+                Text(Self.switchLineLead(advice.provider))
                     .font(Theme.display(14))
                     .foregroundStyle(Theme.creamDim)
                     .fixedSize()
@@ -406,7 +473,7 @@ struct FocusView: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 8)
-            Text("\(SwitchAdviceCopy.percent(advice))% left →")
+            Text(Self.switchLineLeft(SwitchAdviceCopy.percent(advice)))
                 .font(Theme.mono(11.5))
                 .foregroundStyle(Theme.active)
                 .fixedSize()
@@ -422,8 +489,7 @@ struct FocusView: View {
                 id: entry.presentation.id,
                 name: entry.account.label,
                 canBeHero: entry.canBeHero,
-                spoken: "\(entry.account.provider.displayName), "
-                    + Self.spokenValue(entry.value, snapshot: entry.presentation.snapshot),
+                spoken: Self.entrySpoken(entry),
                 identifier: "focusEntry.\(entry.presentation.id)"
             ) {
                 HStack(spacing: 6) {
@@ -468,11 +534,11 @@ struct FocusView: View {
                 .monospacedDigit()
                 .foregroundStyle(Theme.cream)
         case .paused:
-            Text("paused")
+            Text(Self.pausedText())
                 .font(Theme.display(12.5))
                 .foregroundStyle(Theme.creamFaint)
         case .noData:
-            Text("—")
+            Text(verbatim: "—")
                 .font(Theme.display(12.5))
                 .foregroundStyle(Theme.creamFaint)
         case .state:
@@ -481,29 +547,34 @@ struct FocusView: View {
     }
 
     /// `snapshot` supplies the binding window's own name (Fable's label).
-    static func spokenValue(_ value: FocusModel.Value, snapshot: UsageSnapshot? = nil) -> String {
+    static func spokenValue(
+        _ value: FocusModel.Value,
+        snapshot: UsageSnapshot? = nil,
+        locale: Locale = .current
+    ) -> String {
+        let resource: LocalizedStringResource
         switch value {
         case let .headroom(headroom, kind):
-            let percent: Int = Int((headroom * 100).rounded())
             let label: String? = snapshot?.window(for: kind)?.label
-            return "\(percent) percent of the \(kind.spokenName(label: label)) limit left"
+            return limitLeftSpoken(headroom: headroom, kind: kind, label: label, locale: locale)
         case let .spent(cents):
-            return "\(FocusModel.dollarsText(cents: cents)) spent"
+            resource = .dropSpokenSpent(FocusModel.dollarsText(cents: cents, locale: locale))
         case .paused:
-            return "paused"
+            resource = .focusPaused
         case .noData:
-            return "no current data"
+            resource = .focusSpokenNoData
         case let .state(state):
             switch state {
-            case .stale: return "stale"
-            case .reauthenticationRequired: return "sign-in needed"
-            case .rateLimited: return "rate limited"
-            case .integrationChanged: return "needs update"
-            case .unavailable: return "unavailable"
-            case .loading: return "refreshing"
-            case .current: return "current"
+            case .stale: resource = .accountStateStale
+            case .reauthenticationRequired: resource = .accountStateSignInNeeded
+            case .rateLimited: resource = .accountStateRateLimited
+            case .integrationChanged: resource = .accountStateNeedsUpdate
+            case .unavailable: resource = .accountStateUnavailable
+            case .loading: resource = .accountStateRefreshing
+            case .current: resource = .accountStateCurrent
             }
         }
+        return resource.string(in: locale)
     }
 
     // MARK: Pieces
@@ -593,6 +664,20 @@ struct FocusFlowLayout: Layout {
                 at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
                 proposal: ProposedViewSize(width: width, height: sizes[index].height)
             )
+        }
+    }
+}
+
+/// `.help(full)` when there is a fuller form to show, nothing otherwise — so
+/// no empty tooltip is attached where the drawn text is already complete.
+struct FullTextTooltip: ViewModifier {
+    let full: String?
+
+    func body(content: Content) -> some View {
+        if let full {
+            content.help(full)
+        } else {
+            content
         }
     }
 }

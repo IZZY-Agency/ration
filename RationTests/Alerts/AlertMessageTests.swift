@@ -248,19 +248,18 @@ final class AlertMessageTests: XCTestCase {
         XCTAssertEqual(AlertMessage.dollars(1_00, locale: us), "$1")
     }
 
-    func testDollarsFollowsTheReadersLocaleButAlwaysBillsInUSD() {
-        // Cursor bills in dollars regardless of where the reader is, so the
-        // currency is pinned to USD while symbol placement and the decimal
-        // separator follow the locale. This is why copy assertions elsewhere
-        // must not pattern-match a bare "$50".
-        // Note the NON-BREAKING space (U+00A0) before the symbol — a plain
-        // " $US" literal does not match. Concrete proof of why copy assertions
-        // must not pattern-match formatted currency.
+    func testDollarsFollowTheAppLanguageNotTheRegion() {
+        // Cursor bills in dollars, and the amount is written the app
+        // language's way (`currency.usd`): the region never changes it, so an
+        // English app in France still reads "$50". French puts the symbol
+        // after a NON-BREAKING space (U+00A0) — a plain " $" literal does not
+        // match, which is why copy assertions must not pattern-match
+        // formatted currency.
         XCTAssertEqual(
             AlertMessage.dollars(5_250, locale: Locale(identifier: "fr_FR")),
-            "52,50\u{00A0}$US"
+            "52,50\u{00A0}$"
         )
-        XCTAssertEqual(AlertMessage.dollars(5_000, locale: Locale(identifier: "en_FR")), "US$50")
+        XCTAssertEqual(AlertMessage.dollars(5_000, locale: Locale(identifier: "en_FR")), "$50")
     }
 
     // MARK: - id(for:accountID:)

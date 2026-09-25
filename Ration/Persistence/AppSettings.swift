@@ -10,11 +10,15 @@ enum PopoverLayout: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .standard: "Standard"
-        case .focus: "Focus"
+    /// Display name only; the persisted value is `rawValue`.
+    var title: String { title(locale: .current) }
+
+    func title(locale: Locale) -> String {
+        let resource: LocalizedStringResource = switch self {
+        case .standard: .popoverLayoutStandard
+        case .focus: .popoverLayoutFocus
         }
+        return resource.string(in: locale)
     }
 }
 

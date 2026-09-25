@@ -33,13 +33,13 @@ struct AboutView: View {
             HStack(spacing: 8) {
                 ForEach(Array(AppLinks.all.enumerated()), id: \.element.url) { index, entry in
                     if index > 0 {
-                        Text("·")
+                        Text(verbatim: "·")
                             .font(Theme.mono(12))
                             .foregroundStyle(Theme.creamFaint)
                             .accessibilityHidden(true)
                     }
                     Link(destination: entry.url) {
-                        Text(entry.title)
+                        Text(entry.displayTitle())
                             .font(Theme.mono(12))
                             .foregroundStyle(Theme.gold)
                             .underline()

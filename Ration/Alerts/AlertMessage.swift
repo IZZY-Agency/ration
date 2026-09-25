@@ -16,58 +16,50 @@ enum AlertMessage {
     /// body of a limit crossing (`.threshold`, Warn or Critical) and is
     /// ignored for every other event; privacy mode gets the label- and
     /// number-free line.
+    ///
+    /// The copy is resolved in `locale` — the running language by default.
+    /// `AppModel` calls this when it posts the notification, so the text is
+    /// always in the language the app is running in at delivery.
     static func text(
         for event: AlertEvent,
         accountLabel: String,
         redacted: Bool = false,
-        advice: SwitchAdvice? = nil
+        advice: SwitchAdvice? = nil,
+        locale: Locale = .current
     ) -> (title: String, body: String) {
         let base: (title: String, body: String) = redacted
-            ? redactedText(for: event)
-            : plainText(for: event, accountLabel: accountLabel)
+            ? redactedText(for: event, locale: locale)
+            : plainText(for: event, accountLabel: accountLabel, locale: locale)
         guard case .threshold = event, let advice else { return base }
-        let line: String = SwitchAdviceCopy.notificationLine(advice, redacted: redacted)
+        let line: String = SwitchAdviceCopy.notificationLine(advice, redacted: redacted, locale: locale)
         return (base.title, base.body + "\n" + line)
     }
 
     private static func plainText(
         for event: AlertEvent,
-        accountLabel: String
+        accountLabel: String,
+        locale: Locale
     ) -> (title: String, body: String) {
+        let copy: (title: LocalizedStringResource, body: LocalizedStringResource)
         switch event {
         case .threshold(let kind, _, let percent, let label):
-            return (
-                "\(accountLabel): \(shortLabel(for: kind, apiLabel: label)) limit at \(percent)%",
-                "You've used \(percent)% of the \(longLabel(for: kind, apiLabel: label)) limit for \(accountLabel)."
-            )
+            copy = thresholdCopy(kind: kind, modelLabel: label ?? "Fable", percent: percent, account: accountLabel)
         case .reset(let kind, let label):
-            return (
-                "\(accountLabel): \(shortLabel(for: kind, apiLabel: label)) limit reset",
-                "Fresh \(longLabel(for: kind, apiLabel: label)) capacity is available for \(accountLabel)."
-            )
+            copy = resetCopy(kind: kind, modelLabel: label ?? "Fable", account: accountLabel)
         case .reauthRequired:
-            return (
-                "\(accountLabel): sign in again",
-                "Ration can't read \(accountLabel)'s limits until you sign in again."
-            )
+            copy = (.alertReauthTitle(accountLabel), .alertReauthBody(accountLabel))
         case .rateLimited:
-            return (
-                "\(accountLabel): rate-limited",
-                "The provider is rate-limiting usage checks for \(accountLabel)."
-            )
+            copy = (.alertRateLimitedTitle(accountLabel), .alertRateLimitedBody(accountLabel))
         case .spendThreshold(_, let thresholdCents, let spentCents):
-            let spent = AlertMessage.dollars(spentCents)
-            let limit = AlertMessage.dollars(thresholdCents)
+            let spent = AlertMessage.dollars(spentCents, locale: locale)
+            let limit = AlertMessage.dollars(thresholdCents, locale: locale)
             // `AlertPolicy` fires this on `>=`, so landing exactly ON the
             // threshold is a real case — and "past $50" would be wrong for it.
-            let verb = spentCents > thresholdCents ? "past" : "reached"
-            return (
-                "\(accountLabel): Cursor spend \(verb) \(limit)",
-                "\(accountLabel) has spent \(spent) this billing cycle, \(verb) your \(limit) alert."
-            )
+            copy = spentCents > thresholdCents
+                ? (.alertSpendTitlePast(accountLabel, limit), .alertSpendBodyPast(accountLabel, spent, limit))
+                : (.alertSpendTitleReached(accountLabel, limit), .alertSpendBodyReached(accountLabel, spent, limit))
         case .resetCreditAvailable(let credit, let expiringSoon):
-            let what = credit.count > 1 ? "\(credit.count) resets available" : "reset available"
-            let expiry = Self.expiryText(credit.expiresAt)
+            let expiry = Self.expiryText(credit.expiresAt, locale: locale)
             // The real rule is on `count`, not on where the count came
             // from: whenever `count > 1` the body says how many, generically
             // — dropping any title. This covers a COLLAPSED multi-credit
@@ -79,47 +71,91 @@ enum AlertMessage {
             // contradict the title line just above it, which already says
             // "N resets available". Only an untitled OR titled credit with
             // `count == 1` uses the singular, title-aware wording.
-            let body = credit.count > 1
-                ? "\(credit.count) usage-limit resets are available for \(accountLabel) until \(expiry)."
-                : "\(credit.title ?? "A usage-limit reset") is available for \(accountLabel) until \(expiry)."
-            return (
-                expiringSoon ? "\(accountLabel): \(what) — expires soon" : "\(accountLabel): \(what)",
-                body
-            )
+            if credit.count > 1 {
+                copy = (
+                    expiringSoon
+                        ? .alertResetCreditAvailableTitleMultipleExpiringSoon(accountLabel, count: credit.count)
+                        : .alertResetCreditAvailableTitleMultiple(accountLabel, count: credit.count),
+                    .alertResetCreditAvailableBodyMultiple(count: credit.count, accountLabel, expiry)
+                )
+            } else {
+                let body: LocalizedStringResource
+                if let title = credit.title {
+                    body = .alertResetCreditAvailableBodyTitled(title, accountLabel, expiry)
+                } else {
+                    body = .alertResetCreditAvailableBodyUntitled(accountLabel, expiry)
+                }
+                copy = (
+                    expiringSoon
+                        ? .alertResetCreditAvailableTitleSingleExpiringSoon(accountLabel)
+                        : .alertResetCreditAvailableTitleSingle(accountLabel),
+                    body
+                )
+            }
         case .resetCreditExpiring(let credit):
-            let expiry = Self.expiryText(credit.expiresAt)
+            let expiry = Self.expiryText(credit.expiresAt, locale: locale)
             // See `.resetCreditAvailable` above: the plural, title-less body
             // applies whenever `count > 1`, titled or not.
-            let body = credit.count > 1
-                ? "\(credit.count) usage-limit resets for \(accountLabel) expire \(expiry). Use them before then or they're lost."
-                : "\(credit.title ?? "A usage-limit reset") for \(accountLabel) expires \(expiry). Use it before then or it's lost."
-            return (
-                "\(accountLabel): reset expires soon",
-                body
-            )
+            let body: LocalizedStringResource
+            if credit.count > 1 {
+                body = .alertResetCreditExpiringBodyMultiple(count: credit.count, accountLabel, expiry)
+            } else if let title = credit.title {
+                body = .alertResetCreditExpiringBodyTitled(title, accountLabel, expiry)
+            } else {
+                body = .alertResetCreditExpiringBodyUntitled(accountLabel, expiry)
+            }
+            copy = (.alertResetCreditExpiringTitle(accountLabel), body)
+        }
+        return (copy.title.string(in: locale), copy.body.string(in: locale))
+    }
+
+    /// A limit crossing, per window. For `.modelWeekly` the window's
+    /// API-provided label (e.g. "Fable") names it; the others have fixed
+    /// wording.
+    private static func thresholdCopy(
+        kind: UsageWindowKind,
+        modelLabel: String,
+        percent: Int,
+        account: String
+    ) -> (title: LocalizedStringResource, body: LocalizedStringResource) {
+        switch kind {
+        case .fiveHour:
+            (.alertThresholdTitleFiveHour(account, percent), .alertThresholdBodyFiveHour(percent, account))
+        case .weekly:
+            (.alertThresholdTitleWeekly(account, percent), .alertThresholdBodyWeekly(percent, account))
+        case .modelWeekly:
+            (.alertThresholdTitleModel(account, modelLabel, percent), .alertThresholdBodyModel(percent, modelLabel, account))
+        }
+    }
+
+    /// A window reset, with the same API-label preference as `thresholdCopy`.
+    private static func resetCopy(
+        kind: UsageWindowKind,
+        modelLabel: String,
+        account: String
+    ) -> (title: LocalizedStringResource, body: LocalizedStringResource) {
+        switch kind {
+        case .fiveHour: (.alertResetTitleFiveHour(account), .alertResetBodyFiveHour(account))
+        case .weekly: (.alertResetTitleWeekly(account), .alertResetBodyWeekly(account))
+        case .modelWeekly: (.alertResetTitleModel(account, modelLabel), .alertResetBodyModel(modelLabel, account))
         }
     }
 
     /// Label-free, percentage-free copy for privacy mode. Carries the event
     /// category (so the notification is still actionable) but nothing that
-    /// identifies the account or its exact usage.
-    private static func redactedText(for event: AlertEvent) -> (title: String, body: String) {
-        switch event {
-        case .threshold:
-            return ("Ration", "An account is nearing a usage limit.")
-        case .reset:
-            return ("Ration", "An account's limit has reset.")
-        case .reauthRequired:
-            return ("Ration", "An account needs you to sign in again.")
-        case .rateLimited:
-            return ("Ration", "An account is being rate-limited.")
-        case .spendThreshold:
-            return ("Ration", "An account is nearing a spend limit.")
-        case .resetCreditAvailable:
-            return ("Ration", "An account has a usage-limit reset available.")
-        case .resetCreditExpiring:
-            return ("Ration", "An account's usage-limit reset expires soon.")
+    /// identifies the account or its exact usage. The title is the app's
+    /// name, which is never translated.
+    private static func redactedText(for event: AlertEvent, locale: Locale) -> (title: String, body: String) {
+        let body: LocalizedStringResource = switch event {
+        case .threshold: .alertRedactedThreshold
+        case .reset: .alertRedactedReset
+        case .reauthRequired: .alertRedactedReauth
+        case .rateLimited: .alertRedactedRateLimited
+        case .spendThreshold: .alertRedactedSpend
+        case .resetCreditAvailable: .alertRedactedResetCreditAvailable
+        case .resetCreditExpiring: .alertRedactedResetCreditExpiring
         }
+        return ("Ration", body.string(in: locale))
     }
 
     static func id(for event: AlertEvent, accountID: UUID) -> String {
@@ -142,43 +178,17 @@ enum AlertMessage {
         }
     }
 
-    /// Short wording used in notification titles, e.g. "5h". For
-    /// `.modelWeekly`, prefers the window's API-provided label (e.g. "Fable")
-    /// over the generic static wording; falls back to "Fable" if the API
-    /// label is absent. Other kinds ignore `apiLabel` (it is always nil for
-    /// them) and keep their static wording.
-    private static func shortLabel(for kind: UsageWindowKind, apiLabel: String?) -> String {
-        if kind == .modelWeekly { return apiLabel ?? "Fable" }
-        return kind.shortLabel
-    }
-
-    /// Longer wording used in notification bodies, e.g. "5-hour". Same
-    /// API-label preference as `shortLabel(for:apiLabel:)`.
-    private static func longLabel(for kind: UsageWindowKind, apiLabel: String?) -> String {
-        if kind == .modelWeekly { return apiLabel ?? "Fable" }
-        return kind.longLabel
-    }
-
-    /// Formats cents as a USD amount in `locale`'s conventions. Drops fraction
-    /// digits when the amount is a whole number of dollars, so round configured
-    /// thresholds read as "$50" rather than "$50.00" in copy.
-    ///
-    /// The rendering is LOCALIZED, not fixed: the same 5_000 is "$50" under
-    /// `en_US`, "US$50" under `en_FR`, and "50 $US" under `fr_FR` — the
-    /// currency is always USD (Cursor bills in dollars), but the symbol form,
-    /// placement, and decimal separator follow the reader's locale. Callers
-    /// must not pattern-match the result.
+    /// Formats cents as a USD amount (Cursor bills in dollars) in the app
+    /// language: `currency.usd` ("$50", "50 $" in French and Ukrainian), with
+    /// that language's decimal separator and grouping, never the region's —
+    /// en_FR still reads "$50". Drops fraction digits when the amount is a
+    /// whole number of dollars, so round configured thresholds read as "$50"
+    /// rather than "$50.00" in copy. See `UsageFormatters.usd`.
     ///
     /// `locale` is injectable so the formatting can be pinned in tests; it
-    /// defaults to the reader's locale for all production copy.
+    /// defaults to the running language for all production copy.
     static func dollars(_ cents: Int, locale: Locale = .autoupdatingCurrent) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        formatter.locale = locale
-        formatter.maximumFractionDigits = cents % 100 == 0 ? 0 : 2
-        return formatter.string(from: NSNumber(value: Double(cents) / 100))
-            ?? "$\(Double(cents) / 100)"
+        UsageFormatters.usd(cents: cents, alertStyle: true, locale: locale)
     }
 
     /// "Oct 22, 18:00" in the reader's locale. `locale`/`timeZone` injectable for tests.
@@ -187,26 +197,6 @@ enum AlertMessage {
         style.locale = locale
         style.timeZone = timeZone
         return date.formatted(style)
-    }
-}
-
-private extension UsageWindowKind {
-    /// Short wording used in notification titles, e.g. "5h".
-    var shortLabel: String {
-        switch self {
-        case .fiveHour: "5h"
-        case .weekly: "weekly"
-        case .modelWeekly: "model"
-        }
-    }
-
-    /// Longer wording used in notification bodies, e.g. "5-hour".
-    var longLabel: String {
-        switch self {
-        case .fiveHour: "5-hour"
-        case .weekly: "weekly"
-        case .modelWeekly: "model weekly"
-        }
     }
 }
 

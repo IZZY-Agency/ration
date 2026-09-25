@@ -165,27 +165,46 @@ enum StatusItemFactory {
         }
     }
 
-    static func toolTip(for gauges: [MenuBarGauge], displaysRemaining: Bool) -> String {
+    static func toolTip(
+        for gauges: [MenuBarGauge],
+        displaysRemaining: Bool,
+        locale: Locale = .current
+    ) -> String {
         guard !gauges.isEmpty else { return "Ration" }
-        let mode = displaysRemaining ? "left" : "used"
-        let parts = gauges.map { gauge in
-            let percent = Int((gauge.fraction * 100).rounded())
-            // "Claude AI …", but never "ChatGPT ChatGPT …" when the label
-            // already is the provider name (case-insensitively — a label
-            // typed "chatgpt" must not repeat either).
-            let name = gauge.label.caseInsensitiveCompare(gauge.provider.displayName) == .orderedSame
-                ? gauge.label
-                : "\(gauge.provider.displayName) \(gauge.label)"
-            let value = "\(name) \(windowLabel(gauge.windowKind)) \(percent)% \(mode)"
-            return gauge.inUse ? value + " (in use)" : value
+        var parts: [String] = []
+        for gauge in gauges {
+            parts.append(toolTipEntry(gauge, displaysRemaining: displaysRemaining, locale: locale))
         }
         return "Ration — " + parts.joined(separator: " · ")
     }
 
-    static func windowLabel(_ kind: UsageWindowKind) -> String {
+    /// One account's part of the tooltip: "Claude AI 5h 14% left".
+    private static func toolTipEntry(
+        _ gauge: MenuBarGauge,
+        displaysRemaining: Bool,
+        locale: Locale
+    ) -> String {
+        let percent = Int((gauge.fraction * 100).rounded())
+        // "Claude AI …", but never "ChatGPT ChatGPT …" when the label
+        // already is the provider name (case-insensitively — a label
+        // typed "chatgpt" must not repeat either).
+        let name: String = gauge.label.caseInsensitiveCompare(gauge.provider.displayName) == .orderedSame
+            ? gauge.label
+            : "\(gauge.provider.displayName) \(gauge.label)"
+        let window: String = windowLabel(gauge.windowKind, locale: locale)
+        let resource: LocalizedStringResource = displaysRemaining
+            ? .statusItemTooltipLeft(name, window, percent)
+            : .statusItemTooltipUsed(name, window, percent)
+        let value: String = resource.string(in: locale)
+        guard gauge.inUse else { return value }
+        return LocalizedStringResource.statusItemTooltipInUse(value).string(in: locale)
+    }
+
+    static func windowLabel(_ kind: UsageWindowKind, locale: Locale = .current) -> String {
         switch kind {
-        case .fiveHour: "5h"
-        case .weekly: "weekly"
+        case .fiveHour: LocalizedStringResource.focusShortNameFiveHour.string(in: locale)
+        case .weekly: LocalizedStringResource.statusItemWindowWeekly.string(in: locale)
+        // A model name — never translated.
         case .modelWeekly: "Fable"
         }
     }

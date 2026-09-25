@@ -58,13 +58,22 @@ enum BillingCycleEligibility {
 
     /// Human-readable list of the providers this window covers, so copy never
     /// hardcodes a provider list that goes stale the next time one is added.
-    static var supportedProviderNames: String {
+    static func supportedProviderNames(locale: Locale = .current) -> String {
         let names = Provider.allCases.filter(supports).map(\.displayName)
+        return providerList(names, locale: locale)
+    }
+
+    /// Provider names joined with "or" ("Claude or ChatGPT", "A, B, or C").
+    /// Catalog entries rather than `ListFormatStyle`, so English keeps its
+    /// 1.3.0 form in every region.
+    static func providerList(_ names: [String], locale: Locale = .current) -> String {
         switch names.count {
         case 0: return ""
         case 1: return names[0]
-        case 2: return "\(names[0]) or \(names[1])"
-        default: return names.dropLast().joined(separator: ", ") + ", or " + names[names.count - 1]
+        case 2: return LocalizedStringResource.listOrPair(names[0], names[1]).string(in: locale)
+        default:
+            let head: String = names.dropLast().joined(separator: ", ")
+            return LocalizedStringResource.listOrSeries(head, names[names.count - 1]).string(in: locale)
         }
     }
 }

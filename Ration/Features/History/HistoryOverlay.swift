@@ -63,18 +63,43 @@ enum HistoryOverlay {
     /// Names what the chart cannot draw, or nil when every account is included.
     /// Silence would read as "these accounts have no usage" rather than "this
     /// window does not exist for them".
+    /// The window tag (5h, wk, Fable) is never translated.
     static func exclusionNote(
         presentations: [AccountPresentation],
-        kind: UsageWindowKind
+        kind: UsageWindowKind,
+        locale: Locale = .current
     ) -> String? {
         let excluded = presentations.filter { !kinds(of: $0).contains(kind) }
         guard !excluded.isEmpty else { return nil }
         let window = AccountLimitLayout.title(for: kind, snapshot: nil)
         guard excluded.count <= 3 else {
-            return "Not shown: \(excluded.count) accounts with no \(window) window"
+            return LocalizedStringResource.historyExclusionCount(accounts: excluded.count, window).string(in: locale)
         }
-        let labels = excluded.map(\.account.historyLabel).joined(separator: ", ")
-        return "Not shown: \(labels) — no \(window) window"
+        let labels = excluded.map { $0.account.historyLabel(locale: locale) }.joined(separator: ", ")
+        return LocalizedStringResource.historyExclusionListed(labels, window).string(in: locale)
+    }
+
+    /// What VoiceOver says for `exclusionNote`: the same accounts, with the
+    /// window's spoken name instead of its drawn tag.
+    static func spokenExclusionNote(
+        presentations: [AccountPresentation],
+        kind: UsageWindowKind,
+        locale: Locale = .current
+    ) -> String? {
+        let excluded = presentations.filter { !kinds(of: $0).contains(kind) }
+        guard !excluded.isEmpty else { return nil }
+        let window = spokenWindowName(kind, snapshot: nil, locale: locale)
+        guard excluded.count <= 3 else {
+            return LocalizedStringResource.historyExclusionSpokenCount(accounts: excluded.count, window).string(in: locale)
+        }
+        let labels = excluded.map { $0.account.historyLabel(locale: locale) }.joined(separator: ", ")
+        return LocalizedStringResource.historyExclusionSpokenListed(labels, window).string(in: locale)
+    }
+
+    /// The window picker's spoken segment name ("5 hour", "fenêtre
+    /// hebdomadaire", "тижневе вікно"); the segment still draws the tag.
+    static func spokenWindowName(_ kind: UsageWindowKind, snapshot: UsageSnapshot?, locale: Locale = .current) -> String {
+        kind.spokenName(label: snapshot?.modelWeekly?.label, locale: locale)
     }
 
     /// Legend labels, disambiguated so two lines never share a name: a shared
@@ -85,15 +110,19 @@ enum HistoryOverlay {
     /// and two series sharing a key are drawn as a single line. An account
     /// literally named "Work · Claude" must therefore not collide with the
     /// qualified form generated for a different account named "Work".
-    static func labels(for presentations: [AccountPresentation]) -> [UUID: String] {
+    ///
+    /// Both passes read the label in the same `locale`, so a translated paused
+    /// suffix ("Work — EN PAUSE") is checked against every other label exactly
+    /// as the English one is: translation cannot make two series share a key.
+    static func labels(for presentations: [AccountPresentation], locale: Locale = .current) -> [UUID: String] {
         var occurrences: [String: Int] = [:]
         for presentation in presentations {
-            occurrences[presentation.account.historyLabel, default: 0] += 1
+            occurrences[presentation.account.historyLabel(locale: locale), default: 0] += 1
         }
         var taken: Set<String> = []
         var labels: [UUID: String] = [:]
         for presentation in presentations {
-            let base = presentation.account.historyLabel
+            let base = presentation.account.historyLabel(locale: locale)
             let preferred = occurrences[base, default: 0] > 1
                 ? "\(base) · \(presentation.account.provider.displayName)"
                 : base
@@ -138,10 +167,11 @@ enum HistoryOverlay {
     static func series(
         presentations: [AccountPresentation],
         kind: UsageWindowKind,
-        loaded: [UUID: [UsageHourlyBucket]]
+        loaded: [UUID: [UsageHourlyBucket]],
+        locale: Locale = .current
     ) -> [HistoryOverlaySeries] {
         let included = included(presentations: presentations, kind: kind)
-        let labels = labels(for: included)
+        let labels = labels(for: included, locale: locale)
         var nextShade: [Provider: Int] = [:]
         var series: [HistoryOverlaySeries] = []
         for presentation in included {
@@ -158,7 +188,7 @@ enum HistoryOverlay {
                 HistoryOverlaySeries(
                     accountID: presentation.id,
                     provider: provider,
-                    label: labels[presentation.id] ?? presentation.account.historyLabel,
+                    label: labels[presentation.id] ?? presentation.account.historyLabel(locale: locale),
                     shadeIndex: shade,
                     points: points
                 )

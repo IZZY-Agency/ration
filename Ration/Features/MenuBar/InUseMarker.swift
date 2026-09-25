@@ -52,11 +52,11 @@ struct InUseMarkerContent: View {
         case let .inUse(age):
             let rel = relative(age, at: date)
             HStack(spacing: 5) {
-                pill(accessibility: "in use, \(rel)")
+                pill(accessibility: Self.inUseSpoken(rel))
                 if style == .full {
                     // The pill already carries the full a11y label; the age is
                     // decorative next to it.
-                    Text("· \(rel)")
+                    Text(verbatim: "· \(rel)")
                         .font(Theme.mono(11))
                         .foregroundStyle(Theme.creamDim)
                         .accessibilityHidden(true)
@@ -64,10 +64,11 @@ struct InUseMarkerContent: View {
             }
         case let .lastUsed(age):
             if style == .full {
-                Text("last used · \(relative(age, at: date))")
+                let rel = relative(age, at: date)
+                Text(Self.lastUsedText(rel))
                     .font(Theme.mono(11))
                     .foregroundStyle(Theme.creamDim)
-                    .accessibilityLabel("last used \(relative(age, at: date))")
+                    .accessibilityLabel(Self.lastUsedSpoken(rel))
             }
         case .none:
             EmptyView()
@@ -79,7 +80,7 @@ struct InUseMarkerContent: View {
         // menu-bar dot and the card frame. Deliberately not a parameter — a
         // per-caller accent is how the surfaces drifted apart (provider gold/
         // teal here vs green in the menu bar) before 0.26.1 unified them.
-        Text("IN USE")
+        Text(Self.pillText())
             .font(Theme.mono(11, bold: true))
             .tracking(0.8)
             // Never "IN U…": if the row is short of room, the label gives way.
@@ -90,6 +91,25 @@ struct InUseMarkerContent: View {
             .padding(.vertical, 1.5)
             .background(Theme.active, in: RoundedRectangle(cornerRadius: 3))
             .accessibilityLabel(accessibility)
+    }
+
+    /// The pill's text: "IN USE" (uppercase in the catalog).
+    static func pillText(locale: Locale = .current) -> String {
+        LocalizedStringResource.inUsePill.string(in: locale)
+    }
+
+    /// VoiceOver for the pill. `relative` is already localized ("5 minutes ago").
+    static func inUseSpoken(_ relative: String, locale: Locale = .current) -> String {
+        LocalizedStringResource.inUseSpokenPill(relative).string(in: locale)
+    }
+
+    /// The muted caption: "last used · 1 hour ago".
+    static func lastUsedText(_ relative: String, locale: Locale = .current) -> String {
+        LocalizedStringResource.inUseLastUsed(relative).string(in: locale)
+    }
+
+    static func lastUsedSpoken(_ relative: String, locale: Locale = .current) -> String {
+        LocalizedStringResource.inUseSpokenLastUsed(relative).string(in: locale)
     }
 
     private func relative(_ age: TimeInterval, at date: Date) -> String {

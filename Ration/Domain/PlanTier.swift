@@ -192,15 +192,19 @@ enum PlanChoice {
         return plan.rawValue
     }
 
-    static func automaticTitle(for account: AccountRecord) -> String {
+    /// The "let Ration decide" option, naming the detected plan (plan names
+    /// are never translated).
+    static func automaticTitle(for account: AccountRecord, locale: Locale = .current) -> String {
         switch account.planSource {
         case .user:
-            return "Detect automatically"
+            return LocalizedStringResource.planAutomatic.string(in: locale)
         case .detected:
-            guard let plan = account.effectivePlan else { return "Detect automatically (not detected)" }
-            return "Detect automatically (\(plan.displayName))"
+            guard let plan = account.effectivePlan else {
+                return LocalizedStringResource.planAutomaticNotDetected.string(in: locale)
+            }
+            return LocalizedStringResource.planAutomaticDetected(plan.displayName).string(in: locale)
         case nil:
-            return "Detect automatically (not detected)"
+            return LocalizedStringResource.planAutomaticNotDetected.string(in: locale)
         }
     }
 

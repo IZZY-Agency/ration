@@ -2,6 +2,7 @@ name: Ration
 
 options:
   minimumXcodeGenVersion: 2.45.0
+  developmentLanguage: en
   deploymentTarget:
     macOS: "26.0"
 
@@ -27,8 +28,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: agency.izzy.ration
         PRODUCT_NAME: Ration
         PRODUCT_MODULE_NAME: Ration
-        MARKETING_VERSION: "1.3.0"
-        CURRENT_PROJECT_VERSION: 84
+        MARKETING_VERSION: "1.4.0"
+        CURRENT_PROJECT_VERSION: 85
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Ration
         INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 IZZY.Agency"
@@ -41,6 +42,12 @@ targets:
         # Required by notarization. Nothing in the app needs an exception
         # (no JIT, dlopen, Apple Events or third-party frameworks).
         ENABLE_HARDENED_RUNTIME: YES
+        # Localization: English source, French and Ukrainian translations in
+        # Ration/Resources/Localizable.xcstrings. Symbols are generated for the
+        # catalog's manually-managed keys (`LocalizedStringResource.commonSystem`).
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        STRING_CATALOG_GENERATE_SYMBOLS: YES
       configs:
         # Release archives sign straight with the Developer ID (see
         # scripts/release.sh). Automatic signing would first demand an Apple
@@ -48,10 +55,6 @@ targets:
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: Developer ID Application
-    scheme:
-      testTargets:
-        - RationTests
-        - RationUITests
 
   RationTests:
     type: bundle.unit-test
@@ -88,6 +91,12 @@ schemes:
         RationTests: [test]
         RationUITests: [test]
     test:
+      # The English regression run, whatever the Mac's own language order:
+      # Xcode's Cmd-U draws English, as `make unit-test` and `make test` do.
+      # French and Ukrainian run through `make l10n-test`. (This is the only
+      # "Ration" scheme: a target-level `scheme:` on Ration would generate a
+      # scheme of the same name and silently replace this one.)
+      language: en
       targets:
         - RationTests
         - RationUITests

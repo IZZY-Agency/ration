@@ -44,7 +44,7 @@ struct LimitRowView: View {
                     }
                     .frame(height: 4)
 
-                    Text(UsageFormatters.usedPercentage(window.usedFraction))
+                    Text(UsageFormatters.compactUsedPercentage(window.usedFraction))
                         .font(Theme.mono(15.5))
                         .monospacedDigit()
                         .foregroundStyle(numberColor)
@@ -57,7 +57,7 @@ struct LimitRowView: View {
                 } else {
                     Rectangle().fill(Theme.line)
                         .frame(height: 4).clipShape(Capsule())
-                    Text("—")
+                    Text(verbatim: "—")
                         .font(Theme.mono(15.5))
                         .foregroundStyle(Theme.creamFaint)
                 }
@@ -109,13 +109,30 @@ struct LimitRowView: View {
     ) -> String {
         showsExact
             ? UsageFormatters.shortReset(resetsAt, locale: locale, timeZone: timeZone)
-            : UsageFormatters.remainingUntilReset(resetsAt, relativeTo: now)
+            : UsageFormatters.remainingUntilReset(resetsAt, relativeTo: now, locale: locale)
     }
 
     private var tooltip: String {
-        guard let window else { return "\(title): unavailable" }
-        guard let resetsAt = window.resetsAt else { return "\(title): no scheduled reset" }
-        return "\(title) · resets \(UsageFormatters.compactReset(resetsAt, relativeTo: now))"
+        Self.tooltip(title: title, window: window, now: now)
+    }
+
+    /// The row's tooltip. `title` is the drawn tag text ("5h", "wk",
+    /// "Fable"), which is never translated.
+    static func tooltip(
+        title: String,
+        window: UsageWindow?,
+        now: Date,
+        locale: Locale = .current,
+        timeZone: TimeZone = .current
+    ) -> String {
+        guard let window else {
+            return LocalizedStringResource.limitRowTooltipUnavailable(title).string(in: locale)
+        }
+        guard let resetsAt = window.resetsAt else {
+            return LocalizedStringResource.limitRowTooltipNoReset(title).string(in: locale)
+        }
+        let when: String = UsageFormatters.compactReset(resetsAt, relativeTo: now, locale: locale, timeZone: timeZone)
+        return LocalizedStringResource.limitRowTooltipResets(title, when).string(in: locale)
     }
 
     private var accessibilityDescription: String {
@@ -134,13 +151,18 @@ struct LimitRowView: View {
         timeZone: TimeZone = .current
     ) -> String {
         // For the model window `title` IS the API label ("Fable").
-        let name = kind.map { $0.spokenName(label: title) } ?? title
-        guard let window else { return "\(name), unavailable" }
+        let name = kind.map { $0.spokenName(label: title, locale: locale) } ?? title
+        guard let window else { return LocalizedStringResource.limitRowSpokenUnavailable(name).string(in: locale) }
         let reset = window.resetsAt.map {
             let countdown = UsageFormatters.spokenDuration(until: $0, relativeTo: now, locale: locale)
             let exact = UsageFormatters.exactReset($0, locale: locale, timeZone: timeZone)
-            return countdown == "now" ? "resets now, at \(exact)" : "resets in \(countdown), at \(exact)"
-        } ?? "reset not scheduled"
-        return "\(name), \(UsageFormatters.usedPercentage(window.usedFraction, locale: locale)) used, \(reset)"
+            let due = UsageFormatters.isResetDue($0, relativeTo: now)
+            let clause: LocalizedStringResource = due
+                ? .limitRowSpokenResetsNowAt(exact)
+                : .limitRowSpokenResetsInAt(countdown, exact)
+            return clause.string(in: locale)
+        } ?? LocalizedStringResource.limitRowSpokenNoReset.string(in: locale)
+        let used: String = UsageFormatters.usedPercentage(window.usedFraction, locale: locale)
+        return LocalizedStringResource.limitRowSpokenRow(name, used, reset).string(in: locale)
     }
 }

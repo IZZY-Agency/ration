@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.4.0
+
+- Ration now speaks French and Ukrainian, as well as English. Every window,
+  notification and alert is translated; provider, plan and model names
+  (Claude, ChatGPT, Cursor, Max 20x, Fable) and the 5H / WK tags stay as they
+  are.
+- Ration follows your macOS language by default. To pick one yourself, use
+  Settings → General → Language; Ration applies it after a relaunch, and
+  offers to relaunch right there.
+- In Ukrainian, Ration draws its text in Manrope and JetBrains Mono, which
+  have Cyrillic letters; English and French keep Space Grotesk and Space Mono.
+- In French and Ukrainian, the Cursor spend alert fields take a comma as the
+  decimal separator (12,50); a point still works.
+- In English, Cursor dollar amounts in alerts are now written the same way in
+  every region ($50), and VoiceOver reads the full window names in History.
+- Settings now opens on General.
+- English copy fixes: a reset that is due reads "resets now" (and "expires
+  now", "resumes now") instead of "resets in now"; the History billing-cycle
+  card says "Used 1 day", not "Used 1 days"; and VoiceOver says "Usage
+  trending up" when your remaining allowance is falling, not "down".
+
 ## 1.3.0
 
 - Which account next: when the account you're using reaches your warning

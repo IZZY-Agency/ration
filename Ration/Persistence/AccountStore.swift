@@ -9,17 +9,16 @@ enum AccountStoreError: Error, Equatable {
 }
 
 extension AccountStoreError: LocalizedError {
-    var errorDescription: String? {
-        switch self {
-        case .accountNotFound:
-            "The account no longer exists."
-        case .accountAlreadyExists:
-            "This account is already connected."
-        case .emptyLabel:
-            "Enter a local label for this account."
-        case .operationInProgress:
-            "Another operation is already in progress for this account."
+    var errorDescription: String? { message(locale: .current) }
+
+    func message(locale: Locale) -> String {
+        let resource: LocalizedStringResource = switch self {
+        case .accountNotFound: .accountStoreErrorAccountNotFound
+        case .accountAlreadyExists: .accountStoreErrorAccountAlreadyExists
+        case .emptyLabel: .accountStoreErrorEmptyLabel
+        case .operationInProgress: .accountStoreErrorOperationInProgress
         }
+        return resource.string(in: locale)
     }
 }
 

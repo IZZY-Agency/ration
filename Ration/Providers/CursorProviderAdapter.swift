@@ -119,6 +119,9 @@ struct CursorProviderAdapter: ProviderAdapter {
     /// Map Cursor's raw `membershipType` to a display label. Case-insensitive on
     /// the raw value; an unknown tier falls back to the raw value capitalized
     /// (first letter upper, rest as-is).
+    ///
+    /// Never localize: the result is persisted as `CursorSpend.planLabel` in
+    /// `snapshots.json`, and these are Cursor's plan names.
     nonisolated static func label(for membershipType: String) -> String {
         switch membershipType.lowercased() {
         case "pro":

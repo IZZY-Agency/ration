@@ -10,12 +10,13 @@ extension UsageWindowKind {
     /// The window's name as VoiceOver should say it — the drawn "5H" / "WK"
     /// are read letter by letter. `label` is the API's model name and only
     /// matters for `.modelWeekly` ("Fable" → "Fable weekly").
-    func spokenName(label: String? = nil) -> String {
-        switch self {
-        case .fiveHour: "5 hour"
-        case .weekly: "weekly"
-        case .modelWeekly: "\(label ?? "Fable") weekly"
+    func spokenName(label: String? = nil, locale: Locale = .current) -> String {
+        let resource: LocalizedStringResource = switch self {
+        case .fiveHour: .windowSpokenFiveHour
+        case .weekly: .windowSpokenWeekly
+        case .modelWeekly: .windowSpokenModel(label ?? "Fable")
         }
+        return resource.string(in: locale)
     }
 }
 
@@ -168,21 +169,20 @@ enum ProviderError: Error, Equatable, Sendable {
 }
 
 extension ProviderError: LocalizedError {
-    var errorDescription: String? {
-        switch self {
-        case .authenticationRequired:
-            "Sign in again to refresh this account."
-        case .rateLimited:
-            "The provider is rate limiting usage checks. Try again later."
-        case .server:
-            "The provider could not return subscription limits right now."
-        case .integrationChanged:
-            "The provider integration needs an update."
-        case .offline:
-            "Subscription limits are unavailable while offline."
-        case .transport:
-            "The provider request could not be completed."
+    var errorDescription: String? { message(locale: .current) }
+
+    /// The user-facing message in `locale`'s language. Logs use the case
+    /// (`"\(error)"`), never this text.
+    func message(locale: Locale) -> String {
+        let resource: LocalizedStringResource = switch self {
+        case .authenticationRequired: .providerErrorAuthenticationRequired
+        case .rateLimited: .providerErrorRateLimited
+        case .server: .providerErrorServer
+        case .integrationChanged: .providerErrorIntegrationChanged
+        case .offline: .providerErrorOffline
+        case .transport: .providerErrorTransport
         }
+        return resource.string(in: locale)
     }
 }
 

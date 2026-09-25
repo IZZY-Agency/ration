@@ -24,7 +24,7 @@ struct BillingCycleView: View {
                 ContentUnavailableView {
                     Label("No accounts", systemImage: "person.crop.circle.badge.questionmark")
                 } description: {
-                    Text("Add \(BillingCycleEligibility.supportedProviderNames) to track billing cycles.")
+                    Text("Add \(BillingCycleEligibility.supportedProviderNames()) to track billing cycles.")
                 }
                 .background(Theme.ink)
 
@@ -35,7 +35,7 @@ struct BillingCycleView: View {
                 ContentUnavailableView {
                     Label("Nothing to reconstruct", systemImage: "calendar.badge.checkmark")
                 } description: {
-                    Text("Cursor reports its billing cycle directly — see the usage rows on its account card. This window reconstructs cycle usage for \(BillingCycleEligibility.supportedProviderNames), which don't report it.")
+                    Text("Cursor reports its billing cycle directly — see the usage rows on its account card. This window reconstructs cycle usage for \(BillingCycleEligibility.supportedProviderNames()), which don't report it.")
                 }
                 .background(Theme.ink)
 
@@ -109,7 +109,7 @@ private struct BillingCycleCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             switch card {
             case let .noRenewalDay(_, label, provider):
-                header(label: label, provider: provider, subtitle: "No billing cycle set")
+                header(label: label, provider: provider, subtitle: BillingCycleCopy.noCycleSubtitle())
                 Text("Set a renewal day in Settings to track this subscription's cycle.")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
@@ -118,14 +118,14 @@ private struct BillingCycleCardView: View {
                 }
                 .padding(.top, 2)
             case let .tracked(_, label, provider, cycle, summary, fable):
-                header(label: label, provider: provider, subtitle: cycleSubtitle(cycle))
+                header(label: label, provider: provider, subtitle: BillingCycleCopy.cycleSubtitle(cycle))
                 if summary.isSufficient {
                     sufficientBody(summary, fable: fable)
                 } else {
                     Text("Not enough data yet")
                         .font(Theme.display(17, .semibold))
                         .foregroundStyle(Theme.creamDim)
-                    Text("watched \(summary.observedHours) of \(summary.elapsedHours) hrs · Day \(cycle.dayIndex)/\(cycle.totalDays)")
+                    Text(BillingCycleCopy.watched(summary, cycle: cycle))
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamFaint)
                 }
@@ -154,7 +154,7 @@ private struct BillingCycleCardView: View {
 
     private func sufficientBody(_ s: CycleUtilizationSummary, fable: FableSecondary?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("≥ \(Int((s.capacityUtilization * 100).rounded()))%")
+            Text(BillingCycleCopy.headline(s))
                 .font(Theme.display(28, .bold))
                 .foregroundStyle(Theme.tierColor(usedFraction: min(s.capacityUtilization, 1)))
             Text("observed lower bound")
@@ -162,7 +162,7 @@ private struct BillingCycleCardView: View {
                 .tracking(0.5)
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.creamFaint)
-            Text("\(allowanceLabel(s)) · Used \(s.daysUsed) days · At ≥95% \(s.atCapDays) days · watched \(min(s.observedHours, s.elapsedHours))/\(s.elapsedHours) hrs")
+            Text(BillingCycleCopy.detail(s))
                 .font(Theme.mono(12))
                 .foregroundStyle(Theme.creamDim)
             // Fable is a supporting sub-limit line, never the headline. `fable` is
@@ -171,11 +171,11 @@ private struct BillingCycleCardView: View {
             // render an honest "not enough data" line instead of a fabricated %.
             if let fable {
                 if let fableSummary = fable.summary {
-                    Text("\(fable.label) ≥ \(Int((fableSummary.capacityUtilization * 100).rounded()))% this cycle")
+                    Text(BillingCycleCopy.fableValue(label: fable.label, fableSummary))
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
                 } else {
-                    Text("\(fable.label) · not enough data yet this cycle")
+                    Text(BillingCycleCopy.fableInsufficient(label: fable.label))
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamFaint)
                 }
@@ -183,22 +183,14 @@ private struct BillingCycleCardView: View {
         }
     }
 
-    private func allowanceLabel(_ s: CycleUtilizationSummary) -> String {
-        let unit = s.windowKind == .weekly ? "weekly" : "5h"
-        return String(format: "≥ %.1f× %@ allowance", s.consumedAllowances, unit)
-    }
-
-    private func cycleSubtitle(_ cycle: BillingCycle) -> String {
-        let f = Date.FormatStyle.dateTime.month(.abbreviated).day()
-        return "Cycle \(cycle.start.formatted(f)) – \(cycle.end.addingTimeInterval(-1).formatted(f)) · Day \(cycle.dayIndex)/\(cycle.totalDays)"
-    }
 }
 
 /// A CTA styled to match the app's gold-pill button idiom (see the popover's
 /// "Add Account" empty-state button). `prominent` = filled gold (primary); else a
 /// gold-outline pill for lighter, per-card use where a filled pill would be loud.
 private struct BillingCTAButton: View {
-    let title: String
+    /// A key, not a `String`: a `String` here would be drawn verbatim.
+    let title: LocalizedStringKey
     var prominent: Bool = true
     let action: () -> Void
 

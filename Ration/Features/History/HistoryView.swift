@@ -71,6 +71,14 @@ struct HistoryView: View {
         )
     }
 
+    private var spokenExclusionNote: String {
+        guard let effectiveKind else { return "" }
+        let note: String? = HistoryOverlay.spokenExclusionNote(
+            presentations: scopedPresentations, kind: effectiveKind
+        )
+        return note ?? ""
+    }
+
     /// Identity for the loader: the scope, the window, and every account that
     /// owns that window — so adding, removing, pausing, or an account newly
     /// gaining the window all reload the overlay.
@@ -118,8 +126,14 @@ struct HistoryView: View {
                 .foregroundStyle(Theme.cream)
 
             Picker("Mode", selection: $mode) {
-                Text("Patterns").tag(Mode.patterns)
-                Text("Billing cycle").tag(Mode.billingCycle)
+                // Short segment titles (French and Ukrainian did not fit the
+                // 200 pt control); VoiceOver keeps the full names.
+                Text(LocalizedStringResource.historyModePatterns)
+                    .accessibilityLabel(Text("Patterns"))
+                    .tag(Mode.patterns)
+                Text(LocalizedStringResource.historyModeBillingCycle)
+                    .accessibilityLabel(Text("Billing cycle"))
+                    .tag(Mode.billingCycle)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -152,6 +166,7 @@ struct HistoryView: View {
                     ) {
                         ForEach(availableKinds, id: \.self) { kind in
                             Text(AccountLimitLayout.title(for: kind, snapshot: labelSnapshot))
+                                .accessibilityLabel(HistoryOverlay.spokenWindowName(kind, snapshot: labelSnapshot))
                                 .tag(kind)
                         }
                     }
@@ -196,6 +211,7 @@ struct HistoryView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .help(exclusionNote)
+                        .accessibilityLabel(spokenExclusionNote)
                 }
             }
 

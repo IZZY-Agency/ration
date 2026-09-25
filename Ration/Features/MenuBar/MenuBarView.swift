@@ -73,6 +73,10 @@ struct MenuBarView: View {
     /// Focus: show this account as the hero (nil → back to automatic) until
     /// the surface is presented again.
     var onShowFocusHero: (UUID?) -> Void = { _ in }
+    /// Test seam: every timeline in the popover (and its cards) reads this
+    /// instant instead of the live clock, so a snapshot's fixture and its
+    /// render agree on "now". Nil — the app — is the live clock.
+    var pinnedNow: Date? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -104,7 +108,7 @@ struct MenuBarView: View {
                 Divider().overlay(Theme.line)
             }
 
-            TimelineView(.periodic(from: .now, by: 60)) { context in
+            TimelineView(PopoverClock(pinned: pinnedNow)) { context in
                 if let banner = warmUpBanner(context.date) {
                     VStack(spacing: 0) {
                         bannerLabel(
@@ -189,7 +193,7 @@ struct MenuBarView: View {
             HStack(spacing: 0) {
                 HStack(spacing: 6) {
                     RationMark(size: 17)
-                    Text("Ration")
+                    Text(verbatim: "Ration")
                         .foregroundStyle(Theme.cream)
                         .font(Theme.mono(16, bold: true))
                         .tracking(0.5)
@@ -200,11 +204,18 @@ struct MenuBarView: View {
 
                 if attentionDropShowing {
                     Button(action: onDismissAttentionDrop) {
-                        Label("Dismiss Alerts", systemImage: "xmark")
-                            .font(Theme.mono(11))
-                            .tracking(0.6)
-                            .textCase(.uppercase)
-                            .foregroundStyle(Theme.creamDim)
+                        // Short in French and Ukrainian ("MASQUER"): the full
+                        // label wrapped the header. The tooltip and VoiceOver
+                        // keep the full wording.
+                        Label {
+                            Text(LocalizedStringResource.headerDismissAlerts)
+                        } icon: {
+                            Image(systemName: "xmark")
+                        }
+                        .font(Theme.mono(11))
+                        .tracking(0.6)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.creamDim)
                     }
                     .buttonStyle(.plain)
                     // Same action as the drop's ✕ — the panel itself can
@@ -225,7 +236,7 @@ struct MenuBarView: View {
                 } else {
                     // Evidence ages with the clock, which publishes nothing —
                     // re-derive periodically so LIVE turns STALE on its own.
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                    TimelineView(PopoverClock(pinned: pinnedNow)) { context in
                         if let freshness = HeaderFreshness.make(
                             presentations: presentations,
                             now: context.date
@@ -331,7 +342,7 @@ struct MenuBarView: View {
     }
 
     private var soonestResetLine: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
+        TimelineView(PopoverClock(pinned: pinnedNow)) { context in
             let next = SoonestResetSummary.next(from: presentations, now: context.date)
             if let next {
                 let parts = Self.resetLineParts(next, now: context.date)
@@ -370,7 +381,7 @@ struct MenuBarView: View {
     }
 
     private var focusBody: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
+        TimelineView(PopoverClock(pinned: pinnedNow)) { context in
             let focus: FocusModel = focusModel(context.date)
             if focus.emptyState == .noAccounts {
                 emptyState
@@ -494,6 +505,7 @@ struct MenuBarView: View {
                             projection: { kind in projection(presentation.id, kind) },
                             activeUsage: activeAccounts[presentation.id],
                             showsResetCredits: showsResetCredits,
+                            now: pinnedNow ?? .now,
                             resetLeadDays: resetLeadDaysByProvider[presentation.account.provider] ?? 1
                         )
                         .background(
@@ -569,12 +581,13 @@ struct MenuBarView: View {
     /// `shortcut` is a ⌘ key equivalent, live while the popover is key — it
     /// sits on the button itself, so it runs exactly what a click runs.
     private func footerButton(
-        _ label: String,
+        _ resource: LocalizedStringResource,
         systemImage: String,
         shortcut: KeyEquivalent? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let label: String = resource.string(in: .current)
+        return Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(Theme.creamDim)
@@ -585,8 +598,15 @@ struct MenuBarView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
-        .help(shortcut.map { "\(label) (⌘\(String($0.character).uppercased()))" } ?? label)
+        .help(Self.footerHelp(label, shortcut: shortcut?.character))
         .modifier(CommandShortcut(key: shortcut))
+    }
+
+    /// A footer button's tooltip: its (localized) name, plus its ⌘ key when
+    /// it has one — "Refresh (⌘R)".
+    static func footerHelp(_ label: String, shortcut: Character?) -> String {
+        guard let shortcut else { return label }
+        return "\(label) (⌘\(String(shortcut).uppercased()))"
     }
 }
 
@@ -618,7 +638,7 @@ struct LayoutSwitch: View {
                 .accessibilityLabel(layout.title)
                 .accessibilityAddTraits(isOn ? .isSelected : [])
                 .accessibilityIdentifier("layoutSwitch.\(layout.rawValue)")
-                .help("\(layout.title) layout")
+                .help(Self.help(for: layout))
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 5))
@@ -627,6 +647,12 @@ struct LayoutSwitch: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Layout")
         .accessibilityIdentifier("layoutSwitch")
+    }
+
+    /// A segment's tooltip — "Focus layout", the whole phrase one catalog
+    /// entry so each language orders it.
+    static func help(for layout: PopoverLayout, locale: Locale = .current) -> String {
+        LocalizedStringResource.popoverLayoutHelp(layout.title(locale: locale)).string(in: locale)
     }
 }
 
@@ -701,13 +727,13 @@ private struct BannerMessage: View {
                 .help(message)
 
             if isExpanded || BannerDisclosure.isTruncated(fullHeight: fullHeight, cappedHeight: cappedHeight) {
-                Button(isExpanded ? "Hide Details" : "Details") {
+                Button(isExpanded ? LocalizedStringKey("Hide Details") : LocalizedStringKey("Details")) {
                     isExpanded.toggle()
                 }
                 .font(Theme.mono(11))
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.gold)
-                .accessibilityHint(isExpanded ? "Collapses the message" : "Shows the whole message")
+                .accessibilityHint(isExpanded ? Text("Collapses the message") : Text("Shows the whole message"))
             }
         }
     }
@@ -744,5 +770,31 @@ private struct AccountListSizing: ViewModifier {
         } else {
             content.fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// The popover's timeline schedule: a tick a minute from when the view was
+/// built (the live app), or — `MenuBarView.pinnedNow`, for snapshots — the
+/// one pinned instant, forever.
+struct PopoverClock: TimelineSchedule {
+    let pinned: Date?
+    private let start: Date
+
+    init(pinned: Date?) {
+        self.pinned = pinned
+        start = .now
+    }
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
+        if let pinned {
+            var emitted = false
+            return AnyIterator {
+                guard !emitted else { return nil }
+                emitted = true
+                return pinned
+            }
+        }
+        var live = PeriodicTimelineSchedule(from: start, by: 60).entries(from: startDate, mode: mode).makeIterator()
+        return AnyIterator { live.next() }
     }
 }

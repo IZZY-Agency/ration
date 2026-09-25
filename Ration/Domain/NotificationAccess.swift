@@ -35,15 +35,49 @@ enum NotificationAccess {
         }
     }
 
-    static let popoverBanner = "Alerts can't notify — macOS is blocking Ration's notifications"
-    static let alertsPaneNote = "Notifications are blocked by macOS — the drop still works."
-    static let generalBlockedNote = "Allow notifications for Ration in System Settings › Notifications."
-    static let openSettingsTitle = "Open Notification Settings"
+    // Copy, in the running language; each has a `(locale:)` form for a
+    // pinned language.
+    static var popoverBanner: String { popoverBanner(locale: .current) }
+    static var alertsPaneNote: String { alertsPaneNote(locale: .current) }
+    static var generalBlockedNote: String { generalBlockedNote(locale: .current) }
+    static var openSettingsTitle: String { openSettingsTitle(locale: .current) }
 
-    static let needsPermissionBanner = "Ration hasn't asked for notification permission yet."
-    static let needsPermissionAlertsNote = "Allow notifications so alerts can notify — the drop still works."
-    static let allowTitle = "Allow Notifications"
-    static let allowHelp = "Ask macOS to let Ration send notifications"
+    static var needsPermissionBanner: String { needsPermissionBanner(locale: .current) }
+    static var needsPermissionAlertsNote: String { needsPermissionAlertsNote(locale: .current) }
+    static var allowTitle: String { allowTitle(locale: .current) }
+    static var allowHelp: String { allowHelp(locale: .current) }
+
+    static func popoverBanner(locale: Locale) -> String {
+        LocalizedStringResource.notificationAccessPopoverBanner.string(in: locale)
+    }
+
+    static func alertsPaneNote(locale: Locale) -> String {
+        LocalizedStringResource.notificationAccessAlertsPaneNote.string(in: locale)
+    }
+
+    static func generalBlockedNote(locale: Locale) -> String {
+        LocalizedStringResource.notificationAccessGeneralBlockedNote.string(in: locale)
+    }
+
+    static func openSettingsTitle(locale: Locale) -> String {
+        LocalizedStringResource.notificationAccessOpenSettingsTitle.string(in: locale)
+    }
+
+    static func needsPermissionBanner(locale: Locale) -> String {
+        LocalizedStringResource.notificationAccessNeedsPermissionBanner.string(in: locale)
+    }
+
+    static func needsPermissionAlertsNote(locale: Locale) -> String {
+        LocalizedStringResource.notificationAccessNeedsPermissionAlertsNote.string(in: locale)
+    }
+
+    static func allowTitle(locale: Locale) -> String {
+        LocalizedStringResource.notificationAccessAllowTitle.string(in: locale)
+    }
+
+    static func allowHelp(locale: Locale) -> String {
+        LocalizedStringResource.notificationAccessAllowHelp.string(in: locale)
+    }
 
     /// System Settings › Notifications, scrolled to this app's entry.
     static func settingsURL(bundleID: String) -> URL {
@@ -61,24 +95,28 @@ enum NotificationAccess {
 }
 
 extension NotificationAccess.Problem {
-    var popoverBanner: String {
+    var popoverBanner: String { popoverBanner(locale: .current) }
+    var generalNote: String { generalNote(locale: .current) }
+    var alertsPaneNote: String { alertsPaneNote(locale: .current) }
+
+    func popoverBanner(locale: Locale) -> String {
         switch self {
-        case .blocked: NotificationAccess.popoverBanner
-        case .needsPermission: NotificationAccess.needsPermissionBanner
+        case .blocked: NotificationAccess.popoverBanner(locale: locale)
+        case .needsPermission: NotificationAccess.needsPermissionBanner(locale: locale)
         }
     }
 
-    var generalNote: String {
+    func generalNote(locale: Locale) -> String {
         switch self {
-        case .blocked: NotificationAccess.generalBlockedNote
-        case .needsPermission: NotificationAccess.needsPermissionBanner
+        case .blocked: NotificationAccess.generalBlockedNote(locale: locale)
+        case .needsPermission: NotificationAccess.needsPermissionBanner(locale: locale)
         }
     }
 
-    var alertsPaneNote: String {
+    func alertsPaneNote(locale: Locale) -> String {
         switch self {
-        case .blocked: NotificationAccess.alertsPaneNote
-        case .needsPermission: NotificationAccess.needsPermissionAlertsNote
+        case .blocked: NotificationAccess.alertsPaneNote(locale: locale)
+        case .needsPermission: NotificationAccess.needsPermissionAlertsNote(locale: locale)
         }
     }
 }

@@ -6,12 +6,15 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .system: "System"
-        case .light: "Light"
-        case .dark: "Dark"
+    var title: String { title(locale: .current) }
+
+    func title(locale: Locale) -> String {
+        let resource: LocalizedStringResource = switch self {
+        case .system: .appearanceModeSystem
+        case .light: .appearanceModeLight
+        case .dark: .appearanceModeDark
         }
+        return resource.string(in: locale)
     }
 
     /// What `NSApp.appearance` (and each window's) is set to. `nil` = inherit

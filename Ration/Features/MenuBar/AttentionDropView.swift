@@ -139,7 +139,7 @@ struct AttentionDropView: View {
             // the panel is, so the title yields when it does not fit.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 7) {
-                    Text(limitRows.isEmpty ? "RESETS" : "NEARING LIMITS")
+                    Text(Self.headerTitle(hasLimitRows: !limitRows.isEmpty))
                         .font(Theme.mono(11))
                         .tracking(1.2)
                         .foregroundStyle(Theme.creamFaint)
@@ -178,28 +178,49 @@ struct AttentionDropView: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// The drawn header title — uppercase in the catalog.
+    static func headerTitle(hasLimitRows: Bool, locale: Locale = .current) -> String {
+        let resource: LocalizedStringResource = hasLimitRows ? .dropHeaderNearingLimits : .dropHeaderResets
+        return resource.string(in: locale)
+    }
+
+    /// The drawn header counts: "2 CRIT", "1 WARN", "1 RESET".
+    static func criticalCountText(_ count: Int, locale: Locale = .current) -> String {
+        LocalizedStringResource.dropCountCritical(count).string(in: locale)
+    }
+
+    static func warningCountText(_ count: Int, locale: Locale = .current) -> String {
+        LocalizedStringResource.dropCountWarning(count).string(in: locale)
+    }
+
+    static func resetCountText(_ count: Int, locale: Locale = .current) -> String {
+        LocalizedStringResource.dropCountReset(count).string(in: locale)
+    }
+
     /// What VoiceOver reads for the header's title and counts — always the
     /// title, even when the drawn header had room only for the counts.
     static func headerAccessibilityLabel(
-        critical: Int, warning: Int, resets: Int, hasLimitRows: Bool
+        critical: Int, warning: Int, resets: Int, hasLimitRows: Bool, locale: Locale = .current
     ) -> String {
-        var parts = [hasLimitRows ? "Nearing limits" : "Resets"]
-        if critical > 0 { parts.append("\(critical) critical") }
-        if warning > 0 { parts.append("\(warning) warning") }
-        if resets > 0 && hasLimitRows { parts.append("\(resets) reset\(resets == 1 ? "" : "s")") }
+        let title: LocalizedStringResource = hasLimitRows ? .dropSpokenNearingLimits : .dropSpokenResets
+        var parts: [String] = [title.string(in: locale)]
+        if critical > 0 { parts.append(LocalizedStringResource.dropSpokenCriticalCount(critical).string(in: locale)) }
+        if warning > 0 { parts.append(LocalizedStringResource.dropSpokenWarningCount(warning).string(in: locale)) }
+        if resets > 0 && hasLimitRows { parts.append(LocalizedStringResource.dropSpokenResetCount(resets).string(in: locale)) }
         return parts.joined(separator: ", ")
     }
 
     /// The same label, counted from the rows — what the controller posts as
     /// the drop's VoiceOver announcement, so the announcement and the header
     /// can never say different things.
-    static func headerAccessibilityLabel(rows: [AttentionRow]) -> String {
+    static func headerAccessibilityLabel(rows: [AttentionRow], locale: Locale = .current) -> String {
         let limitRows = rows.filter { !$0.isResetCredit }
         return headerAccessibilityLabel(
             critical: limitRows.filter { $0.tier == .critical }.count,
             warning: limitRows.filter { $0.tier == .warning }.count,
             resets: rows.count - limitRows.count,
-            hasLimitRows: !limitRows.isEmpty
+            hasLimitRows: !limitRows.isEmpty,
+            locale: locale
         )
     }
 
@@ -224,44 +245,71 @@ struct AttentionDropView: View {
         }
         if case .resetCredit(_, let kind) = row.subject {
             let count = row.resetCount ?? 1
-            let expires = row.resetsAt.map { ", expires in \(spoken($0))" } ?? ""
-            return "\(row.accountLabel), \(count) usage-limit reset\(count == 1 ? "" : "s") \(kind == .expiring ? "expiring" : "available")\(expires)"
+            let head: LocalizedStringResource = kind == .expiring
+                ? .dropSpokenResetRowExpiring(row.accountLabel, count: count)
+                : .dropSpokenResetRowAvailable(row.accountLabel, count: count)
+            let expires: String = row.resetsAt.map {
+                let resource: LocalizedStringResource = UsageFormatters.isResetDue($0, relativeTo: now)
+                    ? .dropSpokenExpiresNow
+                    : .dropSpokenExpiresIn(spoken($0))
+                return resource.string(in: locale)
+            } ?? ""
+            return head.string(in: locale) + expires
         }
         let subject: String = switch row.subject {
-            case .window(let kind): kind.spokenName()
-            case .cursorSpend: "spend"
+            case .window(let kind): kind.spokenName(locale: locale)
+            case .cursorSpend: LocalizedStringResource.dropSpokenSpend.string(in: locale)
             case .resetCredit: ""
         }
-        let tierWord = row.tier == .critical ? "critical" : "warning"
-        let value = row.usedPercent.map { "\($0) percent used" }
-            ?? row.spentCents.map { "\(AlertMessage.dollars($0)) spent" }
-            ?? ""
-        let reset = row.resetsAt.map { ", resets in \(spoken($0))" } ?? ""
-        let switchTo: String = advice.map { SwitchAdviceCopy.dropSpokenSuffix($0) } ?? ""
-        return "\(row.accountLabel), \(subject), \(value), \(tierWord)\(reset)\(switchTo)"
+        let tier: LocalizedStringResource = row.tier == .critical ? .dropSpokenTierCritical : .dropSpokenTierWarning
+        var value: String = ""
+        if let percent = row.usedPercent {
+            value = LocalizedStringResource.dropSpokenPercentUsed(percent).string(in: locale)
+        } else if let cents = row.spentCents {
+            value = LocalizedStringResource.dropSpokenSpent(AlertMessage.dollars(cents, locale: locale)).string(in: locale)
+        }
+        let reset: String = row.resetsAt.map {
+            let resource: LocalizedStringResource = UsageFormatters.isResetDue($0, relativeTo: now)
+                ? .dropSpokenResetsNow
+                : .dropSpokenResetsIn(spoken($0))
+            return resource.string(in: locale)
+        } ?? ""
+        let switchTo: String = advice.map { SwitchAdviceCopy.dropSpokenSuffix($0, locale: locale) } ?? ""
+        return "\(row.accountLabel), \(subject), \(value), \(tier.string(in: locale))\(reset)\(switchTo)"
+    }
+
+    /// A non-window row's drawn subject word — uppercase in the catalog. A
+    /// window is drawn as its `WindowTag`, whose text is never translated.
+    static func subjectLabel(_ subject: AttentionRow.Subject, locale: Locale = .current) -> String {
+        switch subject {
+        case .window(let kind): WindowTag.text(kind: kind, label: nil)
+        case .cursorSpend: LocalizedStringResource.dropSubjectSpend.string(in: locale)
+        case .resetCredit(_, .available): LocalizedStringResource.dropSubjectReset.string(in: locale)
+        case .resetCredit(_, .expiring): LocalizedStringResource.dropSubjectExpires.string(in: locale)
+        }
     }
 
     @ViewBuilder
     private var counts: some View {
         HStack(spacing: 7) {
             if criticalCount > 0 {
-                Text("\(criticalCount) CRIT")
+                Text(Self.criticalCountText(criticalCount))
                     .font(Theme.mono(11))
                     .tracking(1.2)
                     .foregroundStyle(Theme.crit)
             }
             if criticalCount > 0 && warningCount > 0 {
-                Text("·").font(Theme.mono(11)).foregroundStyle(Theme.creamFaint)
+                Text(verbatim: "·").font(Theme.mono(11)).foregroundStyle(Theme.creamFaint)
             }
             if warningCount > 0 {
-                Text("\(warningCount) WARN")
+                Text(Self.warningCountText(warningCount))
                     .font(Theme.mono(11))
                     .tracking(1.2)
                     .foregroundStyle(Theme.warn)
             }
             if resetRowCount > 0 && !limitRows.isEmpty {
-                Text("·").font(Theme.mono(11)).foregroundStyle(Theme.creamFaint)
-                Text("\(resetRowCount) RESET")
+                Text(verbatim: "·").font(Theme.mono(11)).foregroundStyle(Theme.creamFaint)
+                Text(Self.resetCountText(resetRowCount))
                     .font(Theme.mono(11))
                     .tracking(1.2)
                     .foregroundStyle(Theme.resetAccent)
@@ -322,12 +370,19 @@ private struct AttentionDropRowView: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
 
-                Text(resetLabel)
-                    .font(Theme.mono(13))
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.resetAccent)
-                    .lineLimit(1)
-                    .frame(width: AttentionDropGeometry.countdownColumnWidth, alignment: .trailing)
+                // The full countdown when it fits the column; otherwise its
+                // leading unit ("12 h" for "12 h 30 min" in French), with the
+                // full form as the tooltip. English always fits.
+                ViewThatFits(in: .horizontal) {
+                    Text(resetLabel)
+                    Text(resetLabelLeadingUnit)
+                        .help(resetLabel)
+                }
+                .font(Theme.mono(13))
+                .monospacedDigit()
+                .foregroundStyle(Theme.resetAccent)
+                .lineLimit(1)
+                .frame(width: AttentionDropGeometry.countdownColumnWidth, alignment: .trailing)
             }
             .padding(.horizontal, 13)
             .frame(
@@ -398,29 +453,17 @@ private struct AttentionDropRowView: View {
         if case let .window(kind) = row.subject {
             WindowTag(kind: kind, label: nil, size: 12)
         } else {
-            Text(subjectLabel)
+            Text(AttentionDropView.subjectLabel(row.subject))
                 .font(Theme.mono(12))
                 .tracking(0.6)
-                .textCase(.uppercase)
                 .foregroundStyle(Theme.creamFaint)
                 .lineLimit(1)
         }
     }
 
-    private var subjectLabel: String {
-        switch row.subject {
-        case .window(.fiveHour): "5H"
-        case .window(.weekly): "WK"
-        case .window(.modelWeekly): "Fable"
-        case .cursorSpend: "spend"
-        case .resetCredit(_, .available): "reset"
-        case .resetCredit(_, .expiring): "expires"
-        }
-    }
-
     private var valueLabel: String {
         if let count = row.resetCount { return "×\(count)" }
-        if let percent = row.usedPercent { return "\(percent)%" }
+        if let percent = row.usedPercent { return UsageFormatters.compactPercent(percent) }
         if let cents = row.spentCents { return AlertMessage.dollars(cents) }
         return "—"
     }
@@ -434,6 +477,15 @@ private struct AttentionDropRowView: View {
         return row.isResetCredit
             ? UsageFormatters.resetCreditRemaining(resetsAt, relativeTo: now)
             : UsageFormatters.remainingUntilReset(resetsAt, relativeTo: now)
+    }
+
+    /// `resetLabel` cut to its leading unit, for when the full form does
+    /// not fit the countdown column.
+    private var resetLabelLeadingUnit: String {
+        guard let resetsAt = row.resetsAt else { return "" }
+        return row.isResetCredit
+            ? UsageFormatters.resetCreditRemaining(resetsAt, relativeTo: now)
+            : UsageFormatters.remainingUntilResetLeadingUnit(resetsAt, relativeTo: now)
     }
 
     private var accessibilityLabel: String {

@@ -58,6 +58,8 @@ shows, from your own signed-in session, on your Mac.
   nearly spent, and where to go next; switch from the popover header.
 - **Feature switches.** Resets, switch suggestions, Claude warm-up and in-use
   detection can each be turned off in Settings.
+- **English, French and Ukrainian.** Follows your macOS language, or pick one
+  in Settings → General → Language.
 - **Light or dark.** Follows macOS, or pick Light or Dark in Settings. Every
   text colour meets WCAG AA contrast in both, and Increase Contrast and
   VoiceOver are supported.

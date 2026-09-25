@@ -83,10 +83,14 @@ final class LaunchAtLoginController: ObservableObject {
     var explanation: String? {
         switch state {
         case .requiresApproval:
-            "Allow Ration in System Settings → General → Login Items."
+            Self.requiresApprovalExplanation(locale: .current)
         case .disabled, .enabled:
             nil
         }
+    }
+
+    nonisolated static func requiresApprovalExplanation(locale: Locale) -> String {
+        LocalizedStringResource.launchAtLoginRequiresApproval.string(in: locale)
     }
 
     func refresh() {

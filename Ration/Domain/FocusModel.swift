@@ -368,61 +368,86 @@ struct FocusModel: Equatable {
     // MARK: - Copy
 
     /// The hero's caption under the big number.
-    static func caption(_ kind: UsageWindowKind, label: String?) -> String {
-        switch kind {
-        case .weekly: "of the week left"
-        case .fiveHour: "of 5 hours left"
-        case .modelWeekly: "of \(label ?? "Fable") left"
+    static func caption(_ kind: UsageWindowKind, label: String?, locale: Locale = .current) -> String {
+        let resource: LocalizedStringResource = switch kind {
+        case .weekly: .focusCaptionWeek
+        case .fiveHour: .focusCaptionFiveHours
+        case .modelWeekly: .focusCaptionModel(label ?? "Fable")
         }
+        return resource.string(in: locale)
     }
 
-    /// A remaining share as a whole percent: "3%".
-    static func percentText(_ fraction: Double) -> String {
+    /// A remaining share as a whole percent: "3%" ("3 %" in French).
+    static func percentText(_ fraction: Double, locale: Locale = .current) -> String {
         let scaled: Double = fraction * 100
         let whole = Int(scaled.rounded())
-        return "\(whole)%"
+        return UsageFormatters.compactPercent(whole, locale: locale)
     }
 
-    static func dollarsText(cents: Int) -> String {
-        let dollars: Double = Double(cents) / 100
-        return "$" + String(format: "%.2f", dollars)
+    /// "$12.34" ("12,34 $" in French and Ukrainian) — `UsageFormatters.usd`.
+    static func dollarsText(cents: Int, locale: Locale = .current) -> String {
+        UsageFormatters.usd(cents: cents, locale: locale)
     }
 
     /// "resets in 11h 18m · 5h 73% left · Fable 14% left".
-    static func limitsLine(resetsAt: Date?, limits: [Limit], now: Date) -> String {
+    ///
+    /// `compact` is the one-line form the hero draws: in French and Ukrainian
+    /// it drops "left" after each percent ("semaine : 85 %"), which the
+    /// hero's caption already says — the full line did not fit the popover.
+    /// English is the same either way.
+    static func limitsLine(
+        resetsAt: Date?, limits: [Limit], now: Date, compact: Bool = false, locale: Locale = .current
+    ) -> String {
         var parts: [String] = []
-        if let reset = resetText(resetsAt, now: now) {
+        if let reset = resetText(resetsAt, now: now, locale: locale) {
             parts.append(reset)
         }
         for limit in limits {
-            parts.append("\(shortName(limit.kind, label: limit.label)) \(percentText(limit.headroom)) left")
+            let name: String = shortName(limit.kind, label: limit.label, locale: locale)
+            let percent: String = percentText(limit.headroom, locale: locale)
+            let resource: LocalizedStringResource = compact
+                ? .focusLimitLeftCompact(name, percent)
+                : .focusLimitLeft(name, percent)
+            parts.append(resource.string(in: locale))
         }
         return parts.joined(separator: " · ")
     }
 
-    static func shortName(_ kind: UsageWindowKind, label: String?) -> String {
+    static func shortName(_ kind: UsageWindowKind, label: String?, locale: Locale = .current) -> String {
         switch kind {
-        case .fiveHour: "5h"
-        case .weekly: "week"
+        case .fiveHour: LocalizedStringResource.focusShortNameFiveHour.string(in: locale)
+        case .weekly: LocalizedStringResource.focusShortNameWeek.string(in: locale)
         case .modelWeekly: label ?? "Fable"
         }
     }
 
     /// "resets in 2h 27m"; nil without a reset time.
-    static func resetText(_ resetsAt: Date?, now: Date) -> String? {
+    static func resetText(_ resetsAt: Date?, now: Date, locale: Locale = .current) -> String? {
         guard let resetsAt else { return nil }
-        return "resets in \(UsageFormatters.remainingUntilReset(resetsAt, relativeTo: now))"
+        // Due: its own entry ("resets now") — "in" + the "now" unit reads
+        // wrong in every language.
+        if UsageFormatters.isResetDue(resetsAt, relativeTo: now) {
+            return LocalizedStringResource.resetResetsNow.string(in: locale)
+        }
+        let countdown: String = UsageFormatters.remainingUntilReset(resetsAt, relativeTo: now, locale: locale)
+        return LocalizedStringResource.resetResetsIn(countdown).string(in: locale)
     }
 
     /// An in-use line's right side: "25% left · 2d 2h".
-    static func lineRight(headroom: Double, resetsAt: Date?, now: Date) -> String {
-        let left: String = "\(percentText(headroom)) left"
+    static func lineRight(headroom: Double, resetsAt: Date?, now: Date, locale: Locale = .current) -> String {
+        let left: String = LocalizedStringResource.focusLeft(percentText(headroom, locale: locale)).string(in: locale)
         guard let resetsAt else { return left }
-        return "\(left) · \(UsageFormatters.remainingUntilReset(resetsAt, relativeTo: now))"
+        return "\(left) · \(UsageFormatters.remainingUntilReset(resetsAt, relativeTo: now, locale: locale))"
     }
 
     /// A warning line's left side: "Client · 1% of the week left".
-    static func warningText(label: String, headroom: Double, kind: UsageWindowKind, windowLabel: String?) -> String {
-        "\(label) · \(percentText(headroom)) \(caption(kind, label: windowLabel))"
+    static func warningText(
+        label: String,
+        headroom: Double,
+        kind: UsageWindowKind,
+        windowLabel: String?,
+        locale: Locale = .current
+    ) -> String {
+        "\(label) · \(percentText(headroom, locale: locale)) \(caption(kind, label: windowLabel, locale: locale))"
     }
 }

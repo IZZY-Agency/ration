@@ -64,7 +64,8 @@ enum WarmUpBannerModel {
         schedule: WarmUpQuietSchedule,
         warmUpEnabled: Bool = true,
         now: Date,
-        calendar: Calendar = .autoupdatingCurrent
+        calendar: Calendar = .autoupdatingCurrent,
+        locale: Locale = .current
     ) -> WarmUpBanner? {
         // Warm-up switched off globally: nothing is attempted, so there is no
         // failure or hold to report.
@@ -74,7 +75,8 @@ enum WarmUpBannerModel {
         if let banner = failureBanner(
             presentations: presentations,
             failures: failures,
-            now: now
+            now: now,
+            locale: locale
         ) {
             return banner
         }
@@ -82,14 +84,16 @@ enum WarmUpBannerModel {
             presentations: presentations,
             schedule: schedule,
             now: now,
-            calendar: calendar
+            calendar: calendar,
+            locale: locale
         )
     }
 
     private static func failureBanner(
         presentations: [AccountPresentation],
         failures: [UUID: AutoStartFailure],
-        now: Date
+        now: Date,
+        locale: Locale
     ) -> WarmUpBanner? {
         let live = presentations
             .filter { AutoStartPolicy.isEffectivelyEnabled($0.account) }
@@ -119,14 +123,12 @@ enum WarmUpBannerModel {
 
         guard let (presentation, failure) = live.first else { return nil }
         let label = presentation.account.label
-        let message = switch failure.kind {
-        case .authenticationRequired:
-            "Auto-start for \(label): Claude needs you to sign in again."
-        case .transient:
-            "Auto-start for \(label) didn’t run this time; it will retry automatically."
+        let message: LocalizedStringResource = switch failure.kind {
+        case .authenticationRequired: .warmUpBannerSignInAgain(label)
+        case .transient: .warmUpBannerWillRetry(label)
         }
         return WarmUpBanner(
-            message: message + more(than: live.count),
+            message: message.string(in: locale) + more(than: live.count, locale: locale),
             severity: .critical
         )
     }
@@ -135,7 +137,8 @@ enum WarmUpBannerModel {
         presentations: [AccountPresentation],
         schedule: WarmUpQuietSchedule,
         now: Date,
-        calendar: Calendar
+        calendar: Calendar,
+        locale: Locale
     ) -> WarmUpBanner? {
         let blocked = presentations
             .compactMap { presentation -> (String, Date?)? in
@@ -163,16 +166,24 @@ enum WarmUpBannerModel {
         // allowance observed AFTER its own reported reset is real (see
         // `isCurrentEvidence`) but its next reset is unknown until the provider
         // publishes one.
-        let resumption = resetsAt.map { $0 > now
-            ? "resumes in \(UsageFormatters.remainingUntilReset($0, relativeTo: now))"
-            : "resumes when the limit resets"
-        } ?? "resumes when the limit resets"
-        return WarmUpBanner(
-            message: "Warm-up paused for \(label)"
-                + more(than: blocked.count)
-                + " — weekly limit reached; \(resumption).",
-            severity: .info
+        let resumption: LocalizedStringResource
+        if let resetsAt, resetsAt > now {
+            if UsageFormatters.isResetDue(resetsAt, relativeTo: now) {
+                // Under a second away: the countdown would be the "now" unit.
+                resumption = .warmUpBannerResumesNow
+            } else {
+                let countdown: String = UsageFormatters.remainingUntilReset(resetsAt, relativeTo: now, locale: locale)
+                resumption = .warmUpBannerResumesIn(countdown)
+            }
+        } else {
+            resumption = .warmUpBannerResumesAtReset
+        }
+        let message: LocalizedStringResource = .warmUpBannerPaused(
+            label,
+            more(than: blocked.count, locale: locale),
+            resumption.string(in: locale)
         )
+        return WarmUpBanner(message: message.string(in: locale), severity: .info)
     }
 
     /// Whether an observation still describes the present — the shared
@@ -187,7 +198,9 @@ enum WarmUpBannerModel {
         UsageEvidence.isCurrent(snapshot: snapshot, windowResetsAt: resetsAt, now: now)
     }
 
-    private static func more(than count: Int) -> String {
-        count > 1 ? " (+\(count - 1) more)" : ""
+    /// " (+N more)" for the accounts a one-line banner does not name.
+    private static func more(than count: Int, locale: Locale) -> String {
+        guard count > 1 else { return "" }
+        return LocalizedStringResource.warmUpBannerMore(count - 1).string(in: locale)
     }
 }

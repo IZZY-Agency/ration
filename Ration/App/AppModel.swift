@@ -5,16 +5,20 @@ import WebKit
 enum AccountRemovalError: LocalizedError {
     case rollbackFailed
 
-    var errorDescription: String? {
-        "The account could not be removed safely. Its local data may need attention."
+    var errorDescription: String? { message(locale: .current) }
+
+    func message(locale: Locale) -> String {
+        LocalizedStringResource.accountErrorRemovalRollbackFailed.string(in: locale)
     }
 }
 
 enum AccountCommitError: LocalizedError {
     case rollbackFailed
 
-    var errorDescription: String? {
-        "The account was saved without its latest limits. Remove it or try refreshing again."
+    var errorDescription: String? { message(locale: .current) }
+
+    func message(locale: Locale) -> String {
+        LocalizedStringResource.accountErrorCommitRollbackFailed.string(in: locale)
     }
 }
 
@@ -3664,14 +3668,24 @@ final class AppModel: ObservableObject {
 /// The two wordings the profile-cleanup banner can take, chosen in
 /// `AppModel.updateProfileCleanupState`: `blockingQuit` while volatile cleanup is
 /// actually holding up a quit the user asked for, `pending` otherwise. Named
-/// rather than inlined so the tests assert against the same literals the model
-/// publishes.
+/// rather than inlined so the tests assert against the same text the model
+/// publishes. Resolved in the running language on every read.
 enum ProfileCleanupCopy {
-    static let pending = "A cancelled sign-in profile still needs cleanup."
-    static let blockingQuit =
-        "Quit is paused until the cancelled sign-in profile is removed."
-    static let blockingQuitOnSignIn =
-        "Quit is paused until the active sign-in finishes."
+    static var pending: String { pending(locale: .current) }
+    static var blockingQuit: String { blockingQuit(locale: .current) }
+    static var blockingQuitOnSignIn: String { blockingQuitOnSignIn(locale: .current) }
+
+    static func pending(locale: Locale) -> String {
+        LocalizedStringResource.profileCleanupPending.string(in: locale)
+    }
+
+    static func blockingQuit(locale: Locale) -> String {
+        LocalizedStringResource.profileCleanupBlockingQuit.string(in: locale)
+    }
+
+    static func blockingQuitOnSignIn(locale: Locale) -> String {
+        LocalizedStringResource.profileCleanupBlockingQuitOnSignIn.string(in: locale)
+    }
 }
 
 @MainActor

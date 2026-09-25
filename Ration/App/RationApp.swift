@@ -23,6 +23,13 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
     private var outstandingTerminationDecisions = 0
 
     private var isTerminating: Bool { outstandingTerminationDecisions > 0 }
+    /// Relaunch after a language change. It only observes the quit outcome:
+    /// a refused quit clears its intent, a proceeding one launches the new
+    /// instance from `applicationWillTerminate`.
+    var relauncher: AppRelauncher = .shared
+    /// A relaunched instance holds its menu bar (status item, hot keys) until
+    /// the previous instance has exited — see `PreviousInstanceWaiter`.
+    private var isHeldForPreviousInstance = false
 
     /// Test seam: whether a first-run wizard is still owed. The delegate keeps
     /// no copy of this — `AppModel` is the single owner, which is what stops a
@@ -56,12 +63,28 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
     /// test cannot pass while the production path is broken.
     private func terminationDecisionResolved(canTerminate: Bool) {
         // A `true` reply resumes termination; the count is moot from there.
-        guard !canTerminate else { return }
+        guard !canTerminate else {
+            relauncher.terminationWasApproved()
+            return
+        }
         outstandingTerminationDecisions = max(
             0,
             outstandingTerminationDecisions - 1
         )
+        relauncher.terminationWasCancelled()
         deliverOnboardingIfPossible()
+    }
+
+    /// Called before `configure` when this launch must wait for a previous
+    /// instance to exit; `releaseStartup()` lifts it.
+    func holdStartupForPreviousInstance() {
+        isHeldForPreviousInstance = true
+    }
+
+    func releaseStartup() {
+        guard isHeldForPreviousInstance else { return }
+        isHeldForPreviousInstance = false
+        startMenuBarIfReady()
     }
 
     /// Test seam: resolve an outstanding decision. Delegates to the production
@@ -130,8 +153,10 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
         outstandingTerminationDecisions += 1
+        relauncher.terminationWasRequested()
         guard let model, model.requiresTerminationPreparation else {
             // Terminating now; the count is moot from here.
+            relauncher.terminationWasApproved()
             return .terminateNow
         }
 
@@ -172,11 +197,15 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
         menuBarController?.stop()
         menuBarController = nil
         model?.stop()
+        // Last: the quit is certainly proceeding, and this instance has let go
+        // of its status item and timers before the new one starts.
+        relauncher.terminationWillProceed()
     }
 
     private func startMenuBarIfReady() {
         guard
             didFinishLaunching,
+            !isHeldForPreviousInstance,
             menuBarController == nil,
             let model,
             let launchAtLogin
@@ -236,6 +265,18 @@ struct RationApp: App {
         _model = StateObject(wrappedValue: model)
         _launchAtLogin = StateObject(wrappedValue: launchAtLogin)
         let delegate = appDelegate
+        // A relaunch (language change) names the instance it replaces. Nothing
+        // above has read a store or touched WebKit; the start below waits.
+        let awaitedPID: pid_t? = isUITesting
+            ? nil
+            : RelaunchHandoff(defaults: .standard).consumeAwaitedPID(
+                arguments: arguments,
+                ownPID: ProcessInfo.processInfo.processIdentifier,
+                now: Date()
+            )
+        if awaitedPID != nil {
+            delegate.holdStartupForPreviousInstance()
+        }
         delegate.configure(
             model: model,
             launchAtLogin: launchAtLogin
@@ -243,6 +284,10 @@ struct RationApp: App {
 
         if !isUITesting {
             Task { @MainActor in
+                if let awaitedPID {
+                    _ = await PreviousInstanceWaiter.live().waitForExit(of: awaitedPID)
+                    delegate.releaseStartup()
+                }
                 await model.start()
                 // Only now can the wizard's predicate be answered: `start()`
                 // is what loads `AppSettings`.
@@ -252,7 +297,8 @@ struct RationApp: App {
     }
 
     var body: some Scene {
-        Window("Ration", id: "ui-testing") {
+        // The brand name, never translated.
+        Window(Text(verbatim: "Ration"), id: "ui-testing") {
             menuContent
         }
         .defaultSize(width: 400, height: 470)
@@ -401,7 +447,7 @@ struct MenuBarContent: View {
                 }
             },
             onQuit: onQuit ?? {
-                NSApplication.shared.terminate(nil)
+                AppRelauncher.shared.quitWithoutRelaunch()
             },
             onReauthenticate: { accountID in
                 do {

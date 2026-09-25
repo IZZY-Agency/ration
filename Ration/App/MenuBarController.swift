@@ -121,7 +121,8 @@ final class MenuBarController: NSObject {
         now: @escaping () -> Date = { .now },
         makePopoverHotKeyRegistrar: @escaping () -> any GlobalHotKeyRegistering = { CarbonHotKeyRegistrar() },
         refreshAll: (() -> Void)? = nil,
-        terminateApp: @escaping () -> Void = { NSApplication.shared.terminate(nil) },
+        // An ordinary Quit: it drops a pending relaunch first.
+        terminateApp: @escaping () -> Void = { AppRelauncher.shared.quitWithoutRelaunch() },
         statusItemIsAnchored: (() -> Bool)? = nil,
         popoverKeyCode: @escaping @MainActor (PopoverShortcut) -> UInt32 = ShortcutKeyCodeResolver.liveKeyCode
     ) {
@@ -819,7 +820,7 @@ final class MenuBarController: NSObject {
         }
 
         let controller = makeWindowController(
-            title: "Add Account",
+            title: String(localized: "Add Account"),
             // 530: the content measured 495 pt with a one-line subtitle; the
             // wrapped second line adds ≈18 pt, plus a little slack so the
             // Cancel row never sits on the edge.
@@ -853,7 +854,7 @@ final class MenuBarController: NSObject {
         }
 
         let controller = makeWindowController(
-            title: "Settings",
+            title: String(localized: "Settings"),
             defaultSize: NSSize(width: SettingsView.minimumWindowWidth, height: 564),
             minimumSize: NSSize(width: SettingsView.minimumWindowWidth, height: 470),
             styleMask: standardWindowStyle,
@@ -895,7 +896,7 @@ final class MenuBarController: NSObject {
         // copyright/link lines) — 270 no longer held it.
         let contentSize = NSSize(width: 360, height: 286)
         let controller = makeWindowController(
-            title: "About Ration",
+            title: String(localized: "About Ration"),
             defaultSize: contentSize,
             minimumSize: contentSize,
             maximumSize: contentSize,
@@ -949,7 +950,7 @@ final class MenuBarController: NSObject {
         }
 
         let controller = makeWindowController(
-            title: "Setup Guide",
+            title: String(localized: "Setup Guide"),
             defaultSize: NSSize(width: 540, height: 560),
             minimumSize: NSSize(width: 520, height: 480),
             styleMask: standardWindowStyle,
@@ -984,7 +985,7 @@ final class MenuBarController: NSObject {
         }
 
         let controller = makeWindowController(
-            title: "History",
+            title: String(localized: "History"),
             defaultSize: NSSize(width: 720, height: 520),
             minimumSize: NSSize(width: 680, height: 480),
             styleMask: standardWindowStyle,
@@ -1010,7 +1011,7 @@ final class MenuBarController: NSObject {
         guard let session = model.signInSession(for: sessionID) else { return }
 
         let controller = makeWindowController(
-            title: "Sign In",
+            title: String(localized: "Sign In"),
             defaultSize: NSSize(width: 760, height: 680),
             minimumSize: NSSize(width: 700, height: 620),
             styleMask: standardWindowStyle,

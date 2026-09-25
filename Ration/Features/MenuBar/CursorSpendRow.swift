@@ -8,22 +8,22 @@ import SwiftUI
 enum CursorSpendRow {
     static func text(
         for spend: CursorSpend?,
-        now: Date
+        now: Date,
+        locale: Locale = .current
     ) -> (headline: String, caption: String, isAvailable: Bool) {
         guard let spend else {
             return (headline: "—", caption: "", isAvailable: false)
         }
-        let headline = "$" + String(format: "%.2f", spend.spentDollars)
+        let headline: String = UsageFormatters.usd(cents: spend.spentCents, locale: locale)
         // A real $0.00 is the COMMON case: usage-based charges only accrue past
         // the plan's included allowance, so an account inside its allowance
         // legitimately spends nothing all cycle. Say that explicitly — a bare
         // "$0.00 · this cycle" reads like a failed read rather than a true zero.
-        var parts = [spend.spentCents == 0 ? "no usage-based charges" : "this cycle"]
+        var parts: [String] = [cycleText(spend, locale: locale)]
         // Only a reset still ahead is a countdown — see `CursorSpend.futureReset`.
         if let reset = spend.futureReset(relativeTo: now) {
-            parts.append(
-                "resets in " + UsageFormatters.remainingUntilReset(reset, relativeTo: now)
-            )
+            let countdown: String = UsageFormatters.remainingUntilReset(reset, relativeTo: now, locale: locale)
+            parts.append(resetsIn(reset, countdown, now: now, locale: locale))
         }
         return (headline: headline, caption: parts.joined(separator: " · "), isAvailable: true)
     }
@@ -35,14 +35,32 @@ enum CursorSpendRow {
         now: Date,
         locale: Locale = .current
     ) -> String {
-        guard let spend else { return "Cursor spend, unavailable" }
-        let headline = text(for: spend, now: now).headline
-        var parts = ["Cursor spend", headline, spend.planLabel]
-        parts.append(spend.spentCents == 0 ? "no usage-based charges" : "this cycle")
+        guard let spend else { return LocalizedStringResource.cursorSpendSpokenUnavailable.string(in: locale) }
+        let headline = text(for: spend, now: now, locale: locale).headline
+        let title: String = LocalizedStringResource.cursorSpendSpokenTitle.string(in: locale)
+        // `planLabel` is Cursor's plan name — never translated.
+        var parts: [String] = [title, headline, spend.planLabel]
+        parts.append(cycleText(spend, locale: locale))
         if let reset = spend.futureReset(relativeTo: now) {
-            parts.append("resets in " + UsageFormatters.spokenDuration(until: reset, relativeTo: now, locale: locale))
+            let countdown: String = UsageFormatters.spokenDuration(until: reset, relativeTo: now, locale: locale)
+            parts.append(resetsIn(reset, countdown, now: now, locale: locale))
         }
         return parts.joined(separator: ", ")
+    }
+
+    /// "resets in <countdown>", or the due form under a second before the
+    /// reset (the countdown is already the "now" unit there).
+    private static func resetsIn(_ reset: Date, _ countdown: String, now: Date, locale: Locale) -> String {
+        let resource: LocalizedStringResource = UsageFormatters.isResetDue(reset, relativeTo: now)
+            ? .resetResetsNow
+            : .resetResetsIn(countdown)
+        return resource.string(in: locale)
+    }
+
+    /// "this cycle", or — for a true zero — "no usage-based charges".
+    private static func cycleText(_ spend: CursorSpend, locale: Locale) -> String {
+        let resource: LocalizedStringResource = spend.spentCents == 0 ? .cursorSpendNoCharges : .cursorSpendThisCycle
+        return resource.string(in: locale)
     }
 }
 

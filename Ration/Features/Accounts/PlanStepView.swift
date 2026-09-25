@@ -26,8 +26,22 @@ struct PlanStepView: View {
         self.onSkip = onSkip
     }
 
-    static let title = "Which plan is this?"
-    static let subtitle = "Plans differ in size. Ration uses this to suggest which account to switch to — percentages alone can mislead."
+    static var title: String { title(locale: .current) }
+    static var subtitle: String { subtitle(locale: .current) }
+
+    static func title(locale: Locale) -> String {
+        LocalizedStringResource.planStepTitle.string(in: locale)
+    }
+
+    static func subtitle(locale: Locale) -> String {
+        LocalizedStringResource.planStepSubtitle.string(in: locale)
+    }
+
+    /// The "no idea" chip, passed to `optionButton` next to plan names
+    /// (which are never translated).
+    static func notSure(locale: Locale = .current) -> String {
+        LocalizedStringResource.planStepNotSure.string(in: locale)
+    }
 
     var asksPlan: Bool { account.effectivePlan == nil }
     var asksBillingDay: Bool {
@@ -53,7 +67,7 @@ struct PlanStepView: View {
                             .font(Theme.mono(12, bold: true))
                             .foregroundStyle(Theme.cream)
                         HStack(spacing: 8) {
-                            optionButton(title: "Not sure", value: nil)
+                            optionButton(title: Self.notSure(), value: nil)
                             ForEach(PlanTier.options(for: account.provider), id: \.self) { tier in
                                 optionButton(title: tier.displayName, value: tier)
                             }
@@ -86,7 +100,7 @@ struct PlanStepView: View {
                         ) {
                             Text("Not set").tag(0)
                             ForEach(1...31, id: \.self) { day in
-                                Text("\(day)").tag(day)
+                                Text(verbatim: String(day)).tag(day)
                             }
                         }
                         .fixedSize()

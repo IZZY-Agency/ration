@@ -116,7 +116,9 @@ struct OnboardingView: View {
                     .buttonStyle(.goldProminent)
                     .keyboardShortcut(.defaultAction)
             } else {
-                Button(flow.step == .connect ? "Skip for now" : "Continue") {
+                // Explicit keys: a ternary of two literals would otherwise be
+                // free to resolve to the verbatim `String` initializer.
+                Button(flow.step == .connect ? LocalizedStringKey("Skip for now") : LocalizedStringKey("Continue")) {
                     flow.advance()
                 }
                 .buttonStyle(.goldProminent)

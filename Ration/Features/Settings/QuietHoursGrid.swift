@@ -37,7 +37,7 @@ struct QuietHoursGrid: View {
 
     private var header: some View {
         HStack(spacing: 3) {
-            Text("").frame(width: 28)
+            Text(verbatim: "").frame(width: 28)
             ForEach(columns) { column in
                 Button {
                     toggleDay(column.weekdayValue)
@@ -86,17 +86,20 @@ struct QuietHoursGrid: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(symbol) \(String(format: "%02d", hour)):00")
-        .accessibilityValue(isQuiet ? "quiet" : "warm-up allowed")
+        // Day and hour only, no words: verbatim.
+        .accessibilityLabel(Text(verbatim: "\(symbol) \(String(format: "%02d", hour)):00"))
+        .accessibilityValue(isQuiet ? Text("quiet") : Text("warm-up allowed"))
         .accessibilityAddTraits(.isToggle)
     }
 
     /// The day header's spoken label — "Toggle all Monday", the full day
     /// name rather than the drawn "Mon" (whose meaning was tooltip-only).
+    /// The copy follows the calendar's locale, like the day names.
     static func dayToggleAccessibilityLabel(weekday: Int, calendar: Calendar) -> String {
         let names = calendar.weekdaySymbols // index 0 == Sunday
         let name = names.indices.contains(weekday - 1) ? names[weekday - 1] : "\(weekday)"
-        return "Toggle all \(name)"
+        let locale: Locale = calendar.locale ?? .current
+        return LocalizedStringResource.quietHoursSpokenToggleDay(name).string(in: locale)
     }
 
     /// The hour header's spoken label — "Toggle all 9 AM" in a 12-hour
@@ -116,7 +119,7 @@ struct QuietHoursGrid: View {
         let hourText = formatter.string(from: date)
             .replacingOccurrences(of: "\u{202F}", with: " ")
             .replacingOccurrences(of: "\u{00A0}", with: " ")
-        return "Toggle all \(hourText)"
+        return LocalizedStringResource.quietHoursSpokenToggleHour(hourText).string(in: locale)
     }
 
     private func toggle(_ index: Int) {

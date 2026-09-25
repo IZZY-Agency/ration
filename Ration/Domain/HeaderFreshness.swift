@@ -67,19 +67,26 @@ enum HeaderFreshness: Equatable, Sendable {
         }
     }
 
-    var text: String {
-        switch self {
-        case .live: "LIVE"
-        case .stale(let count): "STALE · \(count)"
-        case .offline: "OFFLINE"
+    /// The drawn status word — uppercase in the catalog.
+    var text: String { text(locale: .current) }
+
+    func text(locale: Locale) -> String {
+        let resource: LocalizedStringResource = switch self {
+        case .live: .headerFreshnessLive
+        case .stale(let count): .headerFreshnessStale(count)
+        case .offline: .headerFreshnessOffline
         }
+        return resource.string(in: locale)
     }
 
-    var accessibilityLabel: String {
-        switch self {
-        case .live: "Live"
-        case .stale(let count): count == 1 ? "1 account stale" : "\(count) accounts stale"
-        case .offline: "Offline"
+    var accessibilityLabel: String { accessibilityLabel(locale: .current) }
+
+    func accessibilityLabel(locale: Locale) -> String {
+        let resource: LocalizedStringResource = switch self {
+        case .live: .headerFreshnessSpokenLive
+        case .stale(let count): .headerFreshnessSpokenStale(count)
+        case .offline: .headerFreshnessSpokenOffline
         }
+        return resource.string(in: locale)
     }
 }

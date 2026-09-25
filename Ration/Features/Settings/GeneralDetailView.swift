@@ -17,6 +17,9 @@ struct GeneralDetailView: View {
     var onSetFeature: (FeatureSwitch, Bool) -> Void = { _, _ in }
     let onOpenSetupGuide: () -> Void
     let onAllowNotifications: () -> Void
+    /// Relaunch after a language change; the shared instance the app
+    /// delegate reports the quit outcome to.
+    var relauncher: AppRelauncher = .shared
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -30,6 +33,8 @@ struct GeneralDetailView: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("appearancePicker")
+
+                LanguageSettingsRows(relauncher: relauncher)
 
                 Picker(
                     "Layout",
@@ -45,7 +50,7 @@ struct GeneralDetailView: View {
                     .foregroundStyle(Theme.creamDim)
 
                 LabeledContent("Open window shortcut") {
-                    Text("⌥⌘U")
+                    Text(verbatim: "⌥⌘U")
                         .font(Theme.mono(14, bold: true))
                         .foregroundStyle(Theme.gold)
                 }
@@ -57,12 +62,12 @@ struct GeneralDetailView: View {
                 .accessibilityIdentifier("openSetupGuideButton")
 
                 LabeledContent("Website") {
-                    Button("ration.sh") { openURL(AppLinks.website) }
+                    Button { openURL(AppLinks.website) } label: { Text(verbatim: "ration.sh") }
                 }
                 .accessibilityIdentifier("openWebsiteButton")
 
                 LabeledContent("Source code") {
-                    Button("GitHub") { openURL(AppLinks.repository) }
+                    Button { openURL(AppLinks.repository) } label: { Text(verbatim: "GitHub") }
                 }
                 .accessibilityIdentifier("openRepositoryButton")
 
@@ -221,9 +226,9 @@ struct GeneralDetailView: View {
                             }
                         )
                     ) {
-                        Text("5-hour").tag(UsageWindowKind.fiveHour)
-                        Text("Weekly").tag(UsageWindowKind.weekly)
-                        Text("Fable").tag(UsageWindowKind.modelWeekly)
+                        Text(verbatim: SettingsCopy.windowLabel(.fiveHour)).tag(UsageWindowKind.fiveHour)
+                        Text(verbatim: SettingsCopy.windowLabel(.weekly)).tag(UsageWindowKind.weekly)
+                        Text(verbatim: SettingsCopy.windowLabel(.modelWeekly)).tag(UsageWindowKind.modelWeekly)
                     }
                     .accessibilityIdentifier("menuBarClaudeWindowPicker")
 
@@ -232,7 +237,7 @@ struct GeneralDetailView: View {
                         .foregroundStyle(Theme.creamDim)
 
                     LabeledContent("ChatGPT window") {
-                        Text("Weekly")
+                        Text(verbatim: SettingsCopy.windowLabel(.weekly))
                             .font(Theme.mono(14))
                             .foregroundStyle(Theme.creamDim)
                     }

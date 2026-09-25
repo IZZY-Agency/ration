@@ -5,12 +5,19 @@ import SwiftUI
 struct AccountDetailPauseState {
     let isPaused: Bool
 
-    var buttonTitle: String { isPaused ? "Resume account" : "Pause account" }
+    var buttonTitle: String { buttonTitle(locale: .current) }
     var disablesAutomationAndBilling: Bool { isPaused }
-    var explanation: String? {
+    var explanation: String? { explanation(locale: .current) }
+
+    func buttonTitle(locale: Locale) -> String {
         isPaused
-            ? "Paused: not refreshed, excluded from warm-up, hidden from the menu bar. Sign-in is kept."
-            : nil
+            ? LocalizedStringResource.accountPauseResume.string(in: locale)
+            : LocalizedStringResource.accountPausePause.string(in: locale)
+    }
+
+    func explanation(locale: Locale) -> String? {
+        guard isPaused else { return nil }
+        return LocalizedStringResource.accountPauseExplanation.string(in: locale)
     }
 }
 
@@ -114,7 +121,8 @@ struct AccountDetailView: View {
                             .accessibilityIdentifier("autoStartWarmUpOffNote")
                     }
                     #if DEBUG
-                    Button("Send test keep-alive now (debug)", action: onDebugSend)
+                    // Developer-only (never in release builds): verbatim.
+                    Button(action: onDebugSend) { Text(verbatim: "Send test keep-alive now (debug)") }
                         .font(Theme.mono(12))
                         .disabled(pauseState.disablesAutomationAndBilling)
                     #endif
@@ -126,13 +134,13 @@ struct AccountDetailView: View {
                let items = presentation.snapshot?.resetCredits?.unexpired(at: now), !items.isEmpty {
                 Section(SettingsSectionTitle.resets) {
                     ForEach(items, id: \.id) { credit in
-                        LabeledContent(credit.title ?? "Usage-limit reset") {
+                        LabeledContent(SettingsCopy.resetCreditTitle(credit.title)) {
                             VStack(alignment: .trailing, spacing: 2) {
-                                Text("×\(credit.count) · expires \(credit.expiresAt.formatted(date: .abbreviated, time: .shortened))")
+                                Text(SettingsCopy.resetCreditLine(count: credit.count, expiresAt: credit.expiresAt))
                                     .font(Theme.mono(12))
                                     .monospacedDigit()
                                 if let usable = credit.usableNow {
-                                    Text(usable ? "usable now" : "not usable yet")
+                                    Text(SettingsCopy.resetCreditUsability(usable))
                                         .font(Theme.mono(11))
                                         .foregroundStyle(Theme.creamDim)
                                 }
@@ -178,7 +186,7 @@ struct AccountDetailView: View {
                 ) {
                     Text("Not set").tag(0)
                     ForEach(1...31, id: \.self) { day in
-                        Text("\(day)").tag(day)
+                        Text(verbatim: String(day)).tag(day)
                     }
                 }
                 .accessibilityIdentifier("billingRenewalDayPicker")
@@ -282,20 +290,29 @@ struct AccountDetailHeader: View {
 
     /// "Added Jul 13, 2026", plus " · used 1 minute ago" while in use or
     /// " · last used 2 hours ago" in the tail; nothing more when idle.
-    static func subtitle(createdAt: Date, phase: InUsePhase, now: Date) -> String {
-        let added = "Added \(createdAt.formatted(date: .abbreviated, time: .omitted))"
+    static func subtitle(createdAt: Date, phase: InUsePhase, now: Date, locale: Locale = .current) -> String {
+        let style = Date.FormatStyle(date: .abbreviated, time: .omitted)
+            .locale(LocalizedCopy.shippedLocale(for: locale))
+        let date: String = createdAt.formatted(style)
+        let added: String = LocalizedStringResource.accountHeaderAdded(date).string(in: locale)
         switch phase {
         case let .inUse(age):
-            return "\(added) · used \(relative(age, at: now))"
+            let when: String = relative(age, at: now, locale: locale)
+            return LocalizedStringResource.accountHeaderInUse(added, when).string(in: locale)
         case let .lastUsed(age):
-            return "\(added) · last used \(relative(age, at: now))"
+            let when: String = relative(age, at: now, locale: locale)
+            return LocalizedStringResource.accountHeaderLastUsed(added, when).string(in: locale)
         case .none:
             return added
         }
     }
 
-    private static func relative(_ age: TimeInterval, at date: Date) -> String {
-        UsageFormatters.relativeReset(date.addingTimeInterval(-age), relativeTo: date)
+    private static func relative(_ age: TimeInterval, at date: Date, locale: Locale) -> String {
+        UsageFormatters.relativeReset(
+            date.addingTimeInterval(-age),
+            relativeTo: date,
+            locale: LocalizedCopy.shippedLocale(for: locale)
+        )
     }
 
     var body: some View {
@@ -332,10 +349,14 @@ struct AccountDetailHeader: View {
                     AccountStateBadge(state: state, style: .detailed, now: date)
                         .layoutPriority(1)
                 }
+                // One line in English at the minimum window; the longer
+                // French and Ukrainian "last used" forms take a second line
+                // rather than losing the age to an ellipsis.
                 Text(Self.subtitle(createdAt: account.createdAt, phase: phase, now: date))
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamFaint)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, 4)

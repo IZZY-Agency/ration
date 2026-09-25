@@ -15,8 +15,12 @@ extension SoonestReset {
     /// The header's next-reset line as VoiceOver says it — "Next reset, Max
     /// weekly, in 45 minutes" — never the drawn "WK · 45m".
     func accessibilityLabel(now: Date, locale: Locale = .current) -> String {
+        let name = kind.spokenName(label: label, locale: locale)
+        if UsageFormatters.isResetDue(resetsAt, relativeTo: now) {
+            return LocalizedStringResource.soonestResetSpokenNow(accountLabel, name).string(in: locale)
+        }
         let when = UsageFormatters.spokenDuration(until: resetsAt, relativeTo: now, locale: locale)
-        return "Next reset, \(accountLabel) \(kind.spokenName(label: label)), in \(when)"
+        return LocalizedStringResource.soonestResetSpoken(accountLabel, name, when).string(in: locale)
     }
 }
 

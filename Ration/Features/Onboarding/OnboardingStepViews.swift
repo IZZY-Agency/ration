@@ -10,74 +10,80 @@ struct OnboardingProviderGuide {
     let symbol: String
     let hint: String
 
-    static func guide(for provider: Provider, warmUpEnabled: Bool = true) -> OnboardingProviderGuide {
+    static func guide(
+        for provider: Provider,
+        warmUpEnabled: Bool = true,
+        locale: Locale = .current
+    ) -> OnboardingProviderGuide {
         switch provider {
         case .claude:
-            OnboardingProviderGuide(
-                symbol: "sparkles",
-                hint: """
-                    If you sign in with a magic link, paste the link from your \
-                    email into the field at the top of the sign-in window. \
-                    Opening it in Safari signs in your browser, not Ration. \
-                    \(WarmUpDefaults.newClaudeAccountDisclosure(warmUpEnabled: warmUpEnabled))
-                    """
-            )
+            // One entry per warm-up state: the magic-link advice and the
+            // warm-up disclosure read as one block, and each entry repeats
+            // `warmUp.disclosure.on/off` word for word (a test holds them
+            // together).
+            let hint: LocalizedStringResource = warmUpEnabled
+                ? .onboardingHintClaudeWarmUpOn
+                : .onboardingHintClaudeWarmUpOff
+            return OnboardingProviderGuide(symbol: "sparkles", hint: hint.string(in: locale))
         case .chatGPT:
             // The cookie name is read from the parser that consumes it, so the
             // instructions and the accepted input can never drift apart.
-            OnboardingProviderGuide(
-                symbol: "hexagon",
-                hint: """
-                    Passkeys can't run in the sign-in window. Log in at \
-                    chatgpt.com in your browser, then copy the \
-                    \(ChatGPTSessionCookiePaste.sessionTokenName) cookie value \
-                    (DevTools → Application → Cookies) and paste it into the \
-                    sign-in window. If your browser shows numbered chunks \
-                    (…session-token.0 and .1), paste BOTH as name=value pairs \
-                    separated by a semicolon.
-                    """
-            )
+            let hint = LocalizedStringResource.onboardingHintChatGPT(ChatGPTSessionCookiePaste.sessionTokenName)
+            return OnboardingProviderGuide(symbol: "hexagon", hint: hint.string(in: locale))
         case .cursor:
             // Kept deliberately: as docs/KNOWN-LIMITATIONS.md explains, the
             // Cursor card shows dollars, not a percentage, and a user who
             // expects a percentage will read a correct card as broken.
-            OnboardingProviderGuide(
+            return OnboardingProviderGuide(
                 symbol: "cursorarrow.rays",
-                hint: """
-                    A normal cursor.com sign-in. Cursor reports usage-based \
-                    spend for the billing cycle rather than a percentage of plan.
-                    """
+                hint: LocalizedStringResource.onboardingHintCursor.string(in: locale)
             )
         }
     }
 }
 
-struct OnboardingWelcomeStep: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            OnboardingStepHeader(
-                title: "Welcome to Ration",
-                subtitle: "Your real Claude, ChatGPT and Cursor limits, in the menu bar."
-            )
+/// A step's heading and bullets, resolved in one language. Built by each
+/// step's `copy`/`header` so the views stay layout-only and the text is
+/// testable in every language.
+struct OnboardingStepCopy: Equatable {
+    let title: String
+    let subtitle: String
+    var bullets: [OnboardingBulletCopy] = []
+}
 
-            VStack(alignment: .leading, spacing: 12) {
-                OnboardingBullet(
+struct OnboardingBulletCopy: Equatable {
+    let symbol: String
+    let title: String
+    let detail: String
+}
+
+struct OnboardingWelcomeStep: View {
+    static func copy(locale: Locale = .current) -> OnboardingStepCopy {
+        OnboardingStepCopy(
+            title: LocalizedStringResource.onboardingWelcomeTitle.string(in: locale),
+            subtitle: LocalizedStringResource.onboardingWelcomeSubtitle.string(in: locale),
+            bullets: [
+                OnboardingBulletCopy(
                     symbol: "gauge.with.needle",
-                    title: "Real numbers, not guesses",
-                    detail: "Reads the same usage endpoints each provider's own site uses — 5-hour and weekly windows, resets, and spend."
-                )
-                OnboardingBullet(
+                    title: LocalizedStringResource.onboardingWelcomeRealNumbersTitle.string(in: locale),
+                    detail: LocalizedStringResource.onboardingWelcomeRealNumbersDetail.string(in: locale)
+                ),
+                OnboardingBulletCopy(
                     symbol: "lock.laptopcomputer",
-                    title: "No middleman",
-                    detail: "There's no Ration server, no telemetry, and no account to create. You sign in on the provider's own page — or your SSO provider's, if you use one — and the session stays in an isolated profile on this Mac."
-                )
-                OnboardingBullet(
+                    title: LocalizedStringResource.onboardingWelcomeNoMiddlemanTitle.string(in: locale),
+                    detail: LocalizedStringResource.onboardingWelcomeNoMiddlemanDetail.string(in: locale)
+                ),
+                OnboardingBulletCopy(
                     symbol: "menubar.arrow.up.rectangle",
-                    title: "Lives in your menu bar",
-                    detail: "There's no Dock icon. Click the ring in the menu bar — or press ⌥⌘U — to open it."
-                )
-            }
-        }
+                    title: LocalizedStringResource.onboardingWelcomeMenuBarTitle.string(in: locale),
+                    detail: LocalizedStringResource.onboardingWelcomeMenuBarDetail.string(in: locale)
+                ),
+            ]
+        )
+    }
+
+    var body: some View {
+        OnboardingCopyStack(copy: Self.copy(), spacing: 16, bulletSpacing: 12)
     }
 }
 
@@ -92,12 +98,21 @@ struct OnboardingConnectStep: View {
     /// Account — it was Claude gold for every provider.
     static func iconAccent(for provider: Provider) -> Color { provider.markAccent }
 
+    static func header(locale: Locale = .current) -> OnboardingStepCopy {
+        OnboardingStepCopy(
+            title: LocalizedStringResource.onboardingConnectTitle.string(in: locale),
+            subtitle: LocalizedStringResource.onboardingConnectSubtitle.string(in: locale)
+        )
+    }
+
+    static func waitingText(locale: Locale = .current) -> String {
+        LocalizedStringResource.onboardingConnectWaiting.string(in: locale)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            OnboardingStepHeader(
-                title: "Connect your first account",
-                subtitle: "Each account gets its own isolated browser profile on this Mac. Check the padlock address bar before you type a password."
-            )
+            let header = Self.header()
+            OnboardingStepHeader(title: header.title, subtitle: header.subtitle)
 
             ForEach(Provider.allCases) { provider in
                 let guide = OnboardingProviderGuide.guide(for: provider, warmUpEnabled: warmUpEnabled)
@@ -142,10 +157,7 @@ struct OnboardingConnectStep: View {
                     .foregroundStyle(Theme.crit)
                     .textSelection(.enabled)
             } else if isWaitingForSignIn {
-                Label(
-                    "Waiting for sign-in… this step finishes by itself once the account is verified.",
-                    systemImage: "clock"
-                )
+                Label(Self.waitingText(), systemImage: "clock")
                 .font(Theme.mono(11.5))
                 .foregroundStyle(Theme.creamDim)
             }
@@ -156,12 +168,17 @@ struct OnboardingConnectStep: View {
 struct OnboardingLaunchAtLoginStep: View {
     @ObservedObject var launchAtLogin: LaunchAtLoginController
 
+    static func header(locale: Locale = .current) -> OnboardingStepCopy {
+        OnboardingStepCopy(
+            title: LocalizedStringResource.onboardingLaunchTitle.string(in: locale),
+            subtitle: LocalizedStringResource.onboardingLaunchSubtitle.string(in: locale)
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            OnboardingStepHeader(
-                title: "Keep it running",
-                subtitle: "Ration can only track your limits while it's running. Starting it at login means you never have to think about it."
-            )
+            let header = Self.header()
+            OnboardingStepHeader(title: header.title, subtitle: header.subtitle)
 
             Toggle(
                 "Launch at login",
@@ -202,48 +219,83 @@ struct OnboardingDoneStep: View {
     /// when nothing is connected would simply be untrue.
     let hasAccounts: Bool
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            OnboardingStepHeader(
-                title: hasAccounts ? "You're all set" : "Ready when you are",
-                subtitle: hasAccounts
-                    ? "Ration is watching your limits. Here's where everything lives."
-                    : "No account is connected yet, so there's nothing to track so far. Here's where everything lives when you're ready."
-            )
-
-            VStack(alignment: .leading, spacing: 12) {
-                OnboardingBullet(
+    /// The bullet titles for Settings, History and Alerts are the names those
+    /// windows and panes carry, from the same entries.
+    static func copy(hasAccounts: Bool, locale: Locale = .current) -> OnboardingStepCopy {
+        let title: LocalizedStringResource = hasAccounts ? .onboardingDoneTitleReady : .onboardingDoneTitleEmpty
+        let subtitle: LocalizedStringResource = hasAccounts ? .onboardingDoneSubtitleReady : .onboardingDoneSubtitleEmpty
+        let accountsTitle: LocalizedStringResource = hasAccounts
+            ? .onboardingDoneMoreAccountsTitle
+            : .onboardingDoneConnectAccountTitle
+        let accountsDetail: LocalizedStringResource = hasAccounts
+            ? .onboardingDoneMoreAccountsDetail
+            : .onboardingDoneConnectAccountDetail
+        return OnboardingStepCopy(
+            title: title.string(in: locale),
+            subtitle: subtitle.string(in: locale),
+            bullets: [
+                OnboardingBulletCopy(
                     symbol: "menubar.arrow.up.rectangle",
-                    title: "Can't find the icon?",
-                    detail: "Press ⌥⌘U to open the window from anywhere."
-                )
-                OnboardingBullet(
+                    title: LocalizedStringResource.onboardingDoneFindIconTitle.string(in: locale),
+                    detail: LocalizedStringResource.onboardingDoneFindIconDetail.string(in: locale)
+                ),
+                OnboardingBulletCopy(
                     symbol: "plus.circle",
-                    title: hasAccounts ? "More accounts" : "Connect an account",
-                    detail: hasAccounts
-                        ? "Add another any time with the + button at the bottom of the popover."
-                        : "Use the + button at the bottom of the popover, or re-open this guide from Settings → General."
-                )
-                OnboardingBullet(
+                    title: accountsTitle.string(in: locale),
+                    detail: accountsDetail.string(in: locale)
+                ),
+                OnboardingBulletCopy(
                     symbol: "gearshape",
-                    title: "Settings",
-                    detail: "⌘, opens it — account labels, sort order, warm-up quiet hours, and this guide."
-                )
-                OnboardingBullet(
+                    title: LocalizedStringResource("Settings").string(in: locale),
+                    detail: LocalizedStringResource.onboardingDoneSettingsDetail.string(in: locale)
+                ),
+                OnboardingBulletCopy(
                     symbol: "chart.xyaxis.line",
-                    title: "History",
-                    detail: "Burn-down charts and billing-cycle utilisation per account."
-                )
-                OnboardingBullet(
+                    title: LocalizedStringResource("History").string(in: locale),
+                    detail: LocalizedStringResource.onboardingDoneHistoryDetail.string(in: locale)
+                ),
+                OnboardingBulletCopy(
                     symbol: "bell.badge",
-                    title: "Alerts",
-                    detail: "Notifies you at thresholds you choose (75% and 90% to begin with). Set them in Settings → Alerts."
-                )
-                OnboardingBullet(
+                    title: LocalizedStringResource.settingsSidebarAlerts.string(in: locale),
+                    detail: alertsDetail(locale: locale)
+                ),
+                OnboardingBulletCopy(
                     symbol: "chevron.left.forwardslash.chevron.right",
-                    title: "Open source",
-                    detail: "Source, releases and issues live at github.com/IZZY-Agency/ration. The website is ration.sh — both are one click away in Settings → General and in About."
-                )
+                    title: LocalizedStringResource.onboardingDoneOpenSourceTitle.string(in: locale),
+                    detail: LocalizedStringResource.onboardingDoneOpenSourceDetail.string(in: locale)
+                ),
+            ]
+        )
+    }
+
+    /// The default thresholds, read from `ThresholdPair.default`, as whole
+    /// percents in the monospaced detail face.
+    private static func alertsDetail(locale: Locale) -> String {
+        let thresholds = ThresholdPair.default
+        let warning: String = UsageFormatters.wholePercent(thresholds.warningPercent, monospaced: true, locale: locale)
+        let critical: String = UsageFormatters.wholePercent(thresholds.criticalPercent, monospaced: true, locale: locale)
+        return LocalizedStringResource.onboardingDoneAlertsDetail(warning, critical).string(in: locale)
+    }
+
+    var body: some View {
+        OnboardingCopyStack(copy: Self.copy(hasAccounts: hasAccounts), spacing: 16, bulletSpacing: 12)
+    }
+}
+
+/// A header over a list of bullets: the Welcome and Done steps.
+struct OnboardingCopyStack: View {
+    let copy: OnboardingStepCopy
+    let spacing: CGFloat
+    let bulletSpacing: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            OnboardingStepHeader(title: copy.title, subtitle: copy.subtitle)
+
+            VStack(alignment: .leading, spacing: bulletSpacing) {
+                ForEach(copy.bullets, id: \.symbol) { bullet in
+                    OnboardingBullet(symbol: bullet.symbol, title: bullet.title, detail: bullet.detail)
+                }
             }
         }
     }

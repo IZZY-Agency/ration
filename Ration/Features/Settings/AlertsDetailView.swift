@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// One editable cell in the thresholds grid: a provider × window pair.
@@ -37,17 +38,6 @@ enum AlertsGridModel {
     /// the answer flicker as accounts come and go.
     static var allChannelKeys: [String] {
         rows(for: Provider.allCases).map(\.id) + [AppSettingsData.cursorSpendKey]
-    }
-}
-
-/// The copy used for each rate window across the app's pickers — kept local
-/// to Settings rather than a `UsageWindowKind` extension, since it is a
-/// presentation concern only this feature area needs.
-private func windowLabel(_ window: UsageWindowKind) -> String {
-    switch window {
-    case .fiveHour: "5-hour"
-    case .weekly: "Weekly"
-    case .modelWeekly: "Fable"
     }
 }
 
@@ -232,7 +222,7 @@ private struct ThresholdFieldsRow: View {
     }
 
     var body: some View {
-        LabeledContent(windowLabel(row.window)) {
+        LabeledContent(SettingsCopy.windowLabel(row.window)) {
             // First-text-baseline: the numbers sat above the "Warn"/"%" label
             // baseline when the row centred a borderless field.
             HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -244,7 +234,7 @@ private struct ThresholdFieldsRow: View {
                     focused: $warningFocused,
                     identifier: "alertWarningField.\(row.id)"
                 )
-                Text("%")
+                Text(verbatim: "%")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
 
@@ -257,7 +247,7 @@ private struct ThresholdFieldsRow: View {
                     focused: $criticalFocused,
                     identifier: "alertCriticalField.\(row.id)"
                 )
-                Text("%")
+                Text(verbatim: "%")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
 
@@ -350,9 +340,9 @@ private struct ThresholdFieldsRow: View {
 enum ResetExpiryCopy {
     /// "Expiry warning: 1 day" / "… N days". The old "Warn N days before
     /// expiry" truncated to "Warn 1 day before exp…" beside the stepper and
-    /// channel toggles at the +2 pt type.
-    static func stepperLabel(leadDays: Int) -> String {
-        "Expiry warning: \(leadDays) day\(leadDays == 1 ? "" : "s")"
+    /// channel toggles at the +2 pt type. Pluralized per language.
+    static func stepperLabel(leadDays: Int, locale: Locale = .current) -> String {
+        LocalizedStringResource.alertsExpiryWarning(leadDays).string(in: locale)
     }
 }
 
@@ -397,10 +387,26 @@ private struct ResetCreditsSettingsRow: View {
 /// Pure dollar-string <-> cents conversion for the Cursor spend fields,
 /// pulled out of `CursorSpendSection` (mirroring `CursorSpendRow.text`) so
 /// the overflow guard below is unit-testable without hosting a SwiftUI view.
+///
+/// Both directions follow the app language's decimal separator (ruling R3):
+/// "12.34" in English, "12,34" in French and Ukrainian. The number locale is
+/// built from the language alone, like `UsageFormatters.usd`, so the region
+/// never changes it (English stays "12.34" on an en_DE Mac, as in 1.3.0).
 enum CursorSpendFieldParsing {
-    static func dollarsText(fromCents cents: Int?) -> String {
+    static func dollarsText(fromCents cents: Int?, locale: Locale = .current) -> String {
         guard let cents else { return "" }
-        return String(format: "%.2f", Double(cents) / 100)
+        let amount: Decimal = Decimal(cents) / 100
+        let style = Decimal.FormatStyle(locale: numberLocale(for: locale))
+            .precision(.fractionLength(2))
+            .grouping(.never)
+        return amount.formatted(style)
+    }
+
+    /// The language-only locale whose decimal separator the field uses.
+    static func numberLocale(for locale: Locale) -> Locale {
+        let shipped: Locale = LocalizedCopy.shippedLocale(for: locale)
+        let languageCode: String = shipped.language.languageCode?.identifier ?? "en"
+        return Locale(identifier: languageCode)
     }
 
     /// A Cursor bill in the hundreds of thousands of dollars is already
@@ -416,11 +422,20 @@ enum CursorSpendFieldParsing {
     /// range check below has to run BEFORE the conversion, not after).
     /// `.some(nil)` means the field was left blank, which IS the deliberate
     /// way to turn a tier off.
-    static func parsedCents(_ text: String) -> Int?? {
+    ///
+    /// A plain "." is always accepted; the language's own decimal separator
+    /// ("," in French and Ukrainian) is read as one. Nothing else is guessed:
+    /// a grouped figure ("1,234.50") is invalid rather than misread.
+    static func parsedCents(_ text: String, locale: Locale = .current) -> Int?? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return .some(nil) }
+        let separator: String = numberLocale(for: locale).decimalSeparator ?? "."
+        var normalized: String = trimmed
+        if separator != ".", !trimmed.contains(".") {
+            normalized = trimmed.replacingOccurrences(of: separator, with: ".")
+        }
         guard
-            let dollars = Double(trimmed),
+            let dollars = Double(normalized),
             dollars.isFinite,
             dollars >= 0,
             dollars < maxDollars
@@ -433,6 +448,22 @@ enum CursorSpendFieldParsing {
 /// spend with no denominator (see `AlertThresholds.swift`), so there is
 /// nothing to divide by. No default warning/critical value exists either;
 /// empty means that tier is off, and this view must never invent a figure.
+/// The Cursor spend fields' frame width.
+enum CursorSpendFieldLayout {
+    /// 70 pt holds the box and its trailing "off" title in English. A longer
+    /// translation ("aucun", "вимк.") widens the frame by the difference
+    /// instead of wrapping the word under a shrunken box.
+    static func width(locale: Locale = .current) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        func measured(_ text: String) -> CGFloat {
+            ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        }
+        let english: CGFloat = measured("off")
+        let local: CGFloat = measured(LocalizedStringResource("off").string(in: locale))
+        return 70 + max(0, local - english)
+    }
+}
+
 private struct CursorSpendSection: View {
     let spend: SpendThresholds
     // Field-level, same reasoning as `ThresholdFieldsRow`: composing a whole
@@ -515,7 +546,7 @@ private struct CursorSpendSection: View {
         TextField("off", text: text)
             .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.trailing)
-            .frame(width: 70)
+            .frame(width: CursorSpendFieldLayout.width())
             .focused(focused)
             .onSubmit { focused.wrappedValue = false }
             .accessibilityIdentifier(identifier)
@@ -585,7 +616,7 @@ private struct ChannelToggles: View {
                 set: { submit($0, using: onSetNotificationEnabled) }
             ))
             .accessibilityIdentifier("alertNotifyToggle.\(key)")
-            .help(notifyBlockedNote ?? "Send a system notification when this is crossed")
+            .help(notifyBlockedNote ?? SettingsCopy.notifyHelp())
             .disabled(notifyBlockedNote != nil)
             .opacity(notifyBlockedNote != nil ? 0.45 : 1)
 

@@ -209,7 +209,7 @@ private struct HolidayRow: View {
                 }
             DatePicker("", selection: dateBinding(isStart: true), displayedComponents: .date)
                 .labelsHidden()
-            Text("–").foregroundStyle(Theme.creamDim)
+            Text(verbatim: "–").foregroundStyle(Theme.creamDim)
             DatePicker("", selection: dateBinding(isStart: false), displayedComponents: .date)
                 .labelsHidden()
             Spacer(minLength: 4)
@@ -218,13 +218,22 @@ private struct HolidayRow: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.crit)
-            .accessibilityLabel("Remove \(holiday.label.isEmpty ? "range" : holiday.label)")
+            .accessibilityLabel(removeLabel)
         }
         .onChange(of: holiday.label) { _, newValue in
             // Re-sync the field only when the user isn't mid-edit, so a store
             // republish (e.g. from another edit) doesn't yank the caret.
             if !labelFocused, newValue != label { label = newValue }
         }
+    }
+
+    /// "Remove Winter break", or "Remove range" for an unnamed one. The
+    /// label is the user's own text.
+    private var removeLabel: Text {
+        if holiday.label.isEmpty {
+            return Text("Remove range")
+        }
+        return Text("Remove \(holiday.label)")
     }
 
     private func commitLabel() {

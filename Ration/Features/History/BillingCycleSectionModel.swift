@@ -42,10 +42,12 @@ enum BillingCycleSectionModel {
         fablePresent: Bool = false,
         fableLabel: String? = nil,
         now: Date,
-        calendar: Calendar
+        calendar: Calendar,
+        locale: Locale = .current
     ) -> BillingCycleCard {
+        let label: String = account.historyLabel(locale: locale)
         guard let renewalDay = account.billingRenewalDay else {
-            return .noRenewalDay(id: account.id, label: account.historyLabel, provider: account.provider)
+            return .noRenewalDay(id: account.id, label: label, provider: account.provider)
         }
         let cycle = BillingCycle.current(renewalDay: renewalDay, now: now, calendar: calendar)
         let weeklySummary = BillingCycleAnalyzer.summarize(
@@ -73,7 +75,7 @@ enum BillingCycleSectionModel {
         } else {
             fable = nil
         }
-        return .tracked(id: account.id, label: account.historyLabel, provider: account.provider,
+        return .tracked(id: account.id, label: label, provider: account.provider,
                         cycle: cycle, summary: summary, fable: fable)
     }
 
@@ -87,5 +89,80 @@ enum BillingCycleSectionModel {
         if weekly.isSufficient { return weekly }
         if fiveHour.isSufficient { return fiveHour }
         return weekly.coverageFraction >= fiveHour.coverageFraction ? weekly : fiveHour
+    }
+}
+
+/// The text of a Billing cycle card, resolved in one language. Numbers go
+/// through `UsageFormatters` and keep their 1.3.0 English form ("≥ 42%",
+/// "1.5×").
+enum BillingCycleCopy {
+    static func noCycleSubtitle(locale: Locale = .current) -> String {
+        LocalizedStringResource.billingSubtitleNone.string(in: locale)
+    }
+
+    /// "Cycle Sep 12 – Oct 11 · Day 3/30". The last day shown is the day
+    /// before the (exclusive) end.
+    static func cycleSubtitle(
+        _ cycle: BillingCycle,
+        locale: Locale = .current,
+        timeZone: TimeZone = .current
+    ) -> String {
+        let style = Date.FormatStyle(locale: locale, timeZone: timeZone).month(.abbreviated).day()
+        let first: String = cycle.start.formatted(style)
+        let last: String = cycle.end.addingTimeInterval(-1).formatted(style)
+        return LocalizedStringResource
+            .billingSubtitleCycle(first, last, cycle.dayIndex, cycle.totalDays)
+            .string(in: locale)
+    }
+
+    /// The headline, drawn in the display face: "≥ 42%".
+    static func headline(_ summary: CycleUtilizationSummary, locale: Locale = .current) -> String {
+        "≥ " + percent(summary.capacityUtilization, locale: locale, monospaced: false)
+    }
+
+    /// Shown while too few hours were watched: "watched 40 of 58 hrs · Day 3/30".
+    static func watched(_ summary: CycleUtilizationSummary, cycle: BillingCycle, locale: Locale = .current) -> String {
+        LocalizedStringResource
+            .billingWatched(summary.observedHours, summary.elapsedHours, cycle.dayIndex, cycle.totalDays)
+            .string(in: locale)
+    }
+
+    /// "≥ 1.5× weekly allowance · Used 2 days · At ≥95% 1 day · watched 40/58 hrs".
+    /// Both day counts are catalog plurals.
+    /// The watched hours are capped at the elapsed hours.
+    static func detail(_ summary: CycleUtilizationSummary, locale: Locale = .current) -> String {
+        let watched: Int = min(summary.observedHours, summary.elapsedHours)
+        return LocalizedStringResource
+            .billingDetail(
+                allowance(summary, locale: locale),
+                daysUsed: summary.daysUsed,
+                atCapDays: summary.atCapDays,
+                watched,
+                summary.elapsedHours
+            )
+            .string(in: locale)
+    }
+
+    static func fableValue(label: String, _ summary: CycleUtilizationSummary, locale: Locale = .current) -> String {
+        let value: String = percent(summary.capacityUtilization, locale: locale, monospaced: true)
+        return LocalizedStringResource.billingFableValue(label, value).string(in: locale)
+    }
+
+    static func fableInsufficient(label: String, locale: Locale = .current) -> String {
+        LocalizedStringResource.billingFableInsufficient(label).string(in: locale)
+    }
+
+    /// "≥ 1.5× weekly allowance".
+    private static func allowance(_ summary: CycleUtilizationSummary, locale: Locale) -> String {
+        let number: String = UsageFormatters.oneDecimal(summary.consumedAllowances, locale: locale)
+        let resource: LocalizedStringResource = summary.windowKind == .weekly
+            ? .billingAllowanceWeekly(number)
+            : .billingAllowanceFiveHour(number)
+        return resource.string(in: locale)
+    }
+
+    private static func percent(_ fraction: Double, locale: Locale, monospaced: Bool) -> String {
+        let whole: Int = Int((fraction * 100).rounded())
+        return UsageFormatters.wholePercent(whole, monospaced: monospaced, locale: locale)
     }
 }

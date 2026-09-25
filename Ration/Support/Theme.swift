@@ -193,21 +193,46 @@ enum Theme {
     static let onGold = Color(nsColor: onGoldNS)
 
     // MARK: Fonts (registered PostScript names)
-    static func display(_ size: CGFloat, _ weight: DisplayWeight = .medium) -> Font {
-        .custom(weight.postScriptName, size: size)
+    //
+    // Space Grotesk and Space Mono have no Cyrillic, so a Ukrainian UI draws in
+    // Manrope and JetBrains Mono NL (the no-ligature cut, so `->` or `<=` in
+    // mono text stay as typed). English and French keep the Space faces. The
+    // language is fixed for the life of the process (it changes on relaunch),
+    // so `.current` is safe as the default.
+    static func display(
+        _ size: CGFloat,
+        _ weight: DisplayWeight = .medium,
+        language: AppLanguage = .current
+    ) -> Font {
+        .custom(weight.postScriptName(for: language), size: size)
     }
 
-    static func mono(_ size: CGFloat, bold: Bool = false) -> Font {
-        .custom(bold ? "SpaceMono-Bold" : "SpaceMono-Regular", size: size)
+    static func mono(_ size: CGFloat, bold: Bool = false, language: AppLanguage = .current) -> Font {
+        .custom(monoPostScriptName(bold: bold, language: language), size: size)
+    }
+
+    static func monoPostScriptName(bold: Bool, language: AppLanguage) -> String {
+        if language == .ukrainian {
+            return bold ? "JetBrainsMonoNL-Bold" : "JetBrainsMonoNL-Regular"
+        }
+        return bold ? "SpaceMono-Bold" : "SpaceMono-Regular"
     }
 
     enum DisplayWeight {
         case medium, semibold, bold
-        var postScriptName: String {
+
+        func postScriptName(for language: AppLanguage) -> String {
+            if language == .ukrainian {
+                switch self {
+                case .medium: return "Manrope-Medium"
+                case .semibold: return "Manrope-SemiBold"
+                case .bold: return "Manrope-Bold"
+                }
+            }
             switch self {
-            case .medium: "SpaceGrotesk-Medium"
-            case .semibold: "SpaceGrotesk-SemiBold"
-            case .bold: "SpaceGrotesk-Bold"
+            case .medium: return "SpaceGrotesk-Medium"
+            case .semibold: return "SpaceGrotesk-SemiBold"
+            case .bold: return "SpaceGrotesk-Bold"
             }
         }
     }

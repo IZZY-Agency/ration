@@ -39,17 +39,27 @@ struct SettingsSidebar: View {
     /// Alerts gets its own group rather than joining General/Warm-up: it
     /// carries a growing sub-screen (thresholds now, channels later) rather
     /// than a single toggle, and deserves the visual separation.
-    static let fixedGroups: [[FixedItem]] = [
+    ///
+    /// Titles resolve in the running language, which is fixed for the
+    /// process (a language change relaunches the app).
+    static var fixedGroups: [[FixedItem]] { fixedGroups(locale: .current) }
+
+    /// The fixed rows' titles in display order.
+    static func fixedTitles(locale: Locale) -> [String] {
+        fixedGroups(locale: locale).flatMap { $0.map(\.title) }
+    }
+
+    static func fixedGroups(locale: Locale) -> [[FixedItem]] { [
         [
             FixedItem(
                 selection: .general,
-                title: "General",
+                title: SettingsSectionTitle.general(locale: locale),
                 systemImage: "gearshape",
                 accessibilityIdentifier: "generalSettingsItem"
             ),
             FixedItem(
                 selection: .warmUp,
-                title: "Warm-up",
+                title: LocalizedStringResource.settingsSidebarWarmUp.string(in: locale),
                 systemImage: "moon.zzz",
                 accessibilityIdentifier: "warmUpSettingsItem"
             ),
@@ -57,12 +67,12 @@ struct SettingsSidebar: View {
         [
             FixedItem(
                 selection: .alerts,
-                title: "Alerts",
+                title: LocalizedStringResource.settingsSidebarAlerts.string(in: locale),
                 systemImage: "bell",
                 accessibilityIdentifier: "alertsSettingsItem"
             ),
         ],
-    ]
+    ] }
 
     /// Flattened display order, derived — never a second list to maintain.
     static var fixedSelections: [SettingsSelection] {

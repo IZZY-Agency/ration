@@ -173,19 +173,33 @@ struct UsageSparkline: View {
     }
 
     private var accessibilityText: String {
+        Self.accessibilityText(samples: samples, projection: projection)
+    }
+
+    /// What VoiceOver reads for the sparkline: the trend, and when the limit
+    /// is projected to run out. The samples are REMAINING capacity, so a line
+    /// sloping down (`sparklineDown`) is usage trending UP, and the words say so.
+    static func accessibilityText(
+        samples: [UsageHistorySample],
+        projection: Date?,
+        locale: Locale = .current,
+        timeZone: TimeZone = .current
+    ) -> String {
         guard samples.count >= 2, let first = samples.first, let last = samples.last else {
-            return "Usage trend unavailable"
+            return LocalizedStringResource.sparklineUnavailable.string(in: locale)
         }
         let delta = last.remaining - first.remaining
-        let trend: String
+        let resource: LocalizedStringResource
         if delta < -0.01 {
-            trend = "Usage trending down"
+            resource = .sparklineDown
         } else if delta > 0.01 {
-            trend = "Usage trending up"
+            resource = .sparklineUp
         } else {
-            trend = "Usage steady"
+            resource = .sparklineSteady
         }
+        let trend: String = resource.string(in: locale)
         guard let projection else { return trend }
-        return "\(trend), projected to run out around \(UsageFormatters.shortTime(projection))"
+        let time: String = UsageFormatters.shortTime(projection, locale: locale, timeZone: timeZone)
+        return LocalizedStringResource.sparklineProjection(trend, time).string(in: locale)
     }
 }

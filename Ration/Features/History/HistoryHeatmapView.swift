@@ -46,13 +46,14 @@ struct HistoryHeatmapView: View {
             )
             .frame(height: 26)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityLabel(for: hour))
+            .accessibilityLabel(Self.accessibilityLabel(for: hour))
     }
 
     private func tick(for hour: HourOfDayBurn) -> some View {
         Group {
             if hour.hour % 6 == 0 {
-                Text("\(hour.hour)")
+                // A bare number: verbatim, so no catalog key is created.
+                Text(verbatim: String(hour.hour))
                     .font(Theme.mono(10))
                     .foregroundStyle(Theme.creamFaint)
                     .frame(maxWidth: .infinity)
@@ -68,9 +69,10 @@ struct HistoryHeatmapView: View {
         return min(max(consumed / maxConsumed, 0), 1)
     }
 
-    private func accessibilityLabel(for hour: HourOfDayBurn) -> String {
+    /// Spoken, so the percent follows prose rules (U+202F in French).
+    static func accessibilityLabel(for hour: HourOfDayBurn, locale: Locale = .current) -> String {
         let hourLabel = String(format: "%02d:00", hour.hour)
-        let percent = UsageFormatters.usedPercentage(hour.averageConsumed)
-        return "\(hourLabel), \(percent) average burn"
+        let percent = UsageFormatters.usedPercentage(hour.averageConsumed, locale: locale)
+        return LocalizedStringResource.historyHeatmapCell(hourLabel, percent).string(in: locale)
     }
 }

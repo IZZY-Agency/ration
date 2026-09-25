@@ -7,14 +7,9 @@ enum SettingsSelection: Hashable {
     case warmUp
     case alerts
 
-    /// The item to select when the window opens: the first account, or the
-    /// General pane when there are no accounts.
-    static func defaultSelection(accounts: [AccountRecord]) -> SettingsSelection {
-        if let first = accounts.first {
-            return .account(first.id)
-        }
-        return .general
-    }
+    /// The item to select when the window opens, and after the selected
+    /// account is removed: always the General pane.
+    static let defaultSelection: SettingsSelection = .general
 
     /// The selection to keep after the account list changes. Non-account items
     /// are always preserved; an account item survives only while its account
@@ -35,7 +30,7 @@ enum SettingsSelection: Hashable {
         case let .account(id) where accounts.contains(where: { $0.id == id }):
             return .account(id)
         case .account, nil:
-            return defaultSelection(accounts: accounts)
+            return defaultSelection
         }
     }
 }

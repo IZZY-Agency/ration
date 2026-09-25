@@ -13,20 +13,26 @@ final class SettingsSelectionTests: XCTestCase {
         )
     }
 
-    func testDefaultSelectionIsFirstAccountWhenPresent() {
+    func testSettingsOpensOnGeneralEvenWithAccounts() {
         let a = account(order: 0)
-        let b = account(order: 1)
+        XCTAssertEqual(SettingsSelection.normalized(nil, accounts: [a, account(order: 1)]), .general)
+    }
+
+    func testSettingsOpensOnGeneralWithoutAccounts() {
+        XCTAssertEqual(SettingsSelection.normalized(nil, accounts: []), .general)
+    }
+
+    func testRemovedAccountSelectionFallsBackToGeneral() {
+        let removed = account(order: 0)
         XCTAssertEqual(
-            SettingsSelection.defaultSelection(accounts: [a, b]),
-            .account(a.id)
+            SettingsSelection.normalized(.account(removed.id), accounts: [account(order: 1)]),
+            .general
         )
     }
 
-    func testDefaultSelectionIsGeneralWhenEmpty() {
-        XCTAssertEqual(
-            SettingsSelection.defaultSelection(accounts: []),
-            .general
-        )
+    func testExistingAccountSelectionIsKept() {
+        let a = account(order: 0)
+        XCTAssertEqual(SettingsSelection.normalized(.account(a.id), accounts: [a]), .account(a.id))
     }
 
     // MARK: normalized(_:accounts:)
@@ -56,21 +62,7 @@ final class SettingsSelectionTests: XCTestCase {
         XCTAssertEqual(SettingsSelection.normalized(.account(a.id), accounts: [a]), .account(a.id))
     }
 
-    func testRemovedAccountFallsBackToFirstAccount() {
-        let remaining = account(order: 0)
-        XCTAssertEqual(
-            SettingsSelection.normalized(.account(UUID()), accounts: [remaining]),
-            .account(remaining.id)
-        )
-    }
-
     func testRemovedAccountWithNoAccountsFallsBackToGeneral() {
         XCTAssertEqual(SettingsSelection.normalized(.account(UUID()), accounts: []), .general)
-    }
-
-    func testNilFallsBackToDefault() {
-        let a = account(order: 0)
-        XCTAssertEqual(SettingsSelection.normalized(nil, accounts: [a]), .account(a.id))
-        XCTAssertEqual(SettingsSelection.normalized(nil, accounts: []), .general)
     }
 }

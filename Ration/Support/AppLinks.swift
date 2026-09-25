@@ -11,6 +11,14 @@ enum AppLinks {
         let title: String
         let url: URL
         let accessibilityIdentifier: String
+
+        /// What the About window draws. `title` stays the identity (and the
+        /// brand names ration.sh and GitHub are never translated); only the
+        /// issue link is prose.
+        func displayTitle(locale: Locale = .current) -> String {
+            guard url == AppLinks.issues else { return title }
+            return LocalizedStringResource.aboutLinkReportIssue.string(in: locale)
+        }
     }
 
     /// What the About window shows, in display order.
