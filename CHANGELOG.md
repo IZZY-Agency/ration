@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.0
+
+- When the popover header says STALE or OFFLINE, hover it to see which
+  accounts are not up to date and why. Click STALE to open Settings on the
+  account that needs attention; click OFFLINE to refresh everything.
+- An account that needs attention shows a "Needs attention" card at the top of
+  its page in Settings, with what went wrong and what to do: Sign in again,
+  Refresh now, or, when a provider changed its page, Check for updates and
+  Report it. The card goes away once the account is healthy.
+- A Cursor account whose sign-in expired now asks you to sign in again instead
+  of refreshing forever and going stale.
+
 ## 1.5.0
 
 - Billing-cycle utilisation is now an exact figure instead of a "≥" lower

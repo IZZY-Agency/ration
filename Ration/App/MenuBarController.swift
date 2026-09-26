@@ -40,6 +40,9 @@ final class MenuBarController: NSObject {
     private var fallbackWindowController: NSWindowController?
     private var addAccountWindowController: NSWindowController?
     private var settingsWindowController: NSWindowController?
+    /// The open Settings window's outside selection requests (see
+    /// `showSettings(selecting:)`); nil while no Settings window is open.
+    private var settingsSelectionRequest: SettingsSelectionRequest?
     private var aboutWindowController: NSWindowController?
     private var historyWindowController: NSWindowController?
     private var onboardingWindowController: NSWindowController?
@@ -679,6 +682,7 @@ final class MenuBarController: NSObject {
         fallbackWindowController = nil
         addAccountWindowController = nil
         settingsWindowController = nil
+        settingsSelectionRequest = nil
         aboutWindowController = nil
         historyWindowController = nil
         onboardingWindowController = nil
@@ -845,13 +849,22 @@ final class MenuBarController: NSObject {
         focus(controller)
     }
 
-    private func showSettings() {
+    /// Opens (or focuses) Settings. With `target`, on that pane — the
+    /// header's STALE click passes the account to fix, and an already open
+    /// window switches to it. nil keeps an open window where it is and opens
+    /// a new one on its default pane (General).
+    func showSettings(selecting target: SettingsSelection? = nil) {
         prepareForWindowPresentation()
 
         if let settingsWindowController {
+            if let target {
+                settingsSelectionRequest?.request(target)
+            }
             focus(settingsWindowController)
             return
         }
+
+        let selectionRequest = SettingsSelectionRequest(initial: target)
 
         let controller = makeWindowController(
             title: String(localized: "Settings"),
@@ -872,13 +885,19 @@ final class MenuBarController: NSObject {
                 },
                 onOpenSetupGuide: { [weak self] in
                     self?.showOnboarding()
+                },
+                selectionRequest: selectionRequest,
+                onRefreshNow: { [weak self] in
+                    self?.refreshAction()
                 }
             )
         )
         settingsWindowController = controller
+        settingsSelectionRequest = selectionRequest
         observeClose(of: controller) { [weak self, weak controller] in
             guard self?.settingsWindowController === controller else { return }
             self?.settingsWindowController = nil
+            self?.settingsSelectionRequest = nil
         }
         focus(controller)
     }
@@ -927,6 +946,13 @@ final class MenuBarController: NSObject {
     var hasOnboardingWindow: Bool { onboardingWindowController != nil }
 
     var hasSettingsWindow: Bool { settingsWindowController != nil }
+
+    /// Test seam: the pane last requested of the open Settings window from
+    /// outside it; nil when none was (it opened on its default pane).
+    var requestedSettingsSelection: SettingsSelection? { settingsSelectionRequest?.latest?.selection }
+
+    /// Test seam: the Settings window itself.
+    var settingsWindowForTesting: NSWindow? { settingsWindowController?.window }
 
     var hasFallbackWindow: Bool { fallbackWindowController != nil }
 
@@ -1079,6 +1105,9 @@ final class MenuBarController: NSObject {
             },
             onQuit: { [weak self] in
                 self?.terminateApp()
+            },
+            onSettingsSelecting: { [weak self] selection in
+                self?.showSettings(selecting: selection)
             }
         )
     }

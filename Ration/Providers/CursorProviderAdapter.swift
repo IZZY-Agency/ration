@@ -163,6 +163,19 @@ enum CursorUsagePage {
             && (url.port == nil || url.port == 443)
             && url.path == exactPath
     }
+
+    /// Cursor's sign-in host. An expired session redirects the dashboard here
+    /// (live-observed 2026-09-26: `authenticator.cursor.sh/?client_id=…`).
+    private static let signInHost = "authenticator.cursor.sh"
+
+    /// True once the web view has SETTLED on Cursor's authenticator: the
+    /// session is gone and the account needs Sign In. While a redirect is
+    /// still loading nothing is decided yet.
+    static func isSignInPage(url: URL?, isLoading: Bool) -> Bool {
+        guard !isLoading, let url else { return false }
+        return url.scheme?.lowercased() == "https"
+            && url.host()?.lowercased() == signInHost
+    }
 }
 
 @MainActor
@@ -187,6 +200,15 @@ private enum CursorWebViewPreparation {
                 isLoading: webView.isLoading
             ) {
                 return
+            }
+            // An expired session lands on the authenticator and stays there:
+            // waiting out the deadline would report `.transport` (STALE)
+            // instead of asking the user to sign in again.
+            if CursorUsagePage.isSignInPage(
+                url: webView.url,
+                isLoading: webView.isLoading
+            ) {
+                throw ProviderError.authenticationRequired
             }
             try await Task.sleep(for: .milliseconds(100))
         }

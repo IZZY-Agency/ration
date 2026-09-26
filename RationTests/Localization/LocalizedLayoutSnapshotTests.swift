@@ -274,6 +274,173 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         fixture.removeFiles()
     }
 
+    // MARK: Stale help
+
+    /// The "Needs attention" banner for every cause, alone and on the
+    /// account's page (at the detail pane's width in the minimum window).
+    func testAttentionBanner() async throws {
+        let dir = try directory
+        let old: TimeInterval = 3 * 3600
+        func problem(_ label: String, _ provider: Provider, _ state: AccountViewState, age: TimeInterval?) -> AccountPresentation {
+            let base = presentation(label, provider, fiveHour: 0.4, weekly: 0.3, spentCents: provider == .cursor ? 12_345 : nil, state: state)
+            let snapshot: UsageSnapshot? = age.map { age in
+                UsageSnapshot(
+                    accountID: base.id, fetchedAt: now.addingTimeInterval(-age),
+                    fiveHour: base.snapshot?.fiveHour, weekly: base.snapshot?.weekly,
+                    cursorSpend: base.snapshot?.cursorSpend
+                )
+            }
+            return AccountPresentation(account: base.account, snapshot: snapshot, state: state)
+        }
+        let cases: [AccountPresentation] = [
+            problem("Team", .cursor, .stale(lastError: .transport), age: old),
+            problem("Work", .claude, .reauthenticationRequired, age: 600),
+            problem("Personal", .claude, .current, age: old),
+            problem("Client", .chatGPT, .rateLimited(retryAt: now.addingTimeInterval(40 * 60)), age: 600),
+            problem("20x", .chatGPT, .integrationChanged, age: 600),
+            problem("5x", .chatGPT, .unavailable, age: nil),
+            problem("Max", .claude, .stale(lastError: .server(statusCode: 503)), age: old),
+            problem("Plus", .chatGPT, .stale(lastError: .offline), age: old),
+        ]
+        let banners = VStack(alignment: .leading, spacing: 12) {
+            ForEach(cases) { presentation in
+                if let guidance = AttentionGuidance.make(presentation: presentation, now: self.now) {
+                    AttentionBannerView(guidance: guidance, onAction: { _ in })
+                }
+            }
+        }
+        .padding(16)
+        .frame(width: SettingsView.minimumWindowWidth - SettingsSidebar.idealColumnWidth)
+        .background(Theme.ink)
+        for (scheme, suffix) in Self.schemes {
+            try write(render(banners, scheme), dir, "attention-banners-\(suffix).png")
+            let page = AccountDetailView(
+                presentation: cases[0], now: now,
+                onRename: { _ in }, onRenameError: { _ in }, onReauthenticate: {}, onRemove: {},
+                onSetAutoStart: { _ in }, onSetBillingRenewalDay: { _ in }, onSetPlan: { _ in },
+                onSetPaused: { _ in }, onDebugSend: {}
+            )
+            try write(
+                await renderHosted(page, width: SettingsView.minimumWindowWidth - SettingsSidebar.idealColumnWidth, height: 900, scheme),
+                dir, "attention-account-page-\(suffix).png"
+            )
+        }
+    }
+
+    /// The popover header's hover card: one account, five (four lines and
+    /// "and 1 more"), and OFFLINE.
+    func testFreshnessHelpCard() throws {
+        let dir = try directory
+        let old: TimeInterval = 3 * 3600
+        func aged(_ p: AccountPresentation, _ age: TimeInterval) -> AccountPresentation {
+            let snapshot = UsageSnapshot(
+                accountID: p.id, fetchedAt: now.addingTimeInterval(-age),
+                fiveHour: p.snapshot?.fiveHour, weekly: p.snapshot?.weekly, cursorSpend: p.snapshot?.cursorSpend
+            )
+            return AccountPresentation(account: p.account, snapshot: snapshot, state: p.state)
+        }
+        let one: [AccountPresentation] = [
+            presentation("Work", .claude, fiveHour: 0.4, weekly: 0.3),
+            aged(presentation("Team", .cursor, spentCents: 12_345, state: .stale(lastError: .transport)), old),
+        ]
+        let five: [AccountPresentation] = [
+            aged(presentation("Personal", .claude, fiveHour: 0.4, weekly: 0.3), old),
+            presentation("Work", .claude, fiveHour: 0.4, weekly: 0.3, state: .reauthenticationRequired),
+            presentation("Client", .chatGPT, weekly: 0.5, state: .rateLimited(retryAt: now.addingTimeInterval(2400))),
+            presentation("20x", .chatGPT, weekly: 0.5, state: .integrationChanged),
+            aged(presentation("Team", .cursor, spentCents: 12_345, state: .stale(lastError: .transport)), old),
+        ]
+        let offline: [AccountPresentation] = [
+            aged(presentation("Work", .claude, fiveHour: 0.4, weekly: 0.3), old),
+            aged(presentation("Client", .chatGPT, weekly: 0.5, state: .stale(lastError: .offline)), old),
+        ]
+        for (scheme, suffix) in Self.schemes {
+            try write(render(popover(one, layout: .standard, showsFreshnessHelp: true), scheme), dir, "freshness-help-one-\(suffix).png")
+            try write(render(popover(five, layout: .standard, showsFreshnessHelp: true), scheme), dir, "freshness-help-five-\(suffix).png")
+            try write(render(popover(offline, layout: .standard, showsFreshnessHelp: true), scheme), dir, "freshness-help-offline-\(suffix).png")
+        }
+    }
+
+    /// Not gated: the banner's title and its primary button are actually
+    /// drawn, for every cause, in the run's language (text recognition, as
+    /// for the billing-cycle captions).
+    func testAttentionBannerTextIsDrawn() throws {
+        AppFonts.register(in: .main)
+        let old: TimeInterval = 3 * 3600
+        let cases: [(String, AccountViewState, TimeInterval?)] = [
+            ("sign-in", .reauthenticationRequired, 600),
+            ("page", .stale(lastError: .transport), old),
+            ("server", .stale(lastError: .server(statusCode: 503)), old),
+            ("connection", .stale(lastError: .offline), old),
+            ("aged", .current, old),
+            ("rate", .rateLimited(retryAt: now.addingTimeInterval(2400)), 600),
+            ("changed", .integrationChanged, 600),
+            ("unavailable", .unavailable, nil),
+        ]
+        for (name, state, age) in cases {
+            let id = UUID()
+            let account = AccountRecord(
+                id: id, provider: .chatGPT, label: "Client", webProfileID: UUID(), displayOrder: 0,
+                createdAt: now.addingTimeInterval(-40 * 86_400)
+            )
+            let snapshot: UsageSnapshot? = age.map {
+                UsageSnapshot(accountID: id, fetchedAt: now.addingTimeInterval(-$0), fiveHour: nil, weekly: nil)
+            }
+            let presentation = AccountPresentation(account: account, snapshot: snapshot, state: state)
+            let guidance = try XCTUnwrap(AttentionGuidance.make(presentation: presentation, now: now), name)
+            let lines = try recognizedLines(AttentionBannerView(guidance: guidance, onAction: { _ in }), width: 450)
+            let drawn = Self.letters(lines.joined(separator: " "))
+            XCTAssertTrue(drawn.contains(Self.letters(guidance.title)), "\(name): title “\(guidance.title)” not drawn; read: \(lines)")
+            if let primary = guidance.actions.first {
+                let title: String = primary.title()
+                // Its own line; one misread glyph is tolerated (small bold
+                // mono on gold: "now" has read as "nom").
+                let wanted = Self.letters(title)
+                let found: Bool = drawn.contains(wanted)
+                    || lines.contains { Self.editDistance(Self.letters($0), wanted) <= 1 }
+                XCTAssertTrue(found, "\(name): button “\(title)” not drawn; read: \(lines)")
+            }
+        }
+    }
+
+    /// Not gated: the hover card hangs below the header row and inside the
+    /// popover, with one account and with five (the tallest card).
+    func testFreshnessHelpCardLayout() async throws {
+        let old: TimeInterval = 3 * 3600
+        func aged(_ p: AccountPresentation) -> AccountPresentation {
+            let snapshot = UsageSnapshot(
+                accountID: p.id, fetchedAt: now.addingTimeInterval(-old),
+                fiveHour: p.snapshot?.fiveHour, weekly: p.snapshot?.weekly, cursorSpend: p.snapshot?.cursorSpend
+            )
+            return AccountPresentation(account: p.account, snapshot: snapshot, state: p.state)
+        }
+        let one: [AccountPresentation] = [
+            aged(presentation("Team", .cursor, spentCents: 12_345, state: .stale(lastError: .transport))),
+        ]
+        let five: [AccountPresentation] = [
+            aged(presentation("Personal", .claude, fiveHour: 0.4, weekly: 0.3)),
+            presentation("Work", .claude, fiveHour: 0.4, weekly: 0.3, state: .reauthenticationRequired),
+            presentation("Client", .chatGPT, weekly: 0.5, state: .rateLimited(retryAt: now.addingTimeInterval(2400))),
+            presentation("20x", .chatGPT, weekly: 0.5, state: .integrationChanged),
+            aged(presentation("Team", .cursor, spentCents: 12_345, state: .stale(lastError: .transport))),
+        ]
+        for (name, accounts) in [("one", one), ("five", five)] {
+            let probe = PopoverLayoutProbe()
+            _ = try await renderHosted(
+                popover(accounts, layout: .standard, showsFreshnessHelp: true, layoutProbe: probe),
+                width: 540, height: 900, .dark
+            )
+            let card = probe.freshnessHelp
+            let header = probe.headerRow
+            let popover = probe.popover
+            XCTAssertFalse(card.isEmpty, "\(name): the card is drawn")
+            XCTAssertFalse(header.isEmpty, "\(name): the header row is measured")
+            // Global (flipped) coordinates: y grows downwards.
+            XCTAssertGreaterThanOrEqual(card.minY, header.maxY, "\(name): card \(card) below header row \(header)")
+            XCTAssertTrue(popover.contains(card), "\(name): card \(card) inside popover \(popover)")
+        }
+    }
+
     // MARK: History
 
     func testHistory() async throws {
@@ -379,6 +546,24 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
     private static func letters(_ text: String) -> String {
         let folded: String = text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).uppercased()
         return String(folded.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init))
+    }
+
+    /// Levenshtein distance between two strings.
+    private static func editDistance(_ a: String, _ b: String) -> Int {
+        let x = Array(a)
+        let y = Array(b)
+        guard !x.isEmpty else { return y.count }
+        guard !y.isEmpty else { return x.count }
+        var previous = Array(0...y.count)
+        for i in 1...x.count {
+            var current = [i] + Array(repeating: 0, count: y.count)
+            for j in 1...y.count {
+                let substitution: Int = previous[j - 1] + (x[i - 1] == y[j - 1] ? 0 : 1)
+                current[j] = min(previous[j] + 1, current[j - 1] + 1, substitution)
+            }
+            previous = current
+        }
+        return previous[y.count]
     }
 
     /// Renders `view` at 3× on the dark ink and returns the recognised lines.
@@ -543,7 +728,8 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
 
     private func popover(
         _ presentations: [AccountPresentation], layout: PopoverLayout, advice: [SwitchAdvice] = [],
-        focus: FocusModel? = nil, dropShowing: Bool = false, problem: NotificationAccess.Problem? = nil
+        focus: FocusModel? = nil, dropShowing: Bool = false, problem: NotificationAccess.Problem? = nil,
+        showsFreshnessHelp: Bool = false, layoutProbe: PopoverLayoutProbe? = nil
     ) -> some View {
         MenuBarView(
             presentations: AccountVisibility.visible(presentations),
@@ -562,7 +748,9 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
                 focus ?? FocusModel.make(presentations: [], phases: [:], advice: [],
                                          fableCounts: { _ in false }, now: date)
             },
-            pinnedNow: now
+            pinnedNow: now,
+            showsFreshnessHelp: showsFreshnessHelp,
+            layoutProbe: layoutProbe
         )
     }
 

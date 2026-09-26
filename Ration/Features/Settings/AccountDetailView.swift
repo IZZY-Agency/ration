@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Pure derivation of the pause controls' copy and enablement, kept out of
@@ -30,7 +31,12 @@ struct AccountDetailView: View {
     /// warm-up off locks the Auto-start toggle (its stored value is kept).
     var features: FeatureSwitches = .allOn
     var now: Date = .now
+    /// The accounts the popover header judges with this one, so an account
+    /// the header counts as OFFLINE gets connection guidance.
+    var attentionContext: [AccountPresentation] = []
     let onReauthenticate: () -> Void
+    /// The attention banner's "Refresh now": `refreshAll(reason: .manual)`.
+    let onRefreshNow: () -> Void
     let onRemove: () -> Void
     let onSetAutoStart: (Bool) -> Void
     let onSetBillingRenewalDay: (Int?) -> Void
@@ -39,6 +45,11 @@ struct AccountDetailView: View {
     let onDebugSend: () -> Void
 
     @FocusState private var labelFocused: Bool
+    @Environment(\.openURL) private var openURL
+    /// The live clock for the attention banner, ticked every minute: an
+    /// account ages out with time alone, which publishes nothing. `now`
+    /// (snapshots pin it) wins while it is later.
+    @State private var tick: Date = .distantPast
     @StateObject private var labelAutosave: LabelAutosave
 
     init(
@@ -46,10 +57,12 @@ struct AccountDetailView: View {
         activeUsage: ActiveUsage? = nil,
         features: FeatureSwitches = .allOn,
         now: Date = .now,
+        attentionContext: [AccountPresentation] = [],
         onRename: @escaping @MainActor (String) async throws -> Void,
         onRenameError: @escaping @MainActor (Error?) -> Void,
         pendingEdits: PendingEditRegistry? = nil,
         onReauthenticate: @escaping () -> Void,
+        onRefreshNow: @escaping () -> Void = {},
         onRemove: @escaping () -> Void,
         onSetAutoStart: @escaping (Bool) -> Void,
         onSetBillingRenewalDay: @escaping (Int?) -> Void,
@@ -61,7 +74,9 @@ struct AccountDetailView: View {
         self.activeUsage = activeUsage
         self.features = features
         self.now = now
+        self.attentionContext = attentionContext
         self.onReauthenticate = onReauthenticate
+        self.onRefreshNow = onRefreshNow
         self.onRemove = onRemove
         self.onSetAutoStart = onSetAutoStart
         self.onSetBillingRenewalDay = onSetBillingRenewalDay
@@ -87,9 +102,31 @@ struct AccountDetailView: View {
         AccountDetailPauseState(isPaused: account.isPaused)
     }
 
+    private static let minuteTicks = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+
+    private var bannerNow: Date { max(now, tick) }
+
+    /// Derived from the presentation, never stored: it disappears by itself
+    /// once the account is healthy again.
+    private var attentionGuidance: AttentionGuidance? {
+        AttentionGuidance.make(presentation: presentation, among: attentionContext, now: bannerNow)
+    }
+
     var body: some View {
         Form {
-            Section { header } footer: { usageStrip }
+            // The banner is the first section's HEADER, not a row: a grouped
+            // form draws a panel behind every row, which boxed the amber card
+            // inside a second card.
+            Section {
+                header
+            } header: {
+                if let attentionGuidance {
+                    AttentionBannerView(guidance: attentionGuidance, onAction: perform)
+                        .padding(.bottom, 8)
+                }
+            } footer: {
+                usageStrip
+            }
 
             Section(SettingsSectionTitle.identity) {
                 HStack {
@@ -219,6 +256,22 @@ struct AccountDetailView: View {
             labelAutosave.storeDidChange(newValue)
         }
         .onDisappear { labelAutosave.focusChanged(false) }
+        .onReceive(Self.minuteTicks) { date in
+            tick = date
+        }
+    }
+
+    /// The banner's buttons, through the paths the rest of the pane uses.
+    private func perform(_ action: AttentionGuidance.Action) {
+        switch action {
+        case .signInAgain:
+            onReauthenticate()
+        case .refreshNow:
+            onRefreshNow()
+        case .checkForUpdates, .reportIssue:
+            guard let url = action.url else { return }
+            openURL(url)
+        }
     }
 
     private var header: some View {

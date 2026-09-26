@@ -34,3 +34,47 @@ enum SettingsSelection: Hashable {
         }
     }
 }
+
+/// A selection asked for from OUTSIDE the Settings window — the popover
+/// header's STALE click opens Settings on the account to fix. The window's
+/// own sidebar clicks never go through here.
+///
+/// One per Settings window, owned by whoever opened it. Each request carries
+/// a serial, so the window applies every request exactly once: a re-render or
+/// a re-subscription replays the latest value, and must not yank the user
+/// back after they moved to another pane.
+@MainActor
+final class SettingsSelectionRequest: ObservableObject {
+    struct Request: Equatable, Sendable {
+        let serial: Int
+        let selection: SettingsSelection
+    }
+
+    @Published private(set) var latest: Request?
+
+    /// `initial` nil → nothing requested, and the window opens on its default
+    /// pane (General).
+    init(initial: SettingsSelection? = nil) {
+        if let initial {
+            latest = Request(serial: 1, selection: initial)
+        }
+    }
+
+    func request(_ selection: SettingsSelection) {
+        let serial: Int = (latest?.serial ?? 0) + 1
+        latest = Request(serial: serial, selection: selection)
+    }
+
+    /// What the window should select for `request`, or nil when there is
+    /// nothing new to apply (no request, or one already applied). An account
+    /// that no longer exists falls back like any other stale selection.
+    static func resolve(
+        _ request: Request?,
+        appliedSerial: Int,
+        accounts: [AccountRecord]
+    ) -> (selection: SettingsSelection, serial: Int)? {
+        guard let request, request.serial > appliedSerial else { return nil }
+        let selection = SettingsSelection.normalized(request.selection, accounts: accounts)
+        return (selection, request.serial)
+    }
+}

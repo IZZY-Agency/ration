@@ -432,6 +432,9 @@ struct MenuBarContent: View {
     /// its popover hotkeys run the very same closures.
     var onRefresh: (() -> Void)?
     var onQuit: (() -> Void)?
+    /// Opens Settings on one pane — the header's STALE click, on the account
+    /// to fix. nil (the SwiftUI scene) falls back to plain `onSettings`.
+    var onSettingsSelecting: ((SettingsSelection) -> Void)?
 
     var body: some View {
         MenuBarView(
@@ -517,9 +520,33 @@ struct MenuBarContent: View {
             onSetLayout: { layout in
                 Task { await Self.setLayout(layout, model: model) }
             },
-            onShowFocusHero: { [pinSnapshot] id in pinSnapshot.pinFocusHero(id) }
+            onShowFocusHero: { [pinSnapshot] id in pinSnapshot.pinFocusHero(id) },
+            onFreshnessAction: { target in
+                performFreshnessAction(target)
+            }
         )
         .tint(Theme.gold)
+    }
+
+    /// The header's STALE / OFFLINE click: the account to fix in Settings,
+    /// or the Refresh button's own path.
+    private func performFreshnessAction(_ target: FreshnessHelp.Target) {
+        switch target {
+        case let .account(id):
+            if let onSettingsSelecting {
+                onSettingsSelecting(.account(id))
+            } else {
+                onSettings()
+            }
+        case .refreshAll:
+            if let onRefresh {
+                onRefresh()
+                return
+            }
+            Task {
+                await model.refreshAll(reason: .manual)
+            }
+        }
     }
 
     /// The header's STANDARD | FOCUS switch: the same persisted setting the

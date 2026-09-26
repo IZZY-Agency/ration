@@ -5869,6 +5869,750 @@
         }
       }
     },
+    "attention.action.checkForUpdates" : {
+      "comment" : "Settings › account banner button: open the app's releases page to get a newer version.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check for updates"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher des mises à jour"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перевірити оновлення"
+          }
+        }
+      }
+    },
+    "attention.action.refreshNow" : {
+      "comment" : "Settings › account banner button: refresh every account now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh now"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiser maintenant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оновити зараз"
+          }
+        }
+      }
+    },
+    "attention.action.reportIt" : {
+      "comment" : "Settings › account banner button: open the issue tracker to report the provider's page change.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report it"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signaler"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Повідомити"
+          }
+        }
+      }
+    },
+    "attention.age.ago" : {
+      "comment" : "How long ago an account last updated. %@ = compact duration (“3h”, “3 h”, “3 год”).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ago"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "il y a %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ тому"
+          }
+        }
+      }
+    },
+    "attention.banner.label" : {
+      "comment" : "Settings › account: caption of the amber banner shown while the account has a problem. Drawn uppercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs attention"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requiert votre attention"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Потребує уваги"
+          }
+        }
+      }
+    },
+    "attention.body.agedOut" : {
+      "comment" : "Settings › account banner: the app has not refreshed the account for a while. %@ = duration (“3 hours”; Ukrainian accusative).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration couldn't refresh for %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration n’a pas pu actualiser depuis %@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration не вдається оновити дані вже %@."
+          }
+        }
+      }
+    },
+    "attention.body.connection" : {
+      "comment" : "Settings › account banner: the app could not reach the provider (no internet connection). %1$@ = provider (never translated), %2$@ = duration (“3 hours”; Ukrainian accusative).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration couldn't reach %1$@ for %2$@. Check your internet connection."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration n’arrive pas à joindre %1$@ depuis %2$@. Vérifiez votre connexion Internet."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration не може з’єднатися з %1$@ вже %2$@. Перевірте з’єднання з інтернетом."
+          }
+        }
+      }
+    },
+    "attention.body.integrationChanged" : {
+      "comment" : "Settings › account banner: the provider changed its page. %@ = provider (never translated).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ changed its page; Ration needs an update."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ a modifié sa page ; Ration doit être mis à jour."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ змінив свою сторінку; Ration потрібно оновити."
+          }
+        }
+      }
+    },
+    "attention.body.pageNotLoading" : {
+      "comment" : "Settings › account banner: the provider's page keeps failing to load. %1$@ = provider (never translated), %2$@ = duration (“3 hours”; Ukrainian accusative, as after “через”).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@'s page hasn't loaded for %2$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La page de %1$@ ne se charge plus depuis %2$@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сторінка %1$@ не завантажується вже %2$@."
+          }
+        }
+      }
+    },
+    "attention.body.pageNotLoadingNoAge" : {
+      "comment" : "Settings › account banner: the provider's page never loaded. %@ = provider (never translated).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@'s page isn't loading."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La page de %@ ne se charge pas."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сторінка %@ не завантажується."
+          }
+        }
+      }
+    },
+    "attention.body.rateLimited" : {
+      "comment" : "Settings › account banner: the provider rate limited the app. %1$@ = provider (never translated), %2$@ = clock time of the automatic retry (“14:12”).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ asked Ration to slow down. It retries by itself at %2$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ a demandé à Ration de ralentir. Ration réessaiera de lui-même à %2$@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ попросив Ration сповільнитися. Ration сам повторить спробу о %2$@."
+          }
+        }
+      }
+    },
+    "attention.body.rateLimitedNoTime" : {
+      "comment" : "Settings › account banner: the provider rate limited the app, no retry time known. %@ = provider (never translated).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ asked Ration to slow down. It retries by itself."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ a demandé à Ration de ralentir. Ration réessaiera de lui-même."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ попросив Ration сповільнитися. Ration сам повторить спробу."
+          }
+        }
+      }
+    },
+    "attention.body.server" : {
+      "comment" : "Settings › account banner: the provider keeps answering with server errors. %1$@ = provider (never translated), %2$@ = duration (“3 hours”; Ukrainian accusative).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ has been returning errors for %2$@; this is usually temporary on their side."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ renvoie des erreurs depuis %2$@ ; c’est généralement temporaire de son côté."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ повертає помилки вже %2$@; зазвичай це тимчасова проблема на їхньому боці."
+          }
+        }
+      }
+    },
+    "attention.body.signIn" : {
+      "comment" : "Settings › account banner: the sign-in expired.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your sign-in expired."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre connexion a expiré."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Термін вашого входу минув."
+          }
+        }
+      }
+    },
+    "attention.cause.agedOut" : {
+      "comment" : "Short cause, lowercase: the app has not been able to refresh the account for a while (asleep, offline).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "couldn't refresh"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "actualisation impossible"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не вдалося оновити"
+          }
+        }
+      }
+    },
+    "attention.cause.offline" : {
+      "comment" : "Short cause, lowercase: the last refresh failed because there was no network connection.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no connection"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pas de connexion"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "немає з’єднання"
+          }
+        }
+      }
+    },
+    "attention.cause.pageChanged" : {
+      "comment" : "Short cause, lowercase: the provider changed its page and the app needs an update.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "page changed"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "page modifiée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "сторінку змінено"
+          }
+        }
+      }
+    },
+    "attention.cause.pageNotLoaded" : {
+      "comment" : "Short cause, lowercase: the provider's usage page did not load (request failed or server error).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "page didn't load"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "la page ne s’est pas chargée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "сторінка не завантажилася"
+          }
+        }
+      }
+    },
+    "attention.cause.rateLimited" : {
+      "comment" : "Short cause, lowercase: the provider is rate limiting usage checks.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "rate limited"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "fréquence limitée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "частоту обмежено"
+          }
+        }
+      }
+    },
+    "attention.cause.serverErrors" : {
+      "comment" : "Short cause, lowercase (hover card line, “last error” in Settings): the provider answered with server errors.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "server errors"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "erreurs du serveur"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "помилки сервера"
+          }
+        }
+      }
+    },
+    "attention.cause.signIn" : {
+      "comment" : "Short cause, lowercase (hover card line, “last error” in Settings): the account's sign-in expired.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sign-in expired"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "connexion expirée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "термін входу минув"
+          }
+        }
+      }
+    },
+    "attention.meta.lastError" : {
+      "comment" : "Settings › account banner footnote, after “Last successful update …” and a “·”. %@ = short cause (“page didn't load”).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last error: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dernière erreur : %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "остання помилка: %@"
+          }
+        }
+      }
+    },
+    "attention.meta.lastErrorAlone" : {
+      "comment" : "Settings › account banner footnote when no successful update is known. %@ = short cause (“page didn't load”).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last error: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière erreur : %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остання помилка: %@"
+          }
+        }
+      }
+    },
+    "attention.meta.lastSuccess" : {
+      "comment" : "Settings › account banner footnote. %@ = time of the last successful update (“14:12”, or date and time).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last successful update %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière mise à jour réussie : %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Останнє успішне оновлення: %@"
+          }
+        }
+      }
+    },
+    "attention.step.checkHost" : {
+      "comment" : "Settings › account banner, numbered step. %@ = the provider's web address (claude.ai, chatgpt.com, cursor.com).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check %@ opens in your browser."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérifiez que %@ s’ouvre dans votre navigateur."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перевірте, чи відкривається %@ у вашому браузері."
+          }
+        }
+      }
+    },
+    "attention.step.refresh" : {
+      "comment" : "Settings › account banner, numbered step: press the Refresh now button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh now."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualisez maintenant."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оновіть зараз."
+          }
+        }
+      }
+    },
+    "attention.step.reportIfPersists" : {
+      "comment" : "Settings › account banner, numbered step for server errors, followed by a “Report it” link.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still failing after a day? Report it."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toujours en échec après un jour ? Signalez-le."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Досі не працює через добу? Повідомте про це."
+          }
+        }
+      }
+    },
+    "attention.step.signInMaybe" : {
+      "comment" : "Settings › account banner, numbered step: a sign-in is one possible reason, not the diagnosis. “Sign in again” is the button name. %@ = provider (never translated).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Still failing and you're online? Your %@ sign-in may have expired — Sign in again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toujours en échec alors que vous êtes en ligne ? Votre connexion à %@ a peut-être expiré — reconnectez-vous."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Досі не працює, хоча ви онлайн? Можливо, термін вашого входу в %@ минув — увійдіть знову."
+          }
+        }
+      }
+    },
+    "attention.title.cantRead" : {
+      "comment" : "Settings › account banner title: the provider changed its page and the app cannot read it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration can't read this account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration ne peut pas lire ce compte"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration не може прочитати цей обліковий запис"
+          }
+        }
+      }
+    },
+    "attention.title.cantRefresh" : {
+      "comment" : "Settings › account banner title: the app cannot refresh this account (sign-in expired, page not loading, or not refreshed for a while).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration can't refresh this account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration ne peut pas actualiser ce compte"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration не може оновити цей обліковий запис"
+          }
+        }
+      }
+    },
+    "attention.title.waiting" : {
+      "comment" : "Settings › account banner title: the provider rate limited the app, which waits before refreshing.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration is waiting to refresh this account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration attend avant d’actualiser ce compte"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration чекає, щоб оновити цей обліковий запис"
+          }
+        }
+      }
+    },
     "badge.active" : {
       "comment" : "Account status label in Settings: the data is up to date.",
       "extractionState" : "manual",
@@ -8696,6 +9440,282 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ОСТАННЄ ВИКОРИСТАННЯ"
+          }
+        }
+      }
+    },
+    "freshness.help.hintOffline" : {
+      "comment" : "Popover header hover card (OFFLINE), last line: clicking the status word refreshes every account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to refresh."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez pour actualiser."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Натисніть, щоб оновити."
+          }
+        }
+      }
+    },
+    "freshness.help.hintStale" : {
+      "comment" : "Popover header hover card (STALE), last line: clicking the status word opens Settings on the account to fix.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to see what to do."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez pour voir quoi faire."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Натисніть, щоб дізнатися, що робити."
+          }
+        }
+      }
+    },
+    "freshness.help.line" : {
+      "comment" : "Popover header hover card: one problem account. %1$@ = account label, %2$@ = provider (Claude, ChatGPT, Cursor; never translated), %3$@ = short cause (“page didn't load”), %4$@ = age (“3h ago”).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@): %3$@, %4$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@) : %3$@, %4$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@): %3$@, %4$@"
+          }
+        }
+      }
+    },
+    "freshness.help.lineNoAge" : {
+      "comment" : "Popover header hover card: one problem account that never loaded. %1$@ = account label, %2$@ = provider (never translated), %3$@ = short cause.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@): %3$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@) : %3$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@): %3$@"
+          }
+        }
+      }
+    },
+    "freshness.help.more" : {
+      "comment" : "Popover header hover card: after four account lines, how many more accounts are not up to date. %lld = count.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "and %lld more"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "and %lld more"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "et %lld autres"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "et %lld autre"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "et %lld autres"
+                }
+              }
+            }
+          }
+        },
+        "uk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "і ще %lld"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "і ще %lld"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "і ще %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "і ще %lld"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "freshness.help.offline" : {
+      "comment" : "Popover header hover card (OFFLINE): no account could refresh.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No account could refresh. Check your internet connection."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun compte n’a pu être actualisé. Vérifiez votre connexion Internet."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Жоден обліковий запис не вдалося оновити. Перевірте з’єднання з інтернетом."
+          }
+        }
+      }
+    },
+    "freshness.help.title" : {
+      "comment" : "Popover header hover card title (STALE): how many accounts are not up to date. %lld = count.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld account isn't up to date"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld accounts aren't up to date"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld comptes ne sont pas à jour"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld compte n’est pas à jour"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld comptes ne sont pas à jour"
+                }
+              }
+            }
+          }
+        },
+        "uk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld облікові записи не оновлюються"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld облікових записів не оновлюються"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld обліковий запис не оновлюється"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld облікового запису не оновлюються"
+                }
+              }
+            }
           }
         }
       }

@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 struct SettingsView: View {
@@ -15,8 +16,17 @@ struct SettingsView: View {
     let onAddAccount: () -> Void
     let onOpenSignIn: (UUID) -> Void
     let onOpenSetupGuide: () -> Void
+    /// A pane asked for from outside the window (the popover header's STALE
+    /// click). nil — the SwiftUI scene, snapshots — opens on General.
+    var selectionRequest: SettingsSelectionRequest? = nil
+    /// The account banner's "Refresh now". nil refreshes through the model
+    /// directly; `MenuBarController` passes its own refresh path.
+    var onRefreshNow: (() -> Void)? = nil
 
     @State private var selection: SettingsSelection?
+    /// The serial of the last `selectionRequest` applied, so each request
+    /// moves the selection exactly once.
+    @State private var appliedRequestSerial = 0
     @State private var accountToRemove: AccountRecord?
     /// `AppSettings` is its own `ObservableObject`, which `model` never
     /// republishes — mirrored here so a switch flipped in General redraws the
@@ -63,6 +73,9 @@ struct SettingsView: View {
         .background(Theme.ink)
         .frame(minWidth: Self.minimumWindowWidth, minHeight: 470)
         .task { ensureSelection() }
+        .onReceive(requestedSelections) { request in
+            applySelectionRequest(request)
+        }
         .onReceive(model.settings.featuresPublisher) { features = $0 }
         .onChange(of: model.accounts.map(\.id)) { _, _ in ensureSelection() }
         .alert(
@@ -94,6 +107,7 @@ struct SettingsView: View {
                     presentation: presentation,
                     activeUsage: activeUsage[id],
                     features: features,
+                    attentionContext: model.presentations,
                     // Awaited so `LabelAutosave` can serialize saves, retry a
                     // busy account and keep a failed edit. It does not clear
                     // the banner per attempt: busy retries would wipe other
@@ -105,6 +119,7 @@ struct SettingsView: View {
                     onRenameError: { errorMessage = $0?.localizedDescription },
                     pendingEdits: model.pendingEdits,
                     onReauthenticate: { beginReauthentication(id) },
+                    onRefreshNow: { refreshNow() },
                     onRemove: { accountToRemove = presentation.account },
                     onSetAutoStart: { enabled in
                         perform(request: { try model.requestSetAutoStart(accountID: id, enabled: enabled) })
@@ -267,6 +282,35 @@ struct SettingsView: View {
 
     private func ensureSelection() {
         selection = SettingsSelection.normalized(selection, accounts: model.accounts)
+    }
+
+    /// Every request `selectionRequest` publishes; nothing without one.
+    private var requestedSelections: AnyPublisher<SettingsSelectionRequest.Request?, Never> {
+        guard let selectionRequest else {
+            return Empty<SettingsSelectionRequest.Request?, Never>().eraseToAnyPublisher()
+        }
+        return selectionRequest.$latest.eraseToAnyPublisher()
+    }
+
+    private func applySelectionRequest(_ request: SettingsSelectionRequest.Request?) {
+        let resolved = SettingsSelectionRequest.resolve(
+            request,
+            appliedSerial: appliedRequestSerial,
+            accounts: model.accounts
+        )
+        guard let resolved else { return }
+        appliedRequestSerial = resolved.serial
+        selection = resolved.selection
+    }
+
+    private func refreshNow() {
+        if let onRefreshNow {
+            onRefreshNow()
+            return
+        }
+        Task {
+            await model.refreshAll(reason: .manual)
+        }
     }
 
     private func move(from offsets: IndexSet, to destination: Int) {

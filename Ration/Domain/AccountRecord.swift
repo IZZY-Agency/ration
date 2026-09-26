@@ -18,9 +18,10 @@ enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    func matchesAppHost(_ host: String?) -> Bool {
-        guard let host = host?.lowercased() else { return false }
-        let appHost = switch self {
+    /// The provider's web address, as a person types it ("claude.ai") — the
+    /// host of every adapter's `signInURL`.
+    var appHost: String {
+        switch self {
         case .claude:
             "claude.ai"
         case .chatGPT:
@@ -28,6 +29,10 @@ enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .cursor:
             "cursor.com"
         }
+    }
+
+    func matchesAppHost(_ host: String?) -> Bool {
+        guard let host = host?.lowercased() else { return false }
         return host == appHost || host.hasSuffix(".\(appHost)")
     }
 

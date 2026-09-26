@@ -176,6 +176,37 @@ final class CursorProviderAdapterTests: XCTestCase {
         )
     }
 
+    /// An expired Cursor session sends `cursor.com/dashboard` to Cursor's
+    /// authenticator (live-observed 2026-09-26). Once the redirect has
+    /// settled there, the account needs Sign In — not a 30 s wait that ends
+    /// in `.transport` and a STALE badge.
+    func testSettledOnTheAuthenticatorIsTheSignInPage() {
+        let authenticator = URL(
+            string: "https://authenticator.cursor.sh/?client_id=x&redirect_uri=https%3A%2F%2Fcursor.com%2Fapi%2Fauth%2Fcallback"
+        )
+        XCTAssertTrue(CursorUsagePage.isSignInPage(url: authenticator, isLoading: false))
+        // Still redirecting: not decided yet.
+        XCTAssertFalse(CursorUsagePage.isSignInPage(url: authenticator, isLoading: true))
+        // The dashboard itself, another cursor.com page, or no URL yet: not sign-in.
+        XCTAssertFalse(
+            CursorUsagePage.isSignInPage(url: URL(string: "https://cursor.com/dashboard"), isLoading: false)
+        )
+        XCTAssertFalse(
+            CursorUsagePage.isSignInPage(url: URL(string: "https://cursor.com/settings"), isLoading: false)
+        )
+        XCTAssertFalse(CursorUsagePage.isSignInPage(url: nil, isLoading: false))
+        // Look-alike hosts are not Cursor's authenticator.
+        XCTAssertFalse(
+            CursorUsagePage.isSignInPage(
+                url: URL(string: "https://authenticator.cursor.sh.example.com/"),
+                isLoading: false
+            )
+        )
+        XCTAssertFalse(
+            CursorUsagePage.isSignInPage(url: URL(string: "http://authenticator.cursor.sh/"), isLoading: false)
+        )
+    }
+
     // MARK: - Adapter wiring
 
     func testAdapterIdentity() {

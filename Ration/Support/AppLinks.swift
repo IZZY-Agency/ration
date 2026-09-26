@@ -6,6 +6,8 @@ enum AppLinks {
     static let website = URL(string: "https://ration.sh")!
     static let repository = URL(string: "https://github.com/IZZY-Agency/ration")!
     static let issues = repository.appending(path: "issues")
+    /// Where a newer version is published — the "Check for updates" link.
+    static let releases = repository.appending(path: "releases")
 
     struct Entry: Equatable {
         let title: String

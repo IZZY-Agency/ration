@@ -876,6 +876,55 @@ final class RationApplicationDelegateTests: XCTestCase {
         )
     }
 
+    // MARK: - Settings opened on a pane (the header's STALE click)
+
+    func testShowSettingsSelectingOpensOnTheAccount() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let factory = HotKeyRegistrarFactorySpy()
+        let (controller, popover, _) = makeShortcutController(harness: harness, factory: factory)
+        defer { controller.stop() }
+        let id = UUID()
+
+        try clickStatusItem(controller)
+        controller.showSettings(selecting: .account(id))
+
+        XCTAssertTrue(controller.hasSettingsWindow)
+        XCTAssertFalse(popover.isShown, "the popover closes")
+        XCTAssertEqual(controller.requestedSettingsSelection, .account(id))
+    }
+
+    func testShowSettingsSelectingSwitchesAnOpenWindow() throws {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let (controller, _, _) = makeShortcutController(harness: harness, factory: HotKeyRegistrarFactorySpy())
+        defer { controller.stop() }
+        let first = UUID()
+        let second = UUID()
+
+        controller.showSettings(selecting: .account(first))
+        let window = try XCTUnwrap(controller.settingsWindowForTesting)
+        controller.showSettings(selecting: .account(second))
+
+        XCTAssertTrue(controller.settingsWindowForTesting === window, "the same window, not a second one")
+        XCTAssertEqual(controller.requestedSettingsSelection, .account(second))
+
+        // A plain open (⌘,, the footer) leaves the open window where it is.
+        controller.showSettings()
+        XCTAssertEqual(controller.requestedSettingsSelection, .account(second))
+    }
+
+    func testShowSettingsWithoutATargetRequestsNothing() {
+        let harness = makeHarness()
+        defer { harness.stop() }
+        let (controller, _, _) = makeShortcutController(harness: harness, factory: HotKeyRegistrarFactorySpy())
+        defer { controller.stop() }
+
+        controller.showSettings()
+        XCTAssertTrue(controller.hasSettingsWindow)
+        XCTAssertNil(controller.requestedSettingsSelection, "opens on its default pane, General")
+    }
+
     private func makeHarness() -> DelegateHarness {
         let harness = DelegateHarness()
         harness.delegate.configure(

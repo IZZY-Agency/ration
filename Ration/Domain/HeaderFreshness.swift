@@ -36,6 +36,22 @@ enum HeaderFreshness: Equatable, Sendable {
         return .stale(count: staleCount)
     }
 
+    /// Whether this one account is what keeps the header from saying LIVE —
+    /// the same judgement `make` counts, so the hover card and the Settings
+    /// banner name exactly the accounts the header counted.
+    static func needsAttention(_ presentation: AccountPresentation, now: Date) -> Bool {
+        guard let judgement = judge(snapshot: presentation.snapshot, state: presentation.state, now: now) else {
+            return false
+        }
+        return judgement != .current
+    }
+
+    /// Whether this account is one OFFLINE counts: its data simply aged out
+    /// (the app could not look), with no problem of its own.
+    static func isAgedOut(_ presentation: AccountPresentation, now: Date) -> Bool {
+        judge(snapshot: presentation.snapshot, state: presentation.state, now: now) == .agedOut
+    }
+
     private enum Judgement: Equatable {
         case current
         /// Too old — the app has not been able to look (offline, asleep).

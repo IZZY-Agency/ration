@@ -77,6 +77,32 @@ struct MenuBarView: View {
     /// instant instead of the live clock, so a snapshot's fixture and its
     /// render agree on "now". Nil — the app — is the live clock.
     var pinnedNow: Date? = nil
+    /// A click on the header's STALE / OFFLINE word: open Settings on the
+    /// account to fix, or refresh everything.
+    var onFreshnessAction: (FreshnessHelp.Target) -> Void = { _ in }
+    /// Test seam: draw the header's hover card as if the pointer rested on
+    /// the status word.
+    var showsFreshnessHelp: Bool = false
+    /// Test seam: receives the drawn frames (window coordinates) of the
+    /// popover, its header row and the hover card.
+    var layoutProbe: PopoverLayoutProbe? = nil
+
+    /// The pointer is over the status word (its hover highlight).
+    @State private var freshnessHovered = false
+    /// The hover card is up — set only after `freshnessHelpDelay`.
+    @State private var freshnessHelpShown = false
+    @State private var freshnessHoverTask: Task<Void, Never>?
+    /// Where the header row ends, measured; the hover card hangs below it.
+    @State private var headerRowBottom: CGFloat = MenuBarView.freshnessHelpFallbackTop
+
+    /// How long the pointer rests on the status word before the card shows:
+    /// long enough that passing over it on the way to the switch shows
+    /// nothing.
+    static let freshnessHelpDelay: Duration = .milliseconds(350)
+    /// The card's top edge until the header row has been measured.
+    static let freshnessHelpFallbackTop: CGFloat = 40
+    /// The gap between the header row and the card.
+    static let freshnessHelpGap: CGFloat = 4
 
     var body: some View {
         VStack(spacing: 0) {
@@ -177,7 +203,56 @@ struct MenuBarView: View {
         }
         .frame(width: 540)
         .background(Theme.ink)
+        .coordinateSpace(.named(Self.popoverSpace))
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            layoutProbe?.popover = frame
+        }
+        .overlay(alignment: .topTrailing) { freshnessHelpOverlay }
         .onAppear(perform: onOpen)
+    }
+
+    /// The header's hover card, floating over the content below the header.
+    /// Custom rather than `.help`: tooltips do not display on macOS 27.
+    /// Visual only — VoiceOver hears the same text as the status word's hint.
+    @ViewBuilder
+    private var freshnessHelpOverlay: some View {
+        if (freshnessHelpShown || showsFreshnessHelp) && !isRefreshing {
+            TimelineView(PopoverClock(pinned: pinnedNow)) { context in
+                if let help = FreshnessHelp.make(presentations: presentations, now: context.date) {
+                    FreshnessHelpCard(help: help)
+                        .onGeometryChange(for: CGRect.self) { proxy in
+                            proxy.frame(in: .global)
+                        } action: { frame in
+                            layoutProbe?.freshnessHelp = frame
+                        }
+                        .padding(.top, headerRowBottom + Self.freshnessHelpGap)
+                        .padding(.trailing, 10)
+                } else {
+                    EmptyView()
+                }
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    static let popoverSpace = "popover"
+
+    private func freshnessHoverChanged(_ inside: Bool) {
+        freshnessHovered = inside
+        freshnessHoverTask?.cancel()
+        freshnessHoverTask = nil
+        guard inside else {
+            freshnessHelpShown = false
+            return
+        }
+        freshnessHoverTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.freshnessHelpDelay)
+            guard !Task.isCancelled else { return }
+            freshnessHelpShown = true
+        }
     }
 
     private func bannerLabel(
@@ -241,7 +316,10 @@ struct MenuBarView: View {
                             presentations: presentations,
                             now: context.date
                         ) {
-                            freshnessIndicator(freshness)
+                            freshnessIndicator(
+                                freshness,
+                                help: FreshnessHelp.make(presentations: presentations, now: context.date)
+                            )
                         } else {
                             EmptyView()
                         }
@@ -250,6 +328,16 @@ struct MenuBarView: View {
             }
             .padding(.horizontal, 13)
             .padding(.vertical, 9)
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .named(Self.popoverSpace))
+            } action: { frame in
+                headerRowBottom = frame.maxY
+            }
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .global)
+            } action: { frame in
+                layoutProbe?.headerRow = frame
+            }
 
             // Focus: no header line at all — each account's reset sits with
             // that account, and the "Next …" lines are in the body.
@@ -323,7 +411,44 @@ struct MenuBarView: View {
     static let headerLineTopPadding: CGFloat = 1
     static let headerLineBottomPadding: CGFloat = 8
 
-    private func freshnessIndicator(_ freshness: HeaderFreshness) -> some View {
+    /// LIVE: a plain status word. STALE / OFFLINE: a button — hover shows
+    /// the card, a click goes to the fix (`help.target`).
+    @ViewBuilder
+    private func freshnessIndicator(_ freshness: HeaderFreshness, help: FreshnessHelp?) -> some View {
+        if let help {
+            Button {
+                freshnessHoverChanged(false)
+                onFreshnessAction(help.target)
+            } label: {
+                freshnessWord(freshness)
+                    .background {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(freshnessHovered ? Theme.hover : Color.clear)
+                            .padding(.horizontal, -5)
+                            .padding(.vertical, -3)
+                    }
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointerStyle(.link)
+            .onHover(perform: freshnessHoverChanged)
+            .onDisappear {
+                freshnessHoverChanged(false)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(freshness.accessibilityLabel)
+            .accessibilityHint(help.spokenText)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("headerFreshness")
+        } else {
+            freshnessWord(freshness)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(freshness.accessibilityLabel)
+                .accessibilityIdentifier("headerFreshness")
+        }
+    }
+
+    private func freshnessWord(_ freshness: HeaderFreshness) -> some View {
         let (dot, label): (Color, Color) = switch freshness {
             case .live: (Theme.calm, Theme.creamFaint)
             case .stale: (Theme.warn, Theme.warn)
@@ -336,9 +461,6 @@ struct MenuBarView: View {
                 .tracking(1.4)
                 .foregroundStyle(label)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(freshness.accessibilityLabel)
-        .accessibilityIdentifier("headerFreshness")
     }
 
     private var soonestResetLine: some View {
@@ -797,4 +919,61 @@ struct PopoverClock: TimelineSchedule {
         var live = PeriodicTimelineSchedule(from: start, by: 60).entries(from: startDate, mode: mode).makeIterator()
         return AnyIterator { live.next() }
     }
+}
+
+/// The header's hover card: which accounts are not up to date and why, then
+/// what a click does. Drawn inside the popover (see `freshnessHelpOverlay`).
+struct FreshnessHelpCard: View {
+    let help: FreshnessHelp
+
+    static let width: CGFloat = 340
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(help.title)
+                .font(Theme.display(13.5, .semibold))
+                .foregroundStyle(Theme.cream)
+                .fixedSize(horizontal: false, vertical: true)
+            if !help.lines.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(help.lines.enumerated()), id: \.offset) { _, line in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(verbatim: "•")
+                                .foregroundStyle(Theme.warn)
+                            Text(line)
+                                .foregroundStyle(Theme.cream)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(Theme.mono(12))
+                    }
+                }
+            }
+            Text(help.hint)
+                .font(Theme.mono(11))
+                .foregroundStyle(Theme.creamDim)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(width: Self.width, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Theme.panel)
+                .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Theme.line2, lineWidth: 1)
+        }
+        .accessibilityIdentifier("headerFreshnessHelp")
+    }
+}
+
+/// Test seam: where the popover drew itself, its header row and the header's
+/// hover card, in window coordinates.
+@MainActor
+final class PopoverLayoutProbe {
+    var popover: CGRect = .zero
+    var headerRow: CGRect = .zero
+    var freshnessHelp: CGRect = .zero
 }
