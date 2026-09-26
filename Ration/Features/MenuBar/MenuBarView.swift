@@ -36,6 +36,8 @@ struct MenuBarView: View {
     let onReauthenticate: (UUID) -> Void
     var samples: (UUID, UsageWindowKind) -> [UsageHistorySample] = { _, _ in [] }
     var projection: (UUID, UsageWindowKind) -> Date? = { _, _ in nil }
+    /// A Cursor account's stored closed cycles (`AppModel.cursorSpendCycles`).
+    var cursorHistory: (UUID) -> [CursorSpendCycle] = { _ in [] }
     var orderingPinByProvider: [Provider: UUID] = [:]
     /// Per-provider lead-days setting for the reset-credits card line
     /// (`AppSettingsData.resetExpiryLeadDays`). Keyed by provider rather than
@@ -94,6 +96,15 @@ struct MenuBarView: View {
     @State private var freshnessHoverTask: Task<Void, Never>?
     /// Where the header row ends, measured; the hover card hangs below it.
     @State private var headerRowBottom: CGFloat = MenuBarView.freshnessHelpFallbackTop
+
+    /// Problem badges' hover hint (`BadgeHintState`).
+    @State private var badgeHintState = BadgeHintState()
+    @State private var badgeHoverTask: Task<Void, Never>?
+    /// Measured, to flip the badge hint above a badge near the bottom edge.
+    @State private var popoverHeight: CGFloat = 0
+    @State private var badgeHintHeight: CGFloat = 30
+
+    static let popoverWidth: CGFloat = 540
 
     /// How long the pointer rests on the status word before the card shows:
     /// long enough that passing over it on the way to the switch shows
@@ -201,15 +212,17 @@ struct MenuBarView: View {
 
             footer
         }
-        .frame(width: 540)
+        .frame(width: Self.popoverWidth)
         .background(Theme.ink)
         .coordinateSpace(.named(Self.popoverSpace))
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { frame in
             layoutProbe?.popover = frame
+            popoverHeight = frame.height
         }
         .overlay(alignment: .topTrailing) { freshnessHelpOverlay }
+        .overlay(alignment: .topTrailing) { badgeHintOverlay }
         .onAppear(perform: onOpen)
     }
 
@@ -239,6 +252,51 @@ struct MenuBarView: View {
     }
 
     static let popoverSpace = "popover"
+
+    /// A problem badge's hover hint — the header card's last line, "Click to
+    /// see what to do." Same approach as `freshnessHelpOverlay`: custom, since
+    /// `.help` tooltips do not display on macOS 27; visual only (VoiceOver
+    /// hears the badge's own label). Hangs below the badge, right-aligned to
+    /// it, or above it when below would leave the popover.
+    @ViewBuilder
+    private var badgeHintOverlay: some View {
+        if let badgeHint = badgeHintState.shown {
+            let below: CGFloat = badgeHint.frame.maxY + Self.freshnessHelpGap
+            let fitsBelow: Bool = popoverHeight <= 0 || below + badgeHintHeight <= popoverHeight
+            let top: CGFloat = fitsBelow
+                ? below
+                : max(0, badgeHint.frame.minY - Self.freshnessHelpGap - badgeHintHeight)
+            BadgeHintCard(text: LocalizedStringResource.freshnessHelpHintStale.string(in: .current))
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    badgeHintHeight = height
+                }
+                .padding(.top, top)
+                .padding(.trailing, max(0, Self.popoverWidth - badgeHint.frame.maxX - 5))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// A problem badge's hover: the hint shows after the header card's own
+    /// delay, and goes when the pointer leaves or the badge moves (scroll).
+    private func badgeHoverChanged(_ id: UUID, event: BadgeHoverEvent) {
+        badgeHintState.handle(event, for: id)
+        guard case .entered = event else {
+            if badgeHintState.hoveredID == nil {
+                badgeHoverTask?.cancel()
+                badgeHoverTask = nil
+            }
+            return
+        }
+        badgeHoverTask?.cancel()
+        badgeHoverTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.freshnessHelpDelay)
+            guard !Task.isCancelled else { return }
+            badgeHintState.delayElapsed(for: id)
+        }
+    }
 
     private func freshnessHoverChanged(_ inside: Bool) {
         freshnessHovered = inside
@@ -514,7 +572,11 @@ struct MenuBarView: View {
                     model: focus,
                     now: context.date,
                     onShowHero: onShowFocusHero,
-                    onReauthenticate: onReauthenticate
+                    onReauthenticate: onReauthenticate,
+                    onProblem: onFreshnessAction,
+                    onProblemHover: { id, event in
+                        badgeHoverChanged(id, event: event)
+                    }
                 )
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -628,7 +690,12 @@ struct MenuBarView: View {
                             activeUsage: activeAccounts[presentation.id],
                             showsResetCredits: showsResetCredits,
                             now: pinnedNow ?? .now,
-                            resetLeadDays: resetLeadDaysByProvider[presentation.account.provider] ?? 1
+                            resetLeadDays: resetLeadDaysByProvider[presentation.account.provider] ?? 1,
+                            cursorHistory: cursorHistory(presentation.id),
+                            onProblem: onFreshnessAction,
+                            onProblemHover: { event in
+                                badgeHoverChanged(presentation.id, event: event)
+                            }
                         )
                         .background(
                             GeometryReader { proxy in
@@ -966,6 +1033,30 @@ struct FreshnessHelpCard: View {
                 .strokeBorder(Theme.line2, lineWidth: 1)
         }
         .accessibilityIdentifier("headerFreshnessHelp")
+    }
+}
+
+/// A problem badge's one-line hover hint, styled as `FreshnessHelpCard`.
+struct BadgeHintCard: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(Theme.mono(11))
+            .foregroundStyle(Theme.creamDim)
+            .fixedSize()
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Theme.panel)
+                    .shadow(color: .black.opacity(0.35), radius: 10, y: 5)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Theme.line2, lineWidth: 1)
+            }
+            .accessibilityIdentifier("accountStateBadgeHint")
     }
 }
 

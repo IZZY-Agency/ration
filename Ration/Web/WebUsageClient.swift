@@ -5,6 +5,9 @@ struct WebResponseEnvelope: Equatable, Sendable {
     let status: Int
     let retryAfter: String?
     let body: String
+    /// The `type` of an error event found at the head of a 2xx SSE completion
+    /// stream (`postCompletion` only), already sanitized. Never the body.
+    var streamErrorType: WarmUpOutcome.StreamErrorKind? = nil
 }
 
 /// `wham/usage` plus the optional reset-credit read from the same evaluation.
@@ -68,29 +71,62 @@ final class WebUsageClient {
     /// main-actor confinement is enforced by the compiler (the closures
     /// below can only touch `race.result` because `Race` is `@MainActor`),
     /// not by an `@unchecked Sendable` escape hatch.
+    ///
+    /// `cancellable`: the caller's cancellation ends the wait at once with
+    /// `CancellationError` (the abandoned evaluation is then reaped like a
+    /// timed-out one — `AccountSessionManager` navigates its view to
+    /// `about:blank`). Off for the usage reads, whose callers rely on the
+    /// existing timeout-only contract.
     private func bounded(
+        cancellable: Bool = false,
         _ operation: @escaping @MainActor () async throws -> Any?
     ) async throws -> Any? {
         let sleep = self.sleep
         @MainActor final class Race {
             var delivered = false
             var result: Result<Any?, any Error>?
+            var continuation: CheckedContinuation<Void, Never>?
+
+            func deliver(_ result: Result<Any?, any Error>) {
+                guard !delivered else { return }
+                delivered = true
+                self.result = result
+                continuation?.resume()
+                continuation = nil
+            }
+
+            func attach(_ continuation: CheckedContinuation<Void, Never>) {
+                if delivered {
+                    continuation.resume()
+                } else {
+                    self.continuation = continuation
+                }
+            }
+        }
+        if cancellable {
+            try Task.checkCancellation()
         }
         let race = Race()
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            @MainActor func deliver(_ result: Result<Any?, any Error>) {
-                guard !race.delivered else { return }
-                race.delivered = true
-                race.result = result
-                continuation.resume()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                race.attach(continuation)
+                Task { @MainActor in
+                    do {
+                        let value = try await operation()
+                        race.deliver(.success(value))
+                    } catch {
+                        race.deliver(.failure(error))
+                    }
+                }
+                Task { @MainActor in
+                    try? await sleep(Self.evaluationTimeout)
+                    race.deliver(.failure(WebUsageClientError.timedOut))
+                }
             }
+        } onCancel: {
+            guard cancellable else { return }
             Task { @MainActor in
-                do { deliver(.success(try await operation())) }
-                catch { deliver(.failure(error)) }
-            }
-            Task { @MainActor in
-                try? await sleep(Self.evaluationTimeout)
-                deliver(.failure(WebUsageClientError.timedOut))
+                race.deliver(.failure(CancellationError()))
             }
         }
         guard let result = race.result else { throw WebUsageClientError.timedOut }
@@ -139,7 +175,19 @@ final class WebUsageClient {
 
     #if DEBUG
     static var chatGPTFetchScriptForTesting: String { chatGPTFetchScript }
+    /// The Cursor script body, for running under a stubbed `fetch` in an
+    /// `about:blank` web view (see `CursorFetchScriptTests`). Production always
+    /// passes `expectedOrigin: cursorOrigin`, so the gate still refuses to run
+    /// anywhere but cursor.com.
+    static var cursorFetchScriptForTesting: String { cursorFetchScript }
+    /// The history script body, run the same way (`CursorHistoryScriptTests`).
+    static var cursorHistoryScriptForTesting: String { cursorHistoryScript }
     #endif
+
+    /// The only origin `fetchCursor` lets its script run on. Passed in as
+    /// `expectedOrigin` (like the other scripts) rather than inlined, so the
+    /// body can be exercised off-origin by tests; the value is fixed here.
+    static let cursorOrigin = "https://cursor.com"
 
     /// Same-origin `https://cursor.com` multi-fetch that collapses the Cursor
     /// dashboard's spend model (plan tier + billing-cycle boundary + per-event
@@ -149,11 +197,47 @@ final class WebUsageClient {
         let result = try await bounded { [evaluator] in
             try await evaluator(
                 Self.cursorFetchScript,
-                [:],
+                ["expectedOrigin": Self.cursorOrigin],
                 webView
             )
         }
 
+        return try Self.envelope(from: result)
+    }
+
+    /// Pause between the history script's requests, so a backfill trickles
+    /// rather than bursts (12 invoices + up to `cursorHistoryMaxPages` pages).
+    static let cursorHistoryPauseMilliseconds = 150
+
+    /// Past Cursor cycles (`cursorHistoryScript`): the invoice boundaries of
+    /// `months` (0-indexed, newest first) and each one's summed chargeable
+    /// events, in the compact payload `CursorProviderAdapter.parseHistory`
+    /// decodes. Origin-guarded and bounded exactly like `fetchCursor`.
+    ///
+    /// Cancellable (see `bounded`), and `mayDispatch` runs at the last native
+    /// moment before the script is handed to WebKit — throwing vetoes it (an
+    /// open sign-in session on this profile, say).
+    func fetchCursorHistory(
+        months: [CursorInvoiceMonth],
+        currentPeriodStart: Date,
+        pauseMilliseconds: Int = WebUsageClient.cursorHistoryPauseMilliseconds,
+        mayDispatch: (@MainActor () throws -> Void)? = nil,
+        in webView: WKWebView
+    ) async throws -> WebResponseEnvelope {
+        var monthArguments: [[String: Int]] = []
+        for month in months {
+            monthArguments.append(["year": month.year, "month": month.month])
+        }
+        let arguments: [String: Any] = [
+            "expectedOrigin": Self.cursorOrigin,
+            "months": monthArguments,
+            "currentPeriodStartMs": currentPeriodStart.timeIntervalSince1970 * 1000,
+            "pauseMs": pauseMilliseconds
+        ]
+        let result = try await bounded(cancellable: true) { [evaluator] in
+            try mayDispatch?()
+            return try await evaluator(Self.cursorHistoryScript, arguments, webView)
+        }
         return try Self.envelope(from: result)
     }
 
@@ -179,6 +263,156 @@ final class WebUsageClient {
             )
         }
         return try Self.envelope(from: result)
+    }
+
+    /// The Claude completion POST. Same as `postJSON`, except that on a 2xx it
+    /// peeks at the head of the SSE stream (at most
+    /// `streamPeekBytes` / `streamPeekMilliseconds`, stopping at the first
+    /// error event or `message_stop`) for an error event, and reports only
+    /// that event's `type`. The status, the dispatch, and the cancellation
+    /// of the rest of the stream are unchanged; the body is never returned.
+    func postCompletion(
+        path: String,
+        bodyJSON: String,
+        mayDispatch: (@MainActor () throws -> Void)? = nil,
+        in webView: WKWebView
+    ) async throws -> WebResponseEnvelope {
+        let result = try await bounded { [evaluator] in
+            try mayDispatch?()
+            return try await evaluator(
+                Self.completionPostScript,
+                ["path": path, "bodyJSON": bodyJSON],
+                webView
+            )
+        }
+        return try Self.envelope(from: result)
+    }
+
+    static let streamPeekBytes = 16_384
+    static let streamPeekMilliseconds = 4_000
+
+    /// The documented error types the page may report; anything else it
+    /// reports as `"unknown"` (and the native side maps again, through
+    /// `WarmUpOutcome.StreamErrorKind.recognising`).
+    static var recognisedStreamErrorTypesJS: String {
+        let recognised = WarmUpOutcome.StreamErrorKind.allCases.filter { kind in
+            kind != .unknown
+        }
+        let quoted = recognised.map { kind in
+            "\"\(kind.rawValue)\""
+        }
+        return "[" + quoted.joined(separator: ", ") + "]"
+    }
+
+    /// `__streamErrorKind(eventName, data)`: the error type one whole SSE
+    /// event carries, or null. `data` is the event's `data:` lines joined
+    /// with "\n". An event named `error`, or a payload whose `type` is
+    /// `"error"`, is an error; its type is `error.type`, else the payload's
+    /// `type`. Only a recognised type is returned as itself; anything else is
+    /// `"unknown"`. Exposed so tests can run it in JavaScriptCore.
+    static var streamErrorKindJS: String {
+        """
+        const __recognisedStreamErrors = \(recognisedStreamErrorTypesJS);
+        function __streamErrorKind(eventName, data) {
+            let parsed = null;
+            try { parsed = JSON.parse(data); } catch (e) { parsed = null; }
+            const isObject = parsed !== null && typeof parsed === "object";
+            const payloadIsError = isObject && parsed.type === "error";
+            if (eventName !== "error" && !payloadIsError) { return null; }
+            let kind = "unknown";
+            if (isObject) {
+                if (parsed.error !== null && typeof parsed.error === "object" && typeof parsed.error.type === "string") {
+                    kind = parsed.error.type;
+                } else if (typeof parsed.type === "string") {
+                    kind = parsed.type;
+                }
+            }
+            if (__recognisedStreamErrors.indexOf(kind) < 0) { return "unknown"; }
+            return kind;
+        }
+        """
+    }
+
+    /// The peek never waits on the stream's cancellation: `cancel()` is
+    /// fired and left to settle, so a stalled cancel cannot stretch the peek
+    /// past its deadline. Each chunk is cut to the remaining byte budget
+    /// BEFORE it is decoded or scanned.
+    static var completionPostScript: String {
+        """
+        \(streamErrorKindJS)
+        if (location.origin !== "https://claude.ai") {
+            return { status: 0, retryAfter: null, body: "", streamError: null };
+        }
+        const response = await fetch(path, {
+            method: "POST",
+            credentials: "include",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream, application/json"
+            },
+            body: bodyJSON
+        });
+        let streamError = null;
+        if (response.ok && response.body && response.body.getReader) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            const budget = \(streamPeekBytes);
+            const deadline = Date.now() + \(streamPeekMilliseconds);
+            let received = 0;
+            let buffer = "";
+            let eventName = null;
+            let dataLines = [];
+            try {
+                scan: while (received < budget) {
+                    const remaining = deadline - Date.now();
+                    if (remaining <= 0) { break; }
+                    let timer = null;
+                    const expired = new Promise((resolve) => { timer = setTimeout(() => resolve(null), remaining); });
+                    const chunk = await Promise.race([reader.read(), expired]);
+                    clearTimeout(timer);
+                    if (chunk === null || chunk.done) { break; }
+                    let bytes = chunk.value;
+                    if (bytes.byteLength > budget - received) {
+                        bytes = bytes.subarray(0, budget - received);
+                    }
+                    received += bytes.byteLength;
+                    buffer += decoder.decode(bytes, { stream: true });
+                    let newline = buffer.indexOf("\\n");
+                    while (newline >= 0) {
+                        const line = buffer.slice(0, newline).replace(/\\r$/, "");
+                        buffer = buffer.slice(newline + 1);
+                        if (line.startsWith("event:")) {
+                            eventName = line.slice(6).trim();
+                            if (eventName === "message_stop") { break scan; }
+                        } else if (line.startsWith("data:")) {
+                            let value = line.slice(5);
+                            if (value.startsWith(" ")) { value = value.slice(1); }
+                            dataLines.push(value);
+                        } else if (line === "") {
+                            if (eventName !== null || dataLines.length > 0) {
+                                const kind = __streamErrorKind(eventName, dataLines.join("\\n"));
+                                if (kind !== null) { streamError = kind; break scan; }
+                            }
+                            eventName = null;
+                            dataLines = [];
+                        }
+                        newline = buffer.indexOf("\\n");
+                    }
+                }
+            } catch (e) {}
+            try { reader.cancel().catch(() => {}); } catch (e) {}
+        } else {
+            try {
+                if (response.body) { response.body.cancel().catch(() => {}); }
+            } catch (e) {}
+        }
+        return {
+            status: response.status,
+            retryAfter: response.headers.get("Retry-After"),
+            body: "",
+            streamError: streamError
+        };
+        """
     }
 
     /// Hard ceiling on a provider response body. Legitimate usage/
@@ -238,10 +472,14 @@ final class WebUsageClient {
             throw WebUsageClientError.invalidResponse
         }
 
+        let streamErrorType = WarmUpOutcome.StreamErrorKind.recognising(
+            dictionary["streamError"] as? String
+        )
         return WebResponseEnvelope(
             status: status,
             retryAfter: dictionary["retryAfter"] as? String,
-            body: body
+            body: body,
+            streamErrorType: streamErrorType
         )
     }
 
@@ -449,7 +687,7 @@ final class WebUsageClient {
     """
 
     private static let cursorFetchScript = """
-    if (location.origin !== "https://cursor.com") {
+    if (location.origin !== expectedOrigin) {
         return null;
     }
     \(boundedReadJS)
@@ -486,7 +724,6 @@ final class WebUsageClient {
     if (typeof membershipType !== "string" || membershipType.length === 0) {
         return CHANGED;
     }
-    const isYearlyPlan = stripe.isYearlyPlan === true;
 
     // 2) Billing-cycle boundaries. `month` is ZERO-INDEXED — live-pinned
     // 2026-07-28: {month:6, year:2026} → 2026-07-01…2026-08-01, while
@@ -615,10 +852,268 @@ final class WebUsageClient {
 
     const result = JSON.stringify({
         membershipType,
-        isYearlyPlan,
         periodStartMs,
         periodEndMs,
         spentCents: Math.round(spentCents)
+    });
+    return { status: 200, retryAfter: null, body: result };
+    """
+
+    /// Page cap for one history walk: 40 × 250 = 10 000 events. A walk that
+    /// stops here reports only the cycles it fully covered.
+    static let cursorHistoryMaxPages = 40
+
+    /// Past-cycle totals, built from the SAME two endpoints and the SAME guards
+    /// as `cursorFetchScript` (docs/provider-contracts/cursor.md):
+    /// `get-monthly-invoice` per requested month for the boundaries, then ONE
+    /// descending walk of `get-filtered-usage-events` that sums each chargeable
+    /// event into the cycle whose `[periodStartMs, periodEndMs)` holds it.
+    ///
+    /// Arguments: `expectedOrigin`, `months` (`[{year, month}]`, month
+    /// 0-indexed, newest first), `currentPeriodStartMs` (the open cycle, which
+    /// no past cycle may reach into) and `pauseMs` (between requests).
+    ///
+    /// Fails closed (`CHANGED`, or the HTTP failure) on: a month whose invoice
+    /// starts outside that UTC month, has not ended yet, or overlaps another;
+    /// any malformed event; a page that breaks descending order; or a
+    /// `totalUsageEventsCount` that moves during the walk. Otherwise it returns
+    /// `{cycles, historyExhausted, oldestEventMs}`, where `cycles` holds only
+    /// the cycles whose every event was seen.
+    private static let cursorHistoryScript = """
+    if (location.origin !== expectedOrigin) {
+        return null;
+    }
+    \(boundedReadJS)
+
+    // The same "integration changed" signal as `cursorFetchScript`: a 200 whose
+    // body the native parser cannot decode (cursor.com answers a removed path
+    // with 200 + HTML, so the status alone proves nothing).
+    const CHANGED = { status: 200, retryAfter: null, body: "" };
+
+    function __httpFailure(response) {
+        return {
+            status: response.status,
+            retryAfter: response.headers.get("Retry-After"),
+            body: ""
+        };
+    }
+
+    async function __pause() {
+        const ms = Number(pauseMs);
+        if (Number.isFinite(ms) && ms > 0) {
+            await new Promise(function (resolve) { setTimeout(resolve, ms); });
+        }
+    }
+
+    // Strict readers for the documented fields: a value of any other type
+    // (null, a boolean, a non-numeric string, NaN) is null, and the caller
+    // fails closed — never a silent 0.
+    function __msString(value) {
+        return (typeof value === "string" && /^[0-9]{1,16}$/.test(value)) ? Number(value) : null;
+    }
+    function __timestamp(value) {
+        if (typeof value === "number") {
+            return (Number.isFinite(value) && value >= 0) ? value : null;
+        }
+        return __msString(value);
+    }
+    function __finiteNumber(value) {
+        return (typeof value === "number" && Number.isFinite(value)) ? value : null;
+    }
+    function __count(value) {
+        return (typeof value === "number" && Number.isInteger(value) && value >= 0) ? value : null;
+    }
+
+    async function __postJSON(path, payload) {
+        return await fetch(path, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify(payload)
+        });
+    }
+
+    const nowMs = Date.now();
+    const openStartMs = Number(currentPeriodStartMs);
+    if (!Number.isFinite(openStartMs) || !Array.isArray(months) || months.length === 0 || months.length > 12) {
+        return CHANGED;
+    }
+
+    // 1) Each past month's invoice boundaries. `month` is ZERO-INDEXED
+    // (live-pinned 2026-07-28), both fields are top-level strings.
+    const cycles = [];
+    for (const wanted of months) {
+        const year = Number(wanted && wanted.year);
+        const month = Number(wanted && wanted.month);
+        if (!Number.isInteger(year) || !Number.isInteger(month) || month < 0 || month > 11) {
+            return CHANGED;
+        }
+        if (cycles.length > 0) { await __pause(); }
+        const invoiceResponse = await __postJSON("/api/dashboard/get-monthly-invoice", { month, year });
+        if (!invoiceResponse.ok) { return __httpFailure(invoiceResponse); }
+        const invoiceText = await __readBounded(invoiceResponse);
+        if (invoiceText === null) { return CHANGED; }
+        let invoice;
+        try { invoice = JSON.parse(invoiceText); } catch { return CHANGED; }
+        if (!invoice || typeof invoice !== "object") { return CHANGED; }
+        const startMs = __msString(invoice.periodStartMs);
+        const endMs = __msString(invoice.periodEndMs);
+        if (startMs === null || endMs === null || endMs <= startMs) {
+            return CHANGED;
+        }
+        // A CLOSED invoice is exactly the UTC calendar month asked for: it
+        // starts at that month's first instant and ends at the next month's
+        // (the contract's live-pinned calendar-month boundaries). Anything
+        // else — a re-indexed `month`, an end short of the boundary that would
+        // freeze a partial total, an end still moving — fails closed.
+        if (startMs !== Date.UTC(year, month, 1) || endMs !== Date.UTC(year, month + 1, 1)) {
+            return CHANGED;
+        }
+        // ... and it has ended, before the open cycle.
+        if (endMs > nowMs || endMs > openStartMs) {
+            return CHANGED;
+        }
+        cycles.push({ startMs, endMs, cents: 0 });
+    }
+    cycles.sort(function (a, b) { return b.startMs - a.startMs; });
+    for (let i = 1; i < cycles.length; i++) {
+        // Newest first: each cycle must end at or before the next newer one
+        // starts, or one event could count twice.
+        if (cycles[i].endMs > cycles[i - 1].startMs) { return CHANGED; }
+    }
+    const oldestStartMs = cycles[cycles.length - 1].startMs;
+
+    // 2) One descending walk over the events. No server-side date filter
+    // exists (live-pinned), so the cycle bounds are applied here; descending
+    // order makes the early stop at the oldest cycle's start sound.
+    // `chargedCents` is FRACTIONAL — accumulate, round each total once.
+    const PAGE_SIZE = 250;
+    const MAX_PAGES = \(cursorHistoryMaxPages);
+    let consumed = 0;
+    let declaredTotal = null;
+    let previousTimestamp = Infinity;
+    let oldestSeenMs = null;
+    let exhausted = false;
+    let reachedOldest = false;
+    // Offset pages over a list that changed under a constant count can hand
+    // back the same event twice. Every event's documented fields form its
+    // key; a key seen twice fails closed rather than counting twice.
+    const seenKeys = new Set();
+    function __eventKey(event, timestamp) {
+        return JSON.stringify([
+            timestamp, event.model, event.kind, event.isChargeable,
+            event.chargedCents, event.usageBasedCosts, event.requestsCosts
+        ]);
+    }
+    // One page, validated as far as its shape: `{events, total}`, or an
+    // envelope to return as-is (HTTP failure / CHANGED).
+    async function __page(page) {
+        const eventsResponse = await __postJSON("/api/dashboard/get-filtered-usage-events", { page, pageSize: PAGE_SIZE });
+        if (!eventsResponse.ok) { return { failure: __httpFailure(eventsResponse) }; }
+        const eventsText = await __readBounded(eventsResponse);
+        if (eventsText === null) { return { failure: CHANGED }; }
+        let eventsPayload;
+        try { eventsPayload = JSON.parse(eventsText); } catch { return { failure: CHANGED }; }
+        if (!eventsPayload || typeof eventsPayload !== "object") { return { failure: CHANGED }; }
+        const events = eventsPayload.usageEventsDisplay;
+        if (!Array.isArray(events)) { return { failure: CHANGED }; }
+        return { events, total: __count(eventsPayload.totalUsageEventsCount) };
+    }
+    // Page 1's events in order, as first read — re-read at the end of a
+    // multi-page walk (see below).
+    const firstPageKeys = [];
+    let pagesRead = 0;
+    for (let page = 1; page <= MAX_PAGES && !exhausted && !reachedOldest; page++) {
+        await __pause();
+        const read = await __page(page);
+        if (read.failure) { return read.failure; }
+        const events = read.events;
+        pagesRead += 1;
+
+        // `totalUsageEventsCount` must be present and stable across the walk:
+        // a total that moves means the list mutated under the offset pages.
+        const pageTotal = read.total;
+        if (pageTotal === null) { return CHANGED; }
+        if (declaredTotal === null) { declaredTotal = pageTotal; }
+        if (pageTotal !== declaredTotal) { return CHANGED; }
+        consumed += events.length;
+        if (consumed > declaredTotal) { return CHANGED; }
+
+        for (const event of events) {
+            if (!event || typeof event !== "object") { return CHANGED; }
+            const timestamp = __timestamp(event.timestamp);
+            if (timestamp === null) { return CHANGED; }
+            if (timestamp > previousTimestamp) { return CHANGED; }
+            previousTimestamp = timestamp;
+            oldestSeenMs = timestamp;
+            const key = __eventKey(event, timestamp);
+            if (seenKeys.has(key)) { return CHANGED; }
+            seenKeys.add(key);
+            if (page === 1) { firstPageKeys.push(key); }
+
+            if (timestamp < oldestStartMs) { reachedOldest = true; continue; }
+            let target = null;
+            for (const cycle of cycles) {
+                if (timestamp >= cycle.startMs && timestamp < cycle.endMs) { target = cycle; break; }
+            }
+            // The open cycle (or a gap between invoices): not ours to count.
+            if (target === null) { continue; }
+            if (typeof event.isChargeable !== "boolean") { return CHANGED; }
+            if (!event.isChargeable) { continue; }
+            const cents = __finiteNumber(event.chargedCents);
+            if (cents === null) { return CHANGED; }
+            target.cents += cents;
+        }
+
+        // A short page ends the list — coherent only if the walk consumed
+        // EXACTLY the declared total.
+        if (events.length < PAGE_SIZE) {
+            if (consumed !== declaredTotal) { return CHANGED; }
+            exhausted = true;
+        }
+        // A full page that consumed exactly the declared total also ends
+        // the list (10 000 events = 40 full pages, no empty 41st to ask for).
+        if (consumed === declaredTotal) { exhausted = true; }
+    }
+
+    // A deletion among events already read plus an insertion farther down
+    // keeps the count constant and shifts the later offset pages by one, so a
+    // page can skip an event that no order or duplicate check sees. Re-read
+    // page 1: the list must still start with exactly the events it started
+    // with, in the same order, under the same count, or nothing is reported.
+    if (pagesRead > 1) {
+        await __pause();
+        const again = await __page(1);
+        if (again.failure) { return again.failure; }
+        if (again.total !== declaredTotal) { return CHANGED; }
+        const againKeys = [];
+        for (const event of again.events) {
+            if (!event || typeof event !== "object") { return CHANGED; }
+            const timestamp = __timestamp(event.timestamp);
+            if (timestamp === null) { return CHANGED; }
+            againKeys.push(__eventKey(event, timestamp));
+        }
+        if (JSON.stringify(againKeys) !== JSON.stringify(firstPageKeys)) { return CHANGED; }
+    }
+
+    // A cycle is complete once an OLDER event has been seen (descending
+    // order: every event of it came before), or the list ran out. Anything
+    // else stays out — a partial total is never reported.
+    const covered = [];
+    for (const cycle of cycles) {
+        const complete = exhausted || (oldestSeenMs !== null && oldestSeenMs < cycle.startMs);
+        if (complete) {
+            covered.push({
+                periodStartMs: cycle.startMs,
+                periodEndMs: cycle.endMs,
+                spentCents: Math.round(cycle.cents)
+            });
+        }
+    }
+    const result = JSON.stringify({
+        cycles: covered,
+        historyExhausted: exhausted,
+        oldestEventMs: oldestSeenMs
     });
     return { status: 200, retryAfter: null, body: result };
     """

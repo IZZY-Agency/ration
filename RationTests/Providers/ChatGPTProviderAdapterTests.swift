@@ -4,13 +4,6 @@ import XCTest
 
 @MainActor
 final class ChatGPTProviderAdapterTests: XCTestCase {
-    func testLiveProviderAdaptersIncludeClaudeAndChatGPT() {
-        XCTAssertEqual(
-            LiveProviderAdapters.all.map(\.provider),
-            [.claude, .chatGPT, .cursor]
-        )
-    }
-
     /// Origin-based readiness: any settled chatgpt.com page is a valid
     /// cookie/session host — the fetch script enforces the origin itself and
     /// turns a token-less `/api/auth/session` into a 401 → Sign In badge.

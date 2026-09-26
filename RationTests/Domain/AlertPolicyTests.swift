@@ -728,6 +728,87 @@ final class AlertPolicyTests: XCTestCase {
         XCTAssertEqual(r.next.spend.dismissedTier, .warning, "and so must the drop dismissal")
     }
 
+    /// A boundary that transiently moves BACKWARDS (B → A → B) must not
+    /// duplicate the alert. The regressed observation is ignored whole, so the
+    /// return to B is not mistaken for a rollover — and neither is it for the
+    /// attention drop's snooze, which asks `spendPeriodAdvanced` of the same
+    /// memory.
+    func testSpendBoundaryRegressionDoesNotDuplicateTheAlert() {
+        var state = AccountAlertState()
+        let thresholds = SpendThresholds(warningCents: 5_000, criticalCents: 8_000)
+        let atB = AlertPolicy.evaluate(
+            previous: state, snapshot: spendSnapshot(cents: 5_200, periodStart: startB, periodEnd: resetB),
+            state: .current, thresholds: { _ in .default }, spendThresholds: thresholds
+        )
+        XCTAssertEqual(atB.events, [.spendThreshold(tier: .warning, thresholdCents: 5_000, spentCents: 5_200)])
+        state = atB.next
+        state.spend.dismissedTier = .warning
+
+        let backToA = AlertPolicy.evaluate(
+            previous: state, snapshot: spendSnapshot(cents: 5_300, periodStart: startA, periodEnd: resetA),
+            state: .current, thresholds: { _ in .default }, spendThresholds: thresholds
+        )
+        XCTAssertEqual(backToA.events, [])
+        XCTAssertEqual(backToA.next.spend, state.spend, "a regressed boundary leaves spend memory untouched")
+        state = backToA.next
+
+        let againB = AlertPolicy.evaluate(
+            previous: state, snapshot: spendSnapshot(cents: 5_400, periodStart: startB, periodEnd: resetB),
+            state: .current, thresholds: { _ in .default }, spendThresholds: thresholds
+        )
+        XCTAssertEqual(againB.events, [], "no rollover happened, so no second alert")
+        XCTAssertEqual(againB.next.spend.notifiedTier, .warning)
+        XCTAssertEqual(againB.next.spend.dismissedTier, .warning, "the drop dismissal survives too")
+        XCTAssertFalse(
+            AlertPolicy.spendPeriodAdvanced(from: backToA.next.spend, toStart: startB),
+            "the drop's snooze sees no rollover either"
+        )
+    }
+
+    /// The regression guard must not swallow a GENUINE rollover after a
+    /// regressed poll: A → (earlier) → B still re-arms.
+    func testGenuineRolloverStillRearmsAfterARegressedPoll() {
+        var state = AccountAlertState()
+        let thresholds = SpendThresholds(warningCents: 5_000, criticalCents: 8_000)
+        let earlier = Date(timeIntervalSince1970: 10_000)
+        state = AlertPolicy.evaluate(
+            previous: state, snapshot: spendSnapshot(cents: 5_200, periodStart: startA, periodEnd: resetA),
+            state: .current, thresholds: { _ in .default }, spendThresholds: thresholds
+        ).next
+        state = AlertPolicy.evaluate(
+            previous: state, snapshot: spendSnapshot(cents: 5_200, periodStart: earlier, periodEnd: resetA),
+            state: .current, thresholds: { _ in .default }, spendThresholds: thresholds
+        ).next
+        XCTAssertEqual(state.spend.periodStart, startA)
+
+        let r = AlertPolicy.evaluate(
+            previous: state, snapshot: spendSnapshot(cents: 5_600, periodStart: startB, periodEnd: resetB),
+            state: .current, thresholds: { _ in .default }, spendThresholds: thresholds
+        )
+        XCTAssertEqual(r.events, [.spendThreshold(tier: .warning, thresholdCents: 5_000, spentCents: 5_600)])
+        XCTAssertEqual(r.next.spend.periodStart, startB)
+    }
+
+    /// A snapshot without a start (pre-0.28.2 on disk) must not erase the
+    /// invoice identity already held.
+    func testSpendWithoutAStartKeepsTheStoredStart() {
+        var state = AccountAlertState()
+        state.spend.hasObserved = true
+        state.spend.periodStart = startA
+        let snap = UsageSnapshot(
+            accountID: accountID,
+            fetchedAt: d(0),
+            fiveHour: nil,
+            weekly: nil,
+            cursorSpend: CursorSpend(spentCents: 100, periodStart: nil, resetsAt: resetA, planLabel: "Pro")
+        )
+        let r = AlertPolicy.evaluate(
+            previous: state, snapshot: snap,
+            state: .current, thresholds: { _ in .default }, spendThresholds: .off
+        )
+        XCTAssertEqual(r.next.spend.periodStart, startA)
+    }
+
     /// Memory written by 0.28.1 has no `periodStart`. If
     /// the month rolled while the app was closed, the first upgraded poll
     /// must still see the rollover — otherwise the old watermark and drop

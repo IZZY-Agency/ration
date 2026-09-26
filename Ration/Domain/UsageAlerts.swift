@@ -327,6 +327,15 @@ enum AlertPolicy {
         return next >= legacyEnd
     }
 
+    /// Whether a Cursor observation reports an invoice START earlier than the
+    /// one already stored — a boundary moving backwards, which no rollover can
+    /// produce. `evaluateSpend` ignores such an observation. Legacy
+    /// memory with only a `periodEnd` has no start to regress from.
+    static func spendPeriodRegressed(from previous: SpendAlertMemory, toStart next: Date?) -> Bool {
+        guard let next, let previousStart = previous.periodStart else { return false }
+        return next < previousStart
+    }
+
     private static func evaluateSpend(
         _ spend: CursorSpend?,
         thresholds: SpendThresholds,
@@ -335,6 +344,14 @@ enum AlertPolicy {
     ) {
         guard let spend else { return } // no data → leave memory untouched
 
+        // Never move the stored invoice identity backwards. If Cursor
+        // ever reported an EARLIER start (B → A → B), storing A would make the
+        // return to B look like a rollover and fire the same alert twice. An
+        // older invoice's figures are not this invoice's spend either, so the
+        // observation is dropped whole: no alert, memory untouched. Only a
+        // genuine advance re-arms.
+        if Self.spendPeriodRegressed(from: memory, toStart: spend.periodStart) { return }
+
         if
             memory.hasObserved,
             Self.spendPeriodAdvanced(from: memory, toStart: spend.periodStart)
@@ -342,7 +359,9 @@ enum AlertPolicy {
             memory.notifiedTier = nil
             memory.dismissedTier = nil
         }
-        memory.periodStart = spend.periodStart
+        // A snapshot without a start (written before 0.28.2) proves nothing
+        // about the invoice, so it must not erase the identity we hold.
+        if let start = spend.periodStart { memory.periodStart = start }
         memory.periodEnd = spend.resetsAt
         memory.lastSpentCents = spend.spentCents
         memory.hasObserved = true

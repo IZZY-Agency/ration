@@ -59,6 +59,69 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         )
     }
 
+    /// Auth UX: claude.ai's sign-in page is `claude.ai/login` (the
+    /// signed-out destination this suite already pins as a claude.ai page).
+    /// Once the web view has SETTLED there, the session is gone.
+    func testSettledOnClaudeLoginIsTheSignInPage() {
+        XCTAssertTrue(
+            ClaudeUsagePage.isSignInPage(url: URL(string: "https://claude.ai/login"), isLoading: false)
+        )
+        XCTAssertTrue(
+            ClaudeUsagePage.isSignInPage(
+                url: URL(string: "https://claude.ai/login?returnTo=%2Fsettings%2Fusage"),
+                isLoading: false
+            )
+        )
+        // Still redirecting: not decided yet.
+        XCTAssertFalse(
+            ClaudeUsagePage.isSignInPage(url: URL(string: "https://claude.ai/login"), isLoading: true)
+        )
+        // Signed-in claude.ai pages, or no URL yet: not sign-in.
+        XCTAssertFalse(
+            ClaudeUsagePage.isSignInPage(url: URL(string: "https://claude.ai/new"), isLoading: false)
+        )
+        XCTAssertFalse(
+            ClaudeUsagePage.isSignInPage(url: URL(string: "https://claude.ai/settings/usage"), isLoading: false)
+        )
+        XCTAssertFalse(
+            ClaudeUsagePage.isSignInPage(url: URL(string: "https://claude.ai/loginhelp"), isLoading: false)
+        )
+        XCTAssertFalse(ClaudeUsagePage.isSignInPage(url: nil, isLoading: false))
+        // Look-alike hosts, other ports and http are not claude.ai's sign-in page.
+        XCTAssertFalse(
+            ClaudeUsagePage.isSignInPage(url: URL(string: "https://claude.ai.example.com/login"), isLoading: false)
+        )
+        XCTAssertFalse(
+            ClaudeUsagePage.isSignInPage(url: URL(string: "https://auth.claude.ai/login"), isLoading: false)
+        )
+        XCTAssertFalse(
+            ClaudeUsagePage.isSignInPage(url: URL(string: "https://claude.ai:8443/login"), isLoading: false)
+        )
+        XCTAssertFalse(
+            ClaudeUsagePage.isSignInPage(url: URL(string: "http://claude.ai/login"), isLoading: false)
+        )
+    }
+
+    /// The readiness wait decides sign-in BEFORE ready: `claude.ai/login` is
+    /// also a claude.ai origin, so checking ready first would hand a
+    /// signed-out page to the usage fetch instead of asking for Sign In.
+    func testReadinessWaitDecidesSignInBeforeReady() {
+        XCTAssertEqual(
+            ClaudeUsagePage.settledState(url: URL(string: "https://claude.ai/login"), isLoading: false),
+            .signInRequired
+        )
+        XCTAssertEqual(
+            ClaudeUsagePage.settledState(url: URL(string: "https://claude.ai/new#settings/usage"), isLoading: false),
+            .ready
+        )
+        XCTAssertNil(
+            ClaudeUsagePage.settledState(url: URL(string: "https://claude.ai/login"), isLoading: true)
+        )
+        XCTAssertNil(
+            ClaudeUsagePage.settledState(url: URL(string: "about:blank"), isLoading: false)
+        )
+    }
+
     func testVerifyPreservesCancellationFromResourceInspection() async {
         let client = WebUsageClient { _, _, _ in
             throw CancellationError()

@@ -71,6 +71,14 @@ enum CursorSpendRow {
 struct CursorSpendRowView: View {
     let spend: CursorSpend?
     var now: Date = .now
+    /// Past cycles beside the figure (`CursorSpendMiniBars`); drawn once there
+    /// is at least one closed cycle to set the open one against.
+    var trend: CursorSpendTrend? = nil
+
+    static func showsBars(_ trend: CursorSpendTrend?) -> Bool {
+        guard let trend else { return false }
+        return trend.bars.count >= 2
+    }
 
     private var text: (headline: String, caption: String, isAvailable: Bool) {
         CursorSpendRow.text(for: spend, now: now)
@@ -78,25 +86,11 @@ struct CursorSpendRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text(text.headline)
-                    .font(Theme.display(22, .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(text.isAvailable ? Theme.cream : Theme.creamFaint)
-                    .contentTransition(.numericText())
-
-                if let planLabel = spend?.planLabel {
-                    Text(planLabel)
-                        .font(Theme.mono(11))
-                        .tracking(0.6)
-                        .textCase(.uppercase)
-                        .foregroundStyle(Theme.creamFaint)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(Theme.line2, lineWidth: 1)
-                        )
+            HStack(alignment: .bottom, spacing: 8) {
+                headline
+                Spacer(minLength: 8)
+                if let trend, Self.showsBars(trend) {
+                    CursorSpendMiniBars(trend: trend)
                 }
             }
 
@@ -110,6 +104,30 @@ struct CursorSpendRowView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
+    }
+
+    private var headline: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text(text.headline)
+                .font(Theme.display(22, .semibold))
+                .monospacedDigit()
+                .foregroundStyle(text.isAvailable ? Theme.cream : Theme.creamFaint)
+                .contentTransition(.numericText())
+
+            if let planLabel = spend?.planLabel {
+                Text(planLabel)
+                    .font(Theme.mono(11))
+                    .tracking(0.6)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.creamFaint)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Theme.line2, lineWidth: 1)
+                    )
+            }
+        }
     }
 
     private var accessibilityDescription: String {

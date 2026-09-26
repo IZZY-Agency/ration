@@ -21,6 +21,13 @@ final class UsageRefreshCoordinator: ObservableObject {
     /// the auto-start policy. Set by the owner after construction.
     var onSnapshotSaved: @MainActor (AccountRecord, UsageSnapshot) async -> Void = { _, _ in }
 
+    /// Asked at DISPATCH, right before a refresh would mark the account
+    /// loading and fetch: true drops the refresh without writing any state.
+    /// The owner wires it to "a sign-in window is open on this account's web
+    /// view". Checked here rather than when the account list is built,
+    /// because a refresh can sit queued behind others while a window opens.
+    var isDispatchSuppressed: @MainActor (AccountRecord) -> Bool = { _ in false }
+
     private let snapshotStore: UsageSnapshotStore
     private let now: Now
     private let sleep: Sleep
@@ -35,6 +42,14 @@ final class UsageRefreshCoordinator: ObservableObject {
     }
 
     private var inFlight: [UUID: InFlightRefresh] = [:]
+
+    /// Refreshes that got past suppression and went on to fetch, per account.
+    /// Lets a caller tell whether a fetch STARTED after some moment.
+    private var dispatchCounts: [UUID: Int] = [:]
+
+    func dispatchCount(for accountID: UUID) -> Int {
+        dispatchCounts[accountID] ?? 0
+    }
 
     /// Account IDs with a usage refresh currently in flight. Read by the
     /// WebView-release path so a profile mid-fetch is never released.
@@ -71,6 +86,13 @@ final class UsageRefreshCoordinator: ObservableObject {
             return
         }
 
+        // Before `shouldSkipRefresh`, which itself writes state (`.current`
+        // for a recent snapshot, `.rateLimited`): a suppressed account's
+        // state is left exactly as it was. Checked again at dispatch.
+        if isDispatchSuppressed(account) {
+            return
+        }
+
         if shouldSkipRefresh(accountID: account.id, reason: reason) {
             return
         }
@@ -78,11 +100,26 @@ final class UsageRefreshCoordinator: ObservableObject {
         let token = UUID()
         let task = Task { @MainActor in
             await performRefresh(account: account)
+            // Drop the entry BEFORE the task completes, so whoever awaited it
+            // (`settle`) sees it gone and can start a fresh refresh.
+            if inFlight[account.id]?.token == token {
+                inFlight.removeValue(forKey: account.id)
+            }
         }
         inFlight[account.id] = InFlightRefresh(token: token, task: task)
         await task.value
         if inFlight[account.id]?.token == token {
             inFlight.removeValue(forKey: account.id)
+        }
+    }
+
+    /// Waits until no refresh is in flight for the account, including one
+    /// that started while the caller was waiting.
+    func settle(accountID: UUID) async {
+        var awaited: UUID?
+        while let current = inFlight[accountID], current.token != awaited {
+            awaited = current.token
+            await current.task.value
         }
     }
 
@@ -158,6 +195,13 @@ final class UsageRefreshCoordinator: ObservableObject {
     }
 
     private func performRefresh(account: AccountRecord) async {
+        if isDispatchSuppressed(account) {
+            Self.logger.info(
+                "refresh skipped account=\(account.id.uuidString, privacy: .public) reason=dispatchSuppressed"
+            )
+            return
+        }
+        dispatchCounts[account.id, default: 0] += 1
         if snapshotStore.snapshot(for: account.id) == nil {
             states[account.id] = .loading
         }

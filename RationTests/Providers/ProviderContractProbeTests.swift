@@ -370,10 +370,45 @@ final class ProviderContractProbeTests: XCTestCase {
 
     /// The JS-level gate: cross-origin capture is allowed ONLY for the
     /// compile-time candidate set.
-    func testProbeScriptRestrictsCrossOriginToCandidateHosts() {
+    func testProbeScriptRestrictsCrossOriginToCandidateHosts() throws {
         let source = ProviderContractProbeScript.source
-        XCTAssertTrue(source.contains(#"candidateCrossOriginHosts = new Set(["api2.cursor.sh"])"#))
+        XCTAssertEqual(
+            try scriptSet(named: "candidateCrossOriginHosts", in: source),
+            ["api2.cursor.sh"]
+        )
         XCTAssertTrue(source.contains("if (crossOrigin && !candidateCrossOriginHosts.has(url.host)) return;"))
+    }
+
+    /// The JS allowlists are derived from the Swift ones: the script
+    /// must carry EXACTLY the Swift sets — nothing missing, nothing extra —
+    /// so the page-side and the Swift-side sanitizers can never drift again.
+    func testProbeScriptAllowlistsAreExactlyTheSwiftSets() throws {
+        let source = ProviderContractProbeScript.source
+        XCTAssertEqual(
+            try scriptSet(named: "allowedPathSegments", in: source),
+            ProviderContractAllowlist.pathSegments
+        )
+        XCTAssertEqual(
+            try scriptSet(named: "allowedFieldNames", in: source),
+            ProviderContractAllowlist.fieldNames
+        )
+        XCTAssertEqual(
+            try scriptSet(named: "candidateCrossOriginHosts", in: source),
+            ProviderContractAllowlist.candidateCrossOriginHosts
+        )
+        XCTAssertFalse(source.contains("__RATION_"), "every placeholder must be substituted")
+    }
+
+    /// Decodes the JSON array literal in `const <name> = new Set(<array>);`.
+    private func scriptSet(named name: String, in source: String) throws -> Set<String> {
+        let opener = "const \(name) = new Set("
+        let start = try XCTUnwrap(source.range(of: opener), "no Set named \(name)")
+        let rest = source[start.upperBound...]
+        let end = try XCTUnwrap(rest.range(of: ");"), "unterminated Set \(name)")
+        let literal = String(rest[..<end.lowerBound])
+        let values = try JSONDecoder().decode([String].self, from: Data(literal.utf8))
+        XCTAssertEqual(values.count, Set(values).count, "\(name) has duplicates")
+        return Set(values)
     }
 
     @MainActor

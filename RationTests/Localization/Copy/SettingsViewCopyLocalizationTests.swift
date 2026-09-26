@@ -320,6 +320,37 @@ final class SettingsViewCopyLocalizationTests: XCTestCase {
         }
     }
 
+    // MARK: Flagged threshold fields (VoiceOver)
+
+    func testAnInvalidThresholdFieldIsAnnounced() {
+        let flag = ThresholdFieldFlag.invalid
+        XCTAssertEqual(flag.accessibilityNote(locale: L10n.en), "Invalid value: not saved")
+        XCTAssertEqual(flag.accessibilityNote(locale: L10n.fr), "Valeur non valide\(L10n.nbsp): non enregistrée")
+        XCTAssertEqual(flag.accessibilityNote(locale: L10n.uk), "Недійсне значення: не збережено")
+    }
+
+    func testAThresholdFieldTheSaveWillChangeIsAnnouncedWithTheNewValue() {
+        let flag = ThresholdFieldFlag.adjusted(to: "89")
+        XCTAssertEqual(flag.accessibilityNote(locale: L10n.en), "Will be adjusted to 89 when saved")
+        XCTAssertEqual(flag.accessibilityNote(locale: L10n.fr), "Sera ajustée à 89 à l’enregistrement")
+        XCTAssertEqual(flag.accessibilityNote(locale: L10n.uk), "Під час збереження буде змінено на 89")
+    }
+
+    func testACursorWarningTheSaveWillTurnOffIsAnnounced() {
+        let flag = ThresholdFieldFlag.adjusted(to: "")
+        XCTAssertEqual(flag.accessibilityNote(locale: L10n.en), "Will be turned off when saved")
+        XCTAssertEqual(flag.accessibilityNote(locale: L10n.fr), "Sera désactivée à l’enregistrement")
+        XCTAssertEqual(flag.accessibilityNote(locale: L10n.uk), "Під час збереження буде вимкнено")
+    }
+
+    func testAFieldThatIsNotFlaggedAnnouncesNothing() {
+        XCTAssertNil(ThresholdFieldFlag.accessibilityNote(nil, locale: L10n.fr))
+        XCTAssertEqual(
+            ThresholdFieldFlag.accessibilityNote(.invalid, locale: L10n.uk),
+            "Недійсне значення: не збережено"
+        )
+    }
+
     // MARK: Running language
 
     func testDefaultsFollowTheRunningLanguage() {

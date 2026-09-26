@@ -430,6 +430,270 @@ final class AppModelHistoryTests: XCTestCase {
         XCTAssertNil(fixture.model.warmUpBanner, "the keep-alive landed; nothing failed")
     }
 
+    // MARK: No warm-up or plan read through an open sign-in window
+
+    /// A reauth window opened while the triggering refresh was in flight:
+    /// the saved snapshot must not start warm-up or Claude's plan read,
+    /// both of which run in the web view the user is signing in on.
+    func testWarmUpAndPlanReadSkipAnAccountWhoseSignInOpenedMidFetch() async throws {
+        let evaluator = HookedAutoStartEval()
+        let fixture = try makeFixture(
+            messageSender: ClaudeMessageSender(client: WebUsageClient(evaluator: evaluator.evaluate))
+        )
+        defer { fixture.removeFiles() }
+        let account = try await signInWithWarmUp(fixture)
+        let model = fixture.model
+        fixture.adapter.onNextFetch = {
+            _ = try? model.beginReauthentication(accountID: account.id)
+        }
+        let evaluationsBefore = evaluator.evaluationCount
+        let planReadsBefore = fixture.adapter.planReadCount
+
+        await fixture.model.refreshAll(reason: .manual)
+        await fixture.model.flushPlanRefreshes()
+
+        XCTAssertEqual(fixture.model.signInSessions.count, 1, "the hook must have opened the session")
+        XCTAssertNil(fixture.model.accounts.first?.lastAutoStartedAt)
+        XCTAssertEqual(evaluator.evaluationCount, evaluationsBefore, "warm-up must not even prepare")
+        XCTAssertEqual(fixture.adapter.planReadCount, planReadsBefore, "no plan read in the sign-in view")
+    }
+
+    /// Opened while `prepareKeepAlive` was suspended: the commit-point
+    /// re-check must stop the reservation and the POST.
+    func testWarmUpStopsAtCommitWhenASignInOpensDuringPreparation() async throws {
+        let evaluator = HookedAutoStartEval()
+        final class ReservationSaves { var count = 0 }
+        let reservationSaves = ReservationSaves()
+        let fixture = try makeFixture(
+            messageSender: ClaudeMessageSender(client: WebUsageClient(evaluator: evaluator.evaluate)),
+            saveAccounts: { accounts in
+                if accounts.contains(where: { $0.lastAutoStartedAt != nil }) {
+                    reservationSaves.count += 1
+                }
+            }
+        )
+        defer { fixture.removeFiles() }
+        let account = try await signInWithWarmUp(fixture)
+        let model = fixture.model
+        evaluator.onDiscovery = {
+            _ = try? model.beginReauthentication(accountID: account.id)
+        }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(fixture.model.signInSessions.count, 1, "the hook must have opened the session")
+        XCTAssertEqual(reservationSaves.count, 0, "stopped at the commit point: not even reserved")
+        XCTAssertNil(fixture.model.accounts.first?.lastAutoStartedAt, "nothing reserved")
+        XCTAssertNil(fixture.model.accounts.first?.keepAliveConversationID, "nothing POSTed")
+    }
+
+    /// Opened while the completion POST was out: the send has landed, but
+    /// the follow-up refetch must not run in the sign-in view.
+    func testWarmUpSkipsItsRefetchWhenASignInOpensDuringTheSend() async throws {
+        let evaluator = HookedAutoStartEval()
+        let fixture = try makeFixture(
+            messageSender: ClaudeMessageSender(client: WebUsageClient(evaluator: evaluator.evaluate))
+        )
+        defer { fixture.removeFiles() }
+        let account = try await signInWithWarmUp(fixture)
+        let model = fixture.model
+        evaluator.onPostNumber = 2
+        evaluator.onPost = {
+            _ = try? model.beginReauthentication(accountID: account.id)
+        }
+        let fetchesBefore = fixture.adapter.fetchCallCount
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertNotNil(fixture.model.accounts.first?.lastAutoStartedAt, "the send itself went ahead")
+        XCTAssertEqual(fixture.model.signInSessions.count, 1, "the hook must have opened the session")
+        XCTAssertEqual(
+            fixture.adapter.fetchCallCount,
+            fetchesBefore + 1,
+            "only the triggering refresh fetched; the post-send refetch was skipped"
+        )
+        XCTAssertTrue(fixture.model.autoStartFailures.isEmpty, "skipping the refetch is not a failure")
+    }
+
+    /// Opened after the conversation-create POST: the completion's POST
+    /// gate refuses, so the window never starts. Nothing that starts a window
+    /// was sent, so the reservation is handed back and no failure is shown.
+    func testWarmUpPostGateRefusesAndReleasesTheReservationWhenASignInOpens() async throws {
+        let evaluator = HookedAutoStartEval()
+        let fixture = try makeFixture(
+            messageSender: ClaudeMessageSender(client: WebUsageClient(evaluator: evaluator.evaluate))
+        )
+        defer { fixture.removeFiles() }
+        let account = try await signInWithWarmUp(fixture)
+        let model = fixture.model
+        evaluator.onPostNumber = 1
+        evaluator.onPost = {
+            _ = try? model.beginReauthentication(accountID: account.id)
+        }
+        let outcomesBefore = fixture.model.accounts.first?.warmUpOutcomes.count ?? 0
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(fixture.model.signInSessions.count, 1, "the hook must have opened the session")
+        XCTAssertEqual(evaluator.postCount, 1, "the completion POST must not go out")
+        XCTAssertNil(fixture.model.accounts.first?.lastAutoStartedAt, "the reservation is handed back")
+        XCTAssertTrue(fixture.model.autoStartFailures.isEmpty, "a skip, not a failure")
+        XCTAssertNil(fixture.model.warmUpBanner)
+        XCTAssertEqual(
+            fixture.model.accounts.first?.warmUpOutcomes.count ?? 0,
+            outcomesBefore,
+            "a sign-in skip records no warm-up outcome"
+        )
+    }
+
+    /// Opened while the reservation was being saved: no POST at all, and the
+    /// reservation is handed back.
+    func testWarmUpReleasesTheReservationWhenASignInOpensDuringItsSave() async throws {
+        let evaluator = HookedAutoStartEval()
+        final class Hook {
+            var model: AppModel?
+            var accountID: UUID?
+            var fired = false
+        }
+        let hook = Hook()
+        let fixture = try makeFixture(
+            messageSender: ClaudeMessageSender(client: WebUsageClient(evaluator: evaluator.evaluate)),
+            saveAccounts: { accounts in
+                guard
+                    !hook.fired,
+                    let model = hook.model,
+                    let accountID = hook.accountID,
+                    accounts.contains(where: { $0.id == accountID && $0.lastAutoStartedAt != nil })
+                else { return }
+                hook.fired = true
+                _ = try? model.beginReauthentication(accountID: accountID)
+            }
+        )
+        defer { fixture.removeFiles() }
+        let account = try await signInWithWarmUp(fixture)
+        hook.model = fixture.model
+        hook.accountID = account.id
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertTrue(hook.fired, "the reservation save must have opened the session")
+        XCTAssertEqual(evaluator.postCount, 0, "nothing may be POSTed")
+        XCTAssertNil(fixture.model.accounts.first?.lastAutoStartedAt, "the reservation is handed back")
+        XCTAssertTrue(fixture.model.autoStartFailures.isEmpty)
+    }
+
+    /// Discovery fails AFTER a sign-in window opened during it: a skip, not a
+    /// warm-up failure banner.
+    func testPreparationFailureAfterASignInOpensIsNotReported() async throws {
+        let evaluator = HookedAutoStartEval()
+        let fixture = try makeFixture(
+            messageSender: ClaudeMessageSender(client: WebUsageClient(evaluator: evaluator.evaluate))
+        )
+        defer { fixture.removeFiles() }
+        let account = try await signInWithWarmUp(fixture)
+        let model = fixture.model
+        evaluator.failDiscovery = true
+        evaluator.onDiscovery = {
+            _ = try? model.beginReauthentication(accountID: account.id)
+        }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(fixture.model.signInSessions.count, 1, "the hook must have opened the session")
+        XCTAssertTrue(fixture.model.autoStartFailures.isEmpty, "a skip, not a failure")
+        XCTAssertNil(fixture.model.warmUpBanner)
+    }
+
+    /// The other side: the same discovery failure WITHOUT a sign-in window
+    /// is still reported.
+    func testPreparationFailureWithoutASignInIsStillReported() async throws {
+        let evaluator = HookedAutoStartEval()
+        let fixture = try makeFixture(
+            messageSender: ClaudeMessageSender(client: WebUsageClient(evaluator: evaluator.evaluate))
+        )
+        defer { fixture.removeFiles() }
+        _ = try await signInWithWarmUp(fixture)
+        evaluator.failDiscovery = true
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertFalse(fixture.model.autoStartFailures.isEmpty)
+    }
+
+    // MARK: DEBUG send honours an open sign-in window at every boundary
+
+    /// Opened during the send's warm-up fetch: nothing is prepared or sent.
+    func testDebugSendStopsWhenASignInOpensDuringItsFetch() async throws {
+        let evaluator = HookedAutoStartEval()
+        let fixture = try makeFixture(
+            messageSender: ClaudeMessageSender(client: WebUsageClient(evaluator: evaluator.evaluate))
+        )
+        defer { fixture.removeFiles() }
+        let account = try await signInWithWarmUp(fixture)
+        let model = fixture.model
+        fixture.adapter.onNextFetch = {
+            _ = try? model.beginReauthentication(accountID: account.id)
+        }
+
+        await fixture.model.debugSendKeepAlive(accountID: account.id)
+
+        XCTAssertEqual(fixture.model.signInSessions.count, 1, "the hook must have opened the session")
+        XCTAssertEqual(evaluator.evaluationCount, 0, "no preparation in the sign-in view")
+        XCTAssertEqual(evaluator.postCount, 0)
+    }
+
+    /// Opened during preparation: the POST gate refuses.
+    func testDebugSendPostGateRefusesWhenASignInOpensDuringPreparation() async throws {
+        let evaluator = HookedAutoStartEval()
+        let fixture = try makeFixture(
+            messageSender: ClaudeMessageSender(client: WebUsageClient(evaluator: evaluator.evaluate))
+        )
+        defer { fixture.removeFiles() }
+        let account = try await signInWithWarmUp(fixture)
+        let model = fixture.model
+        evaluator.onDiscovery = {
+            _ = try? model.beginReauthentication(accountID: account.id)
+        }
+
+        await fixture.model.debugSendKeepAlive(accountID: account.id)
+
+        XCTAssertEqual(fixture.model.signInSessions.count, 1, "the hook must have opened the session")
+        XCTAssertEqual(evaluator.postCount, 0, "nothing may be POSTed")
+    }
+
+    /// Opened while the completion POST was out: the send lands, the refetch
+    /// is skipped.
+    func testDebugSendSkipsItsRefetchWhenASignInOpensDuringTheSend() async throws {
+        let evaluator = HookedAutoStartEval()
+        let fixture = try makeFixture(
+            messageSender: ClaudeMessageSender(client: WebUsageClient(evaluator: evaluator.evaluate))
+        )
+        defer { fixture.removeFiles() }
+        let account = try await signInWithWarmUp(fixture)
+        let model = fixture.model
+        evaluator.onPostNumber = 2
+        evaluator.onPost = {
+            _ = try? model.beginReauthentication(accountID: account.id)
+        }
+        let fetchesBefore = fixture.adapter.fetchCallCount
+
+        await fixture.model.debugSendKeepAlive(accountID: account.id)
+
+        XCTAssertEqual(evaluator.postCount, 2, "the send itself went ahead")
+        XCTAssertEqual(fixture.model.signInSessions.count, 1, "the hook must have opened the session")
+        XCTAssertEqual(fixture.adapter.fetchCallCount, fetchesBefore + 1, "only the warm-up fetch; no refetch")
+    }
+
+    private func signInWithWarmUp(_ fixture: Fixture) async throws -> AccountRecord {
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        try await fixture.model.setAutoStart(accountID: account.id, enabled: true)
+        fixture.adapter.fiveHourRemaining = 1.0
+        return account
+    }
+
     private func makeFixture(
         messageSender: ClaudeMessageSender = ClaudeMessageSender(),
         beforeAutoStartCommit: @escaping @MainActor () async -> Void = {},
@@ -597,6 +861,51 @@ private final class ToggleableAutoStartEval {
     }
 }
 
+/// `AutoStartWebEvalStub` that counts every script it is asked to run and
+/// can run a hook on the first model-discovery call (inside
+/// `prepareKeepAlive`) or the first POST (inside `sendKeepAlive`).
+@MainActor
+private final class HookedAutoStartEval {
+    private(set) var evaluationCount = 0
+    /// POSTs that actually reached the page (each gate already passed).
+    private(set) var postCount = 0
+    var onDiscovery: (@MainActor () -> Void)?
+    /// Model discovery answers 500 while set, so `prepareKeepAlive` throws.
+    var failDiscovery = false
+    var onPost: (@MainActor () -> Void)?
+    /// Which POST (1-based) runs `onPost`: 1 = conversation create for a new
+    /// account, 2 = its completion.
+    var onPostNumber = 1
+
+    func evaluate(
+        script: String,
+        arguments: [String: Any],
+        webView: WKWebView
+    ) async throws -> Any? {
+        evaluationCount += 1
+        if script.contains("method: \"POST\"") {
+            postCount += 1
+            if postCount == onPostNumber, let hook = onPost {
+                onPost = nil
+                hook()
+            }
+        } else if !script.contains("performance.getEntriesByType") {
+            if let hook = onDiscovery {
+                onDiscovery = nil
+                hook()
+            }
+            if failDiscovery {
+                return ["status": 500, "retryAfter": NSNull(), "body": ""]
+            }
+        }
+        return try await AutoStartWebEvalStub.evaluate(
+            script: script,
+            arguments: arguments,
+            webView: webView
+        )
+    }
+}
+
 @MainActor
 private struct Fixture {
     let directory: URL
@@ -638,14 +947,30 @@ private final class HistoryProviderAdapterSpy: ProviderAdapter {
     /// that cannot vouch for its org (auto-start must then fail closed).
     var organizationID: String? = "11111111-2222-4333-8444-555555555555"
     private(set) var fetchCallCount = 0
+    private(set) var planReadCount = 0
+    /// Runs inside the next fetch, then clears — e.g. to open a sign-in
+    /// window while a refresh is in flight.
+    var onNextFetch: (@MainActor () -> Void)?
 
     func verifySession(in webView: WKWebView) async throws {}
+
+    func refreshPlanDetection(
+        for snapshot: UsageSnapshot,
+        in webView: WKWebView
+    ) async throws -> PlanDetection? {
+        planReadCount += 1
+        return nil
+    }
 
     func fetchUsage(
         accountID: UUID,
         in webView: WKWebView
     ) async throws -> UsageSnapshot {
         fetchCallCount += 1
+        if let hook = onNextFetch {
+            onNextFetch = nil
+            hook()
+        }
         let fiveHour = fiveHourRemaining.map {
             UsageWindow(kind: .fiveHour, remainingFraction: $0, resetsAt: nil)
         }

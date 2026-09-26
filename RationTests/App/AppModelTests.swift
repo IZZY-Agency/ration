@@ -2111,11 +2111,18 @@ final class AppModelTests: XCTestCase {
 
     /// Sign-in protection: an open reauth session shares its account's
     /// web profile AND its live web view (`beginReauthentication` reuses
-    /// `account.webProfileID`) with the user's visible login navigation. A
-    /// concurrent timer-refresh timeout must NOT recycle that view out from
-    /// under them — the profile is "protected" while the session is open.
+    /// `account.webProfileID`) with the user's visible login navigation.
+    /// Polls skip the account while the session is open, but a refresh that
+    /// was ALREADY in flight when the session opened still runs; its timeout
+    /// must NOT recycle that view out from under the user — the profile is
+    /// "protected" while the session is open.
     func testHungFetchDuringOpenSignInSessionDoesNotRecycleProtectedProfile() async throws {
-        final class EvaluatorMode { var hang = false }
+        final class EvaluatorMode {
+            var hang = false
+            /// Runs once when an evaluation starts hanging: opens the reauth
+            /// session while that refresh is in flight.
+            var onHang: (@MainActor () -> Void)?
+        }
         let mode = EvaluatorMode()
         final class EvaluationCounter { var count = 0 }
         let evaluationCounter = EvaluationCounter()
@@ -2123,6 +2130,10 @@ final class AppModelTests: XCTestCase {
             evaluator: { script, _, _ in
                 evaluationCounter.count += 1
                 if mode.hang {
+                    if let hook = mode.onHang {
+                        mode.onHang = nil
+                        await hook()
+                    }
                     await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
                 }
                 return Self.scriptedSuccess(for: script)
@@ -2152,19 +2163,24 @@ final class AppModelTests: XCTestCase {
         await fixture.model.refreshAll(reason: .manual)
         XCTAssertNotNil(fixture.model.snapshot(for: account.id), "baseline refresh must produce a snapshot")
 
-        // Open a reauth session on the SAME account: it reuses
-        // `account.webProfileID` and the account's already-cached web view.
-        let reauthSessionID = try fixture.model.beginReauthentication(accountID: account.id)
-        XCTAssertNotNil(fixture.model.signInSession(for: reauthSessionID), "reauth session must be open")
-
         let viewsBeforeHang = fixture.profileManager.madeProfileIDs.count
         let protectedView = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
 
-        // A concurrent timer-style refresh hangs and bounds out to `.stale`
-        // — same as the unprotected case — but must NOT touch the view the
-        // open reauth session is using.
+        // A refresh starts and hangs; while it is in flight a reauth session
+        // opens on the SAME account (it reuses `account.webProfileID` and the
+        // account's already-cached web view). The refresh bounds out to
+        // `.stale` — same as the unprotected case — but must NOT touch the
+        // view the open reauth session is using.
+        let model = fixture.model
+        final class SessionBox { var id: UUID? }
+        let reauthBox = SessionBox()
+        mode.onHang = {
+            reauthBox.id = try? model.beginReauthentication(accountID: account.id)
+        }
         mode.hang = true
         await fixture.model.refreshAll(reason: .manual)
+        let reauthSessionID = try XCTUnwrap(reauthBox.id, "the reauth session must have opened mid-fetch")
+        XCTAssertNotNil(fixture.model.signInSession(for: reauthSessionID), "reauth session must be open")
         let state = try XCTUnwrap(
             fixture.model.presentations.first(where: { $0.account.id == account.id })?.state
         )
@@ -2172,10 +2188,12 @@ final class AppModelTests: XCTestCase {
             return XCTFail("expected .stale after a timed-out fetch with an existing snapshot, got \(state)")
         }
 
-        // No recycle: the NEXT refresh must reuse the SAME cached view
-        // (no fresh `makeWebView`), and the protected view must never have
-        // been navigated to about:blank.
+        // No recycle: the protected view must never have been navigated to
+        // about:blank, and nothing minted a fresh view. (A refresh while the
+        // session is open skips the account altogether.)
+        let evaluationsWhileOpen = evaluationCounter.count
         await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(evaluationCounter.count, evaluationsWhileOpen, "no poll may run in the sign-in view")
         XCTAssertEqual(
             fixture.profileManager.madeProfileIDs.count,
             viewsBeforeHang,
@@ -2190,6 +2208,7 @@ final class AppModelTests: XCTestCase {
         // recycle — the tainted view (still hosting the abandoned bridge
         // call from the earlier timed-out fetch) finally gets its
         // `about:blank` teardown, and the account is no longer stuck on it.
+        mode.hang = false
         await fixture.model.cancelSignIn(sessionID: reauthSessionID)
         XCTAssertNil(
             fixture.model.signInSession(for: reauthSessionID),
@@ -2200,12 +2219,12 @@ final class AppModelTests: XCTestCase {
             "closing the protected session must complete the deferred recycle (about:blank teardown)"
         )
 
-        mode.hang = false
-        let viewsAfterSessionClosed = fixture.profileManager.madeProfileIDs.count
-        await fixture.model.refreshAll(reason: .manual)
+        // Closing the session refreshes the account once, and that refresh
+        // runs on a fresh view, not the torn-down one.
+        await fixture.model.flushSignInResumeRefreshes()
         XCTAssertGreaterThan(
             fixture.profileManager.madeProfileIDs.count,
-            viewsAfterSessionClosed,
+            viewsBeforeHang,
             "closing the protected session must let the next refresh recycle to a fresh view"
         )
     }
@@ -2287,20 +2306,26 @@ final class AppModelTests: XCTestCase {
         let account = try XCTUnwrap(fixture.model.accounts.first)
         let tainted = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
 
+        // The reauth completion's own fetch times out while its session
+        // protects the profile (polls skip the account meanwhile).
         let reauthSessionID = try fixture.model.beginReauthentication(accountID: account.id)
         fixture.adapter.fetchError = WebUsageClientError.timedOut
-        await fixture.model.refreshAll(reason: .manual)
+        do {
+            try await fixture.model.completeSignIn(sessionID: reauthSessionID, label: "Personal")
+            XCTFail("the reauth fetch was scripted to time out")
+        } catch {}
         XCTAssertEqual(tainted.aboutBlankLoadCount, 0, "protected: deferred, not torn down")
 
         let fresh = RecordingWebView(frame: .zero)
         fixture.model.replaceWebViewForTesting(profileID: account.webProfileID, with: fresh)
 
+        fixture.adapter.fetchError = nil
         await fixture.model.cancelSignIn(sessionID: reauthSessionID)
+        await fixture.model.flushSignInResumeRefreshes()
 
         XCTAssertEqual(tainted.aboutBlankLoadCount, 1, "the exact tainted view must be torn down")
         XCTAssertEqual(fresh.aboutBlankLoadCount, 0, "a view that never timed out must not be torn down")
 
-        fixture.adapter.fetchError = nil
         let madeBefore = fixture.profileManager.madeProfileIDs.count
         await fixture.model.refreshAll(reason: .manual)
         XCTAssertEqual(
@@ -2344,25 +2369,37 @@ final class AppModelTests: XCTestCase {
         let account = try XCTUnwrap(fixture.model.accounts.first)
         let view = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
 
-        // Protected timeout: deferred.
-        let reauthSessionID = try fixture.model.beginReauthentication(accountID: account.id)
-        fixture.adapter.fetchError = WebUsageClientError.timedOut
-        await fixture.model.refreshAll(reason: .manual)
-        XCTAssertEqual(view.aboutBlankLoadCount, 0)
-
-        // A retry poll on the same (still cached) view hangs...
+        // A poll on the cached view hangs; it started BEFORE the reauth
+        // session opened (polls skip an account whose session is open)...
         let fetchGate = VerificationGate()
         fixture.adapter.fetchGate = fetchGate
         let retry = Task { await fixture.model.refreshAll(reason: .manual) }
         await fetchGate.waitUntilStarted()
+        fixture.adapter.fetchGate = nil
+
+        // ...the reauth session opens and its own fetch times out while the
+        // session protects the profile: deferred...
+        let reauthSessionID = try fixture.model.beginReauthentication(accountID: account.id)
+        fixture.adapter.fetchError = WebUsageClientError.timedOut
+        do {
+            try await fixture.model.completeSignIn(sessionID: reauthSessionID, label: "Personal")
+            XCTFail("the reauth fetch was scripted to time out")
+        } catch {}
+        XCTAssertEqual(view.aboutBlankLoadCount, 0)
+        // The fresh refresh that follows the close (after the hung poll
+        // settles) is healthy: only the one wedged view is under test.
+        fixture.adapter.onFetch = { _ in
+            fixture.adapter.fetchError = nil
+        }
 
         // ...the session closes (deferred teardown)...
         await fixture.model.cancelSignIn(sessionID: reauthSessionID)
         XCTAssertEqual(view.aboutBlankLoadCount, 1)
 
-        // ...then the retry's timeout lands on the same view.
+        // ...then the hung poll's timeout lands on the same view.
         fetchGate.resume()
         await retry.value
+        await fixture.model.flushSignInResumeRefreshes()
         await fixture.model.flushTeardownChecks()
 
         XCTAssertEqual(view.aboutBlankLoadCount, 1, "one view is torn down once")
@@ -3102,12 +3139,274 @@ final class AppModelTests: XCTestCase {
         ]
     }
 
+    // MARK: No refresh while a sign-in window is open
+
+    /// A reauth session drives the account's OWN cached web view, and every
+    /// provider's fetch preparation navigates that view. A manual refresh, a
+    /// popover-open refresh and the background timer must all leave the
+    /// account alone while the session is open — and still refresh the
+    /// others.
+    func testRefreshSkipsAnAccountWhileItsReauthSessionIsOpen() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let reauthed = try await signInAccount(fixture, label: "Personal")
+        let other = try await signInAccount(fixture, label: "Work")
+
+        _ = try fixture.model.beginReauthentication(accountID: reauthed.id)
+        let fetchesBefore = fixture.adapter.fetchedAccountIDs.count
+
+        await fixture.model.refreshAll(reason: .manual)
+        await fixture.model.refreshAll(reason: .timer)
+        await fixture.model.refreshWhenOpened()
+
+        let fetched = Array(fixture.adapter.fetchedAccountIDs.dropFirst(fetchesBefore))
+        XCTAssertFalse(fetched.contains(reauthed.id), "no fetch may navigate the sign-in view")
+        XCTAssertTrue(fetched.contains(other.id), "other accounts keep refreshing")
+        XCTAssertEqual(
+            fixture.model.backgroundRefreshAccountIDsForTesting(),
+            [other.id],
+            "the background timer polls only the accounts without a sign-in window"
+        )
+    }
+
+    /// Skipping is not a failure: the account keeps its snapshot and state,
+    /// so the header does not count it as a problem for having been skipped.
+    func testSkippingDuringSignInRecordsNoFailure() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let account = try await signInAccount(fixture, label: "Personal")
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(presentationState(fixture, account.id), .current)
+        let snapshotBefore = fixture.model.snapshot(for: account.id)
+
+        _ = try fixture.model.beginReauthentication(accountID: account.id)
+        // Every fetch would fail now — a skip must not reach it.
+        fixture.adapter.fetchError = ProviderError.offline
+        await fixture.model.refreshAll(reason: .manual)
+        await fixture.model.refreshAll(reason: .timer)
+
+        XCTAssertEqual(presentationState(fixture, account.id), .current)
+        XCTAssertEqual(fixture.model.snapshot(for: account.id), snapshotBefore)
+    }
+
+    /// Cancelling the reauth window brings the account back with one prompt
+    /// refresh, and it is polled normally again afterwards.
+    func testCancellingAReauthSessionRefreshesTheAccountOnce() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let account = try await signInAccount(fixture, label: "Personal")
+        let sessionID = try fixture.model.beginReauthentication(accountID: account.id)
+        await fixture.model.refreshAll(reason: .timer)
+        let fetchesBefore = fixture.adapter.fetchedAccountIDs.count
+
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+        await fixture.model.flushSignInResumeRefreshes()
+
+        let fetched = Array(fixture.adapter.fetchedAccountIDs.dropFirst(fetchesBefore))
+        XCTAssertEqual(fetched, [account.id], "exactly one refresh once the window closes")
+        XCTAssertEqual(fixture.model.backgroundRefreshAccountIDsForTesting(), [account.id])
+    }
+
+    /// The sign-in completion is the session's OWN use of the view: verify
+    /// runs on the session's web view and its fetch still happens, while
+    /// polls around it stay away.
+    func testReauthCompletionStillVerifiesOnTheSessionView() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let account = try await signInAccount(fixture, label: "Personal")
+        let sessionID = try fixture.model.beginReauthentication(accountID: account.id)
+        let sessionView = try XCTUnwrap(fixture.model.signInSession(for: sessionID)?.webView)
+        await fixture.model.refreshAll(reason: .timer)
+        let fetchesBefore = fixture.adapter.fetchedAccountIDs.count
+
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+
+        XCTAssertTrue(fixture.adapter.verifiedWebViews.last === sessionView)
+        let fetched = Array(fixture.adapter.fetchedAccountIDs.dropFirst(fetchesBefore))
+        XCTAssertEqual(fetched, [account.id], "the completion's own fetch still runs")
+        XCTAssertEqual(presentationState(fixture, account.id), .current)
+        XCTAssertEqual(fixture.model.backgroundRefreshAccountIDsForTesting(), [account.id])
+    }
+
+    /// A refresh already QUEUED when the window opens (the list was built
+    /// before it) is dropped at dispatch: no fetch, no state written.
+    func testQueuedRefreshIsDroppedAtDispatchWhenASignInOpens() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let first = try await signInAccount(fixture, label: "Personal")
+        let second = try await signInAccount(fixture, label: "Work")
+        let model = fixture.model
+        fixture.adapter.onFetch = { accountID in
+            guard accountID == first.id else { return }
+            fixture.adapter.onFetch = nil
+            _ = try? model.beginReauthentication(accountID: second.id)
+        }
+        let fetchesBefore = fixture.adapter.fetchedAccountIDs.count
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        let fetched = Array(fixture.adapter.fetchedAccountIDs.dropFirst(fetchesBefore))
+        XCTAssertEqual(fetched, [first.id], "the queued refresh for the signing-in account must not fetch")
+        XCTAssertEqual(fixture.model.signInSessions.count, 1, "the hook must have opened the session")
+        XCTAssertEqual(presentationState(fixture, second.id), .current, "a dropped refresh writes no state")
+    }
+
+    /// A fetch that started BEFORE the window opened is still running when
+    /// the window is cancelled: the account gets one FRESH fetch after it
+    /// settles, not just the tail of the old one.
+    func testCancelRefreshesAfreshOnceTheOlderFetchSettles() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let account = try await signInAccount(fixture, label: "Personal")
+        let fetchesBefore = fixture.adapter.fetchedAccountIDs.count
+
+        let gate = VerificationGate()
+        fixture.adapter.fetchGate = gate
+        let olderRefresh = Task { await fixture.model.refreshAll(reason: .manual) }
+        await gate.waitUntilStarted()
+        fixture.adapter.fetchGate = nil
+
+        let sessionID = try fixture.model.beginReauthentication(accountID: account.id)
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+        // Let the resume refresh reach its wait on the older fetch.
+        for _ in 0..<50 { await Task.yield() }
+        gate.resume()
+        await olderRefresh.value
+        await fixture.model.flushSignInResumeRefreshes()
+
+        let fetched = Array(fixture.adapter.fetchedAccountIDs.dropFirst(fetchesBefore))
+        XCTAssertEqual(fetched, [account.id, account.id], "the older fetch, then exactly one fresh one")
+    }
+
+    /// A real tick of the background timer, through the coordinator's own
+    /// loop: the account with an open window never reaches the adapter.
+    /// Dispatch suppression is switched off here so the test pins the
+    /// timer's account supplier by itself.
+    func testBackgroundTimerTickSkipsAnAccountWithAnOpenSignIn() async throws {
+        let ticker = TickSleep()
+        let fixture = try makeFixture(refreshSleep: { try await ticker.sleep($0) })
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let reauthed = try await signInAccount(fixture, label: "Personal")
+        let other = try await signInAccount(fixture, label: "Work")
+        _ = try fixture.model.beginReauthentication(accountID: reauthed.id)
+        fixture.model.disableDispatchSuppressionForTesting()
+        let fetchesBefore = fixture.adapter.fetchedAccountIDs.count
+
+        fixture.model.startBackgroundPollingForTesting()
+        // The tick's refresh has finished once the loop asks to sleep again.
+        for _ in 0..<500 where ticker.callCount < 2 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        fixture.model.stop()
+
+        XCTAssertGreaterThanOrEqual(ticker.callCount, 2, "the timer must have ticked once")
+        let fetched = Array(fixture.adapter.fetchedAccountIDs.dropFirst(fetchesBefore))
+        XCTAssertEqual(fetched, [other.id], "the tick fetches only the account without a window")
+    }
+
+    /// The popover path: a queued refresh whose account opened a window
+    /// must not even take `shouldSkipRefresh`'s "recent snapshot" shortcut,
+    /// which writes `.current` — the account's state stays untouched.
+    func testQueuedPopoverRefreshLeavesASuppressedAccountsStateAlone() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let first = try await signInAccount(fixture, label: "Personal")
+        let second = try await signInAccount(fixture, label: "Work")
+        // Both stale, both with a snapshot young enough for the popover
+        // shortcut (the fixture clock never moves).
+        fixture.adapter.fetchError = ProviderError.offline
+        await fixture.model.refreshAll(reason: .manual)
+        fixture.adapter.fetchError = nil
+        guard case .stale = presentationState(fixture, second.id) else {
+            return XCTFail("setup: the second account must be stale")
+        }
+
+        // The first account's shortcut publishes its `.current` synchronously;
+        // open the second account's window right then, while its refresh is
+        // queued behind.
+        let model = fixture.model
+        var opened = false
+        let subscription = fixture.model.$presentations.sink { presentations in
+            guard
+                !opened,
+                presentations.first(where: { $0.account.id == first.id })?.state == .current
+            else { return }
+            opened = true
+            _ = try? model.beginReauthentication(accountID: second.id)
+        }
+        defer { subscription.cancel() }
+
+        await fixture.model.refreshWhenOpened()
+
+        XCTAssertTrue(opened, "the window must have opened while the refresh was queued")
+        XCTAssertEqual(presentationState(fixture, first.id), .current, "the unsuppressed account took the shortcut")
+        guard case .stale = presentationState(fixture, second.id) else {
+            return XCTFail("a suppressed account's state must not change, got \(String(describing: presentationState(fixture, second.id)))")
+        }
+    }
+
+    /// A timer refresh that STARTED after the window closed (here, before the
+    /// resume task got to run) already is the promised fresh fetch: exactly
+    /// one fetch, not two.
+    func testARefreshStartedAfterCloseSatisfiesTheResumeRefresh() async throws {
+        final class Box {
+            var model: AppModel?
+            var adapter: ProviderAdapterSpy?
+            var timerRefresh: Task<Void, Never>?
+        }
+        let box = Box()
+        let gate = VerificationGate()
+        let fixture = try makeFixture(beforeSignInResumeRefresh: {
+            // The timer fetch starts and is held in flight.
+            guard let model = box.model, let adapter = box.adapter else { return }
+            adapter.fetchGate = gate
+            box.timerRefresh = Task { await model.refreshAll(reason: .timer) }
+            await gate.waitUntilStarted()
+            adapter.fetchGate = nil
+        })
+        defer { fixture.removeFiles() }
+        box.model = fixture.model
+        box.adapter = fixture.adapter
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let account = try await signInAccount(fixture, label: "Personal")
+        let sessionID = try fixture.model.beginReauthentication(accountID: account.id)
+        let fetchesBefore = fixture.adapter.fetchedAccountIDs.count
+
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+        await gate.waitUntilStarted()
+        gate.resume()
+        await fixture.model.flushSignInResumeRefreshes()
+        await box.timerRefresh?.value
+
+        let fetched = Array(fixture.adapter.fetchedAccountIDs.dropFirst(fetchesBefore))
+        XCTAssertEqual(fetched, [account.id], "one fresh fetch after the close, not two")
+    }
+
+    private func signInAccount(_ fixture: Fixture, label: String) async throws -> AccountRecord {
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: label)
+        return try XCTUnwrap(fixture.model.accounts.last)
+    }
+
+    private func presentationState(_ fixture: Fixture, _ accountID: UUID) -> AccountViewState? {
+        fixture.model.presentations.first { $0.account.id == accountID }?.state
+    }
+
     private func makeFixture(
         saveAccounts: AccountStore.SaveAccounts? = nil,
         saveSnapshots: UsageSnapshotStore.SaveSnapshots? = nil,
         savePendingProfileIDs: PendingProfileDeletionStore.SaveProfileIDs? = nil,
         beforeSignInPersistence: @escaping @MainActor () async -> Void = {},
         beforeProfileCleanupDeletion: @escaping @MainActor (UUID) async -> Void = { _ in },
+        beforeSignInResumeRefresh: @escaping @MainActor () async -> Void = {},
         adapters: [any ProviderAdapter]? = nil,
         messageSender: ClaudeMessageSender = ClaudeMessageSender(),
         // Pass an existing directory to build a SECOND model over the same files,
@@ -3117,7 +3416,10 @@ final class AppModelTests: XCTestCase {
         now: (@MainActor () -> Date)? = nil,
         saveSettings: AppSettings.SaveSettings? = nil,
         // No grace by default: a teardown is checked as soon as it is issued.
-        teardownGrace: @escaping @MainActor () async -> Void = {}
+        teardownGrace: @escaping @MainActor () async -> Void = {},
+        refreshSleep: @escaping UsageRefreshCoordinator.Sleep = { duration in
+            try await Task.sleep(for: duration)
+        }
     ) throws -> Fixture {
         let directory = directory
             ?? FileManager.default.temporaryDirectory
@@ -3164,8 +3466,10 @@ final class AppModelTests: XCTestCase {
             messageSender: messageSender,
             now: now ?? { Date(timeIntervalSince1970: 1_000) },
             beforeSignInPersistence: beforeSignInPersistence,
+            beforeSignInResumeRefresh: beforeSignInResumeRefresh,
             beforeProfileCleanupDeletion: beforeProfileCleanupDeletion,
             systemPowerObserver: powerObserver,
+            refreshSleep: refreshSleep,
             teardownGrace: teardownGrace
         )
         return Fixture(
@@ -3210,6 +3514,24 @@ private final class SignInReleaseProbe {
         powerObserver.fireReleaseSignal()
         webViewKeptDuringCommit =
             model.cachedWebViewProfileIDsForTesting().contains(profileID)
+    }
+}
+
+/// The coordinator's injected sleep: the first call returns at once (one
+/// timer tick), every later one parks until cancelled.
+private final class TickSleep: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+
+    var callCount: Int { lock.withLock { calls } }
+
+    func sleep(_ duration: Duration) async throws {
+        let call = lock.withLock {
+            calls += 1
+            return calls
+        }
+        if call == 1 { return }
+        try await Task.sleep(for: .seconds(3_600))
     }
 }
 
@@ -3381,6 +3703,13 @@ private final class ProviderAdapterSpy: ProviderAdapter {
     let signInURL = URL(string: "https://claude.ai/")!
     private(set) var verifyCallCount = 0
     private(set) var fetchCallCount = 0
+    /// Every fetch's account, in order — so a test can tell WHICH account a
+    /// refresh reached, not just that one did.
+    private(set) var fetchedAccountIDs: [UUID] = []
+    /// The web view each `verifySession` ran in.
+    private(set) var verifiedWebViews: [WKWebView] = []
+    /// Runs at the start of every fetch with the fetched account's id.
+    var onFetch: (@MainActor (UUID) -> Void)?
     var verificationGate: VerificationGate?
     var fetchGate: VerificationGate?
     /// Thrown by every `fetchUsage` while set — e.g. `WebUsageClientError
@@ -3389,6 +3718,7 @@ private final class ProviderAdapterSpy: ProviderAdapter {
 
     func verifySession(in webView: WKWebView) async throws {
         verifyCallCount += 1
+        verifiedWebViews.append(webView)
         if let verificationGate {
             await verificationGate.suspend()
         }
@@ -3399,6 +3729,8 @@ private final class ProviderAdapterSpy: ProviderAdapter {
         in webView: WKWebView
     ) async throws -> UsageSnapshot {
         fetchCallCount += 1
+        fetchedAccountIDs.append(accountID)
+        onFetch?(accountID)
         if let fetchGate {
             await fetchGate.suspend()
         }
@@ -3667,4 +3999,361 @@ private final class RemovalAccountSaveGate {
         continuation?.resume()
         continuation = nil
     }
+}
+
+// MARK: - Warm-up outcomes
+
+/// How the stubbed completion POST answers in `makeOutcomeClient`.
+@MainActor
+private final class CompletionScript {
+    enum Answer {
+        case status(Int, streamError: String? = nil)
+        case transportFailure
+    }
+    var answer: Answer = .status(200)
+    /// The model-discovery GET's status (a 403 here is a PRE-reservation auth
+    /// failure).
+    var discoveryStatus = 200
+    /// Weekly utilization reported by the usage read (100 = spent).
+    var weeklyUtilization = 53
+    var completions = 0
+}
+
+private struct CompletionScriptFailure: Error {}
+
+@MainActor
+private final class MovableClock {
+    var date = Date(timeIntervalSince1970: 1_000)
+}
+
+extension AppModelTests {
+    /// Same routing as `makeWarmUpSendClient`, with the completion POST's
+    /// answer scripted. Never touches a network: every script is stubbed.
+    private func makeOutcomeClient(_ script: CompletionScript) -> WebUsageClient {
+        WebUsageClient(
+            evaluator: { source, arguments, _ in
+                let path = arguments["path"] as? String ?? ""
+                if source.contains("method: \"POST\"") {
+                    guard path.hasSuffix("/completion") else {
+                        return ["status": 200, "retryAfter": NSNull(), "body": ""]
+                    }
+                    script.completions += 1
+                    switch script.answer {
+                    case let .status(status, streamError):
+                        let stream: Any = streamError ?? NSNull()
+                        return [
+                            "status": status,
+                            "retryAfter": NSNull(),
+                            "body": "",
+                            "streamError": stream
+                        ]
+                    case .transportFailure:
+                        throw CompletionScriptFailure()
+                    }
+                }
+                if source.contains("getEntriesByType") {
+                    return Self.scriptedSuccess(for: source)
+                }
+                if path.contains("chat_conversations") {
+                    return [
+                        "status": script.discoveryStatus,
+                        "retryAfter": NSNull(),
+                        "body": #"[{"model":"claude-test-model","uuid":"abc"}]"#
+                    ]
+                }
+                return [
+                    "status": 200,
+                    "retryAfter": NSNull(),
+                    "body": """
+                    {
+                      "five_hour": { "utilization": 0, "resets_at": null },
+                      "seven_day": { "utilization": \(script.weeklyUtilization), "resets_at": null }
+                    }
+                    """
+                ]
+            },
+            sleep: { _ in }
+        )
+    }
+
+    /// A signed-in Claude account (warm-up on by default) over `directory`.
+    private func makeOutcomeFixture(
+        _ script: CompletionScript,
+        clock: MovableClock = MovableClock(),
+        directory: URL? = nil
+    ) async throws -> Fixture {
+        let client = makeOutcomeClient(script)
+        let claudeAdapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
+        let fixture = try makeFixture(
+            adapters: [claudeAdapter],
+            messageSender: ClaudeMessageSender(client: client),
+            directory: directory,
+            now: { clock.date }
+        )
+        try await fixture.model.load(startBackgroundRefresh: false)
+        if fixture.model.accounts.isEmpty {
+            let sessionID = try fixture.model.beginSignIn(provider: .claude)
+            try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        }
+        return fixture
+    }
+
+    private func outcomes(_ fixture: Fixture) throws -> [WarmUpOutcome] {
+        try XCTUnwrap(fixture.model.accounts.first).warmUpOutcomes
+    }
+
+    func testWarmUpOutcomeRecordsASentKeepAliveWithItsStatus() async throws {
+        let script = CompletionScript()
+        let fixture = try await makeOutcomeFixture(script)
+        defer { fixture.removeFiles() }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(try outcomes(fixture), [
+            WarmUpOutcome(
+                at: Date(timeIntervalSince1970: 1_000),
+                kind: .sent,
+                httpStatus: 200,
+                reserved: true
+            )
+        ])
+    }
+
+    func testWarmUpOutcomeRecordsARejectedCompletionWithItsStatus() async throws {
+        let script = CompletionScript()
+        script.answer = .status(429)
+        let fixture = try await makeOutcomeFixture(script)
+        defer { fixture.removeFiles() }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        let outcome = try XCTUnwrap(try outcomes(fixture).last)
+        XCTAssertEqual(outcome.kind, .rejected)
+        XCTAssertEqual(outcome.httpStatus, 429)
+        XCTAssertEqual(outcome.errorKind, .http)
+        XCTAssertTrue(outcome.reserved, "a refused completion has already spent the reservation")
+    }
+
+    func testWarmUpOutcomeRecordsAnAuthRejectionOfTheCompletion() async throws {
+        let script = CompletionScript()
+        script.answer = .status(401)
+        let fixture = try await makeOutcomeFixture(script)
+        defer { fixture.removeFiles() }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        let outcome = try XCTUnwrap(try outcomes(fixture).last)
+        XCTAssertEqual(outcome.kind, .rejected)
+        XCTAssertEqual(outcome.httpStatus, 401)
+        XCTAssertEqual(outcome.errorKind, .authentication)
+        XCTAssertTrue(outcome.reserved)
+    }
+
+    func testWarmUpOutcomeRecordsAnAuthFailureBeforeTheReservation() async throws {
+        let script = CompletionScript()
+        script.discoveryStatus = 403
+        let fixture = try await makeOutcomeFixture(script)
+        defer { fixture.removeFiles() }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        let outcome = try XCTUnwrap(try outcomes(fixture).last)
+        XCTAssertEqual(outcome.kind, .rejected)
+        XCTAssertEqual(outcome.httpStatus, 403)
+        XCTAssertEqual(outcome.errorKind, .authentication)
+        XCTAssertFalse(outcome.reserved, "model discovery fails before anything is reserved")
+        XCTAssertEqual(script.completions, 0)
+    }
+
+    func testWarmUpOutcomeRecordsATransportFailure() async throws {
+        let script = CompletionScript()
+        script.answer = .transportFailure
+        let fixture = try await makeOutcomeFixture(script)
+        defer { fixture.removeFiles() }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        let outcome = try XCTUnwrap(try outcomes(fixture).last)
+        XCTAssertEqual(outcome.kind, .failed)
+        XCTAssertEqual(outcome.errorKind, .transport)
+        XCTAssertNil(outcome.httpStatus)
+        XCTAssertTrue(outcome.reserved)
+    }
+
+    /// A refusal inside a 2xx stream did not start the window: the popover
+    /// and the Settings list both say so, nothing records a started window,
+    /// and the reservation stands as for any other refused send.
+    func testAnErrorCarriedInsideA200StreamIsARefusalOnEverySurface() async throws {
+        let script = CompletionScript()
+        script.answer = .status(200, streamError: "rate_limit_error")
+        let fixture = try await makeOutcomeFixture(script)
+        defer { fixture.removeFiles() }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        let outcome = try XCTUnwrap(account.warmUpOutcomes.last)
+        XCTAssertEqual(outcome.kind, .rejectedInStream)
+        XCTAssertEqual(outcome.httpStatus, 200)
+        XCTAssertEqual(outcome.errorKind, .stream)
+        XCTAssertEqual(outcome.streamErrorType, .rateLimit)
+        XCTAssertTrue(outcome.reserved)
+        // Popover: a failure, not a started window.
+        XCTAssertEqual(fixture.model.autoStartFailures[account.id]?.kind, .transient)
+        XCTAssertEqual(fixture.model.warmUpBanner?.severity, .critical)
+        // No successful auto-start recorded: the reservation (commit time)
+        // stands, and no conversation is kept as if the send had worked.
+        XCTAssertEqual(account.lastAutoStartedAt, Date(timeIntervalSince1970: 1_000))
+        XCTAssertNil(account.keepAliveConversationID)
+        // Settings says the same thing.
+        let line = WarmUpOutcomeCopy.what(outcome, locale: Locale(identifier: "en_US"))
+        XCTAssertEqual(line, "refused in the reply (rate_limit_error)")
+        XCTAssertEqual(script.completions, 1, "one POST, no retry")
+    }
+
+    func testASignedOutRefusalInsideTheStreamAsksToSignIn() async throws {
+        let script = CompletionScript()
+        script.answer = .status(200, streamError: "authentication_error")
+        let fixture = try await makeOutcomeFixture(script)
+        defer { fixture.removeFiles() }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        XCTAssertEqual(fixture.model.autoStartFailures[account.id]?.kind, .authenticationRequired)
+        XCTAssertEqual(account.warmUpOutcomes.last?.streamErrorType, .authentication)
+    }
+
+    /// A type outside the documented set never reaches accounts.json.
+    func testAnUnrecognisedStreamTypeIsStoredAsUnknown() async throws {
+        let script = CompletionScript()
+        script.answer = .status(200, streamError: "org_2f9c1a7e")
+        let fixture = try await makeOutcomeFixture(script)
+        defer { fixture.removeFiles() }
+
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(try outcomes(fixture).last?.streamErrorType, .unknown)
+        let data = try Data(contentsOf: fixture.directory.appending(path: "accounts.json"))
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("org_2f9c1a7e"))
+    }
+
+    /// A spent weekly allowance holds warm-up on every poll; the ring keeps
+    /// ONE entry for the whole hold instead of a copy per poll.
+    func testWarmUpOutcomeRecordsAWeeklyHoldOnceWhileItLasts() async throws {
+        let script = CompletionScript()
+        script.weeklyUtilization = 100
+        let clock = MovableClock()
+        let fixture = try await makeOutcomeFixture(script, clock: clock)
+        defer { fixture.removeFiles() }
+
+        await fixture.model.refreshAll(reason: .manual)
+        clock.date += 300
+        await fixture.model.refreshAll(reason: .manual)
+
+        XCTAssertEqual(try outcomes(fixture), [
+            .skipped(.weeklyLimitSpent, at: Date(timeIntervalSince1970: 1_000), reserved: false)
+        ])
+        XCTAssertEqual(script.completions, 0)
+    }
+
+    /// One send per window; seven windows leave the newest five.
+    func testWarmUpOutcomeRingKeepsTheLastFive() async throws {
+        let script = CompletionScript()
+        let clock = MovableClock()
+        let fixture = try await makeOutcomeFixture(script, clock: clock)
+        defer { fixture.removeFiles() }
+        let step = AutoStartPolicy.minimumInterval + 60
+
+        for _ in 0..<7 {
+            await fixture.model.refreshAll(reason: .manual)
+            clock.date += step
+        }
+
+        let ring = try outcomes(fixture)
+        XCTAssertEqual(script.completions, 7)
+        XCTAssertEqual(ring.count, WarmUpOutcome.capacity)
+        XCTAssertEqual(ring.first?.at, Date(timeIntervalSince1970: 1_000 + 2 * step))
+        XCTAssertEqual(ring.last?.at, Date(timeIntervalSince1970: 1_000 + 6 * step))
+    }
+
+    /// The outcomes live in accounts.json: a relaunch reads them back, and
+    /// what is on disk carries statuses and kinds — not the org, the
+    /// conversation, or the model.
+    func testWarmUpOutcomesSurviveARelaunchWithoutIdsOrBodies() async throws {
+        let script = CompletionScript()
+        let clock = MovableClock()
+        let fixture = try await makeOutcomeFixture(script, clock: clock)
+        defer { fixture.removeFiles() }
+        await fixture.model.refreshAll(reason: .manual)
+        clock.date += AutoStartPolicy.minimumInterval + 60
+        script.answer = .status(429)
+        await fixture.model.refreshAll(reason: .manual)
+        let recorded = try outcomes(fixture)
+        XCTAssertEqual(recorded.map(\.kind), [.sent, .rejected])
+
+        let relaunched = try await makeOutcomeFixture(
+            CompletionScript(),
+            directory: fixture.directory
+        )
+        XCTAssertEqual(try outcomes(relaunched), recorded)
+
+        let data = try Data(contentsOf: fixture.directory.appending(path: "accounts.json"))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        let stored = try XCTUnwrap(json.first?["warmUpOutcomes"] as? [[String: Any]])
+        let storedData = try JSONSerialization.data(withJSONObject: stored)
+        let storedText = String(decoding: storedData, as: UTF8.self).lowercased()
+        let conversation = try XCTUnwrap(fixture.model.accounts.first?.keepAliveConversationID)
+        XCTAssertFalse(storedText.contains(conversation.uuidString.lowercased()))
+        XCTAssertFalse(storedText.contains(Self.scriptedOrganizationID.uuidString.lowercased()))
+        XCTAssertFalse(storedText.contains("claude-test-model"))
+        let allowedKeys: Set<String> = [
+            "at", "kind", "httpStatus", "errorKind", "skipReason", "streamErrorType", "reserved"
+        ]
+        for entry in stored {
+            XCTAssertTrue(Set(entry.keys).isSubset(of: allowedKeys), "\(entry.keys)")
+        }
+    }
+
+    #if DEBUG
+    /// The debug send classifies a landed POST exactly like the automatic
+    /// warm-up: a refusal in the stream is reported, recorded as refused,
+    /// and nothing is recorded as a started window.
+    func testDebugSendReportsARefusalInsideTheStreamAndRecordsNoStart() async throws {
+        let script = CompletionScript()
+        script.answer = .status(200, streamError: "rate_limit_error")
+        let fixture = try await makeOutcomeFixture(script)
+        defer { fixture.removeFiles() }
+        try await fixture.model.setFeature(.warmUp, enabled: true)
+        let accountID = try XCTUnwrap(fixture.model.accounts.first).id
+
+        await fixture.model.debugSendKeepAlive(accountID: accountID)
+
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        XCTAssertEqual(script.completions, 1)
+        XCTAssertNil(account.lastAutoStartedAt)
+        XCTAssertNil(account.keepAliveConversationID)
+        XCTAssertEqual(account.warmUpOutcomes.last?.kind, .rejectedInStream)
+        XCTAssertEqual(account.warmUpOutcomes.last?.streamErrorType, .rateLimit)
+        XCTAssertEqual(account.warmUpOutcomes.last?.reserved, false)
+        let message = try XCTUnwrap(fixture.model.errorMessage)
+        XCTAssertTrue(message.contains("REFUSED"), message)
+        XCTAssertFalse(message.contains("OK"), message)
+    }
+
+    func testDebugSendThatLandsRecordsTheStartAsBefore() async throws {
+        let script = CompletionScript()
+        let fixture = try await makeOutcomeFixture(script)
+        defer { fixture.removeFiles() }
+        let accountID = try XCTUnwrap(fixture.model.accounts.first).id
+
+        await fixture.model.debugSendKeepAlive(accountID: accountID)
+
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        XCTAssertNotNil(account.lastAutoStartedAt)
+        XCTAssertNotNil(account.keepAliveConversationID)
+        XCTAssertEqual(account.warmUpOutcomes.last?.kind, .sent)
+        XCTAssertTrue(try XCTUnwrap(fixture.model.errorMessage).contains("Debug send OK"))
+    }
+    #endif
 }

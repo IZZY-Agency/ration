@@ -463,34 +463,48 @@ final class AppSettings: ObservableObject {
         try await mutate { $0.alertThresholds[key] = value }
     }
 
-    /// Applies ONE field against the freshest stored pair inside `mutate`, so a
-    /// second edit on the same row cannot carry a stale sibling value back over
-    /// an edit that has not round-tripped yet. `setThresholds` writes the WHOLE
-    /// pair and is unsafe for a UI that commits one field at a time (see
-    /// `ThresholdFieldsRow` in `AlertsDetailView.swift`) — this reads current
-    /// data inside the serialized mutation instead of composing from a
-    /// locally-held copy.
-    func setWarningPercent(_ value: Int, provider: Provider, window: UsageWindowKind) async throws {
+    /// Commits a row's draft — both fields at once — against the freshest
+    /// stored pair inside `mutate`, and returns the pair as saved.
+    ///
+    /// ONE canonicalisation, from both values the user typed: committing the
+    /// fields one at a time made the result depend on their order (from 75/90,
+    /// warning 95 then critical 99 gave 89/99, the other order 95/99). A
+    /// `.keep` field is read from the stored pair inside the serialized
+    /// mutation, never from a copy the caller held, so a commit cannot carry a
+    /// stale sibling back over an edit that has not round-tripped yet.
+    ///
+    /// The returned pair is what the editor shows: `ThresholdPair` may have
+    /// changed either field, and a canonical result equal to what is already
+    /// stored publishes nothing.
+    @discardableResult
+    func setThresholds(
+        warning: FieldEdit<Int>,
+        critical: FieldEdit<Int>,
+        provider: Provider,
+        window: UsageWindowKind
+    ) async throws -> ThresholdPair {
         let key = AppSettingsData.thresholdKey(provider: provider, window: window)
-        try await mutate { data in
+        return try await mutate(returning: { data in
             let current = data.alertThresholds[key] ?? .default
-            data.alertThresholds[key] = ThresholdPair(
-                warningPercent: value,
-                criticalPercent: current.criticalPercent
+            let pair = ThresholdPair(
+                warningPercent: warning.applied(to: current.warningPercent),
+                criticalPercent: critical.applied(to: current.criticalPercent)
             )
-        }
+            data.alertThresholds[key] = pair
+            return pair
+        })
     }
 
-    /// See `setWarningPercent` — same field-level, read-current-then-write shape.
-    func setCriticalPercent(_ value: Int, provider: Provider, window: UsageWindowKind) async throws {
-        let key = AppSettingsData.thresholdKey(provider: provider, window: window)
-        try await mutate { data in
-            let current = data.alertThresholds[key] ?? .default
-            data.alertThresholds[key] = ThresholdPair(
-                warningPercent: current.warningPercent,
-                criticalPercent: value
-            )
-        }
+    /// One field of `setThresholds(warning:critical:…)`.
+    @discardableResult
+    func setWarningPercent(_ value: Int, provider: Provider, window: UsageWindowKind) async throws -> ThresholdPair {
+        try await setThresholds(warning: .set(value), critical: .keep, provider: provider, window: window)
+    }
+
+    /// One field of `setThresholds(warning:critical:…)`.
+    @discardableResult
+    func setCriticalPercent(_ value: Int, provider: Provider, window: UsageWindowKind) async throws -> ThresholdPair {
+        try await setThresholds(warning: .keep, critical: .set(value), provider: provider, window: window)
     }
 
     func setChannels(_ value: AlertChannels, forKey key: String) async throws {
@@ -555,18 +569,36 @@ final class AppSettings: ObservableObject {
         try await mutate { $0.cursorSpend = value }
     }
 
-    /// Field-level equivalent of `setCursorSpend` — see `setWarningPercent`.
-    func setSpendWarningCents(_ value: Int?) async throws {
-        try await mutate { data in
-            data.cursorSpend = SpendThresholds(warningCents: value, criticalCents: data.cursorSpend.criticalCents)
-        }
+    /// Cursor's spend draft, both fields at once — see
+    /// `setThresholds(warning:critical:…)`. From $50/$80, warning $90 then
+    /// critical $100 one at a time lost the warning (90 ≥ 80 turns it off);
+    /// as one draft it is $90/$100 whichever field was typed first.
+    @discardableResult
+    func setCursorSpend(
+        warning: FieldEdit<Int?>,
+        critical: FieldEdit<Int?>
+    ) async throws -> SpendThresholds {
+        try await mutate(returning: { data in
+            let current = data.cursorSpend
+            let spend = SpendThresholds(
+                warningCents: warning.applied(to: current.warningCents),
+                criticalCents: critical.applied(to: current.criticalCents)
+            )
+            data.cursorSpend = spend
+            return spend
+        })
     }
 
-    /// Field-level equivalent of `setCursorSpend` — see `setWarningPercent`.
-    func setSpendCriticalCents(_ value: Int?) async throws {
-        try await mutate { data in
-            data.cursorSpend = SpendThresholds(warningCents: data.cursorSpend.warningCents, criticalCents: value)
-        }
+    /// One field of `setCursorSpend(warning:critical:)`.
+    @discardableResult
+    func setSpendWarningCents(_ value: Int?) async throws -> SpendThresholds {
+        try await setCursorSpend(warning: .set(value), critical: .keep)
+    }
+
+    /// One field of `setCursorSpend(warning:critical:)`.
+    @discardableResult
+    func setSpendCriticalCents(_ value: Int?) async throws -> SpendThresholds {
+        try await setCursorSpend(warning: .keep, critical: .set(value))
     }
 
     func menuBarWindow(for provider: Provider) -> UsageWindowKind {
@@ -650,6 +682,21 @@ final class AppSettings: ObservableObject {
 
     private var currentData: AppSettingsData { data }
 
+    /// `mutate`, returning what `change` computed from the freshest data —
+    /// only once that data has been saved and published.
+    private func mutate<Value>(
+        returning change: @escaping (inout AppSettingsData) -> Value
+    ) async throws -> Value {
+        let result = MutationResult<Value>()
+        try await mutate { data in
+            result.value = change(&data)
+        }
+        guard let value = result.value else {
+            preconditionFailure("a saved mutation always ran its change")
+        }
+        return value
+    }
+
     /// Seeds the snooze from disk, ONCE, at load.
     ///
     /// It is excluded from `apply` on purpose. `mutate` captures a candidate,
@@ -726,4 +773,10 @@ final class AppSettings: ObservableObject {
             featureInUseEnabled = data.featureInUseEnabled
         }
     }
+}
+
+/// Carries a value out of `AppSettings.mutate`'s serialized closure.
+@MainActor
+private final class MutationResult<Value> {
+    var value: Value?
 }

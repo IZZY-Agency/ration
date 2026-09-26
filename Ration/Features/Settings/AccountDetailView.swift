@@ -160,6 +160,7 @@ struct AccountDetailView: View {
                             .foregroundStyle(Theme.warn)
                             .accessibilityIdentifier("autoStartWarmUpOffNote")
                     }
+                    recentWarmUps
                     #if DEBUG
                     // Developer-only (never in release builds): verbatim.
                     Button(action: onDebugSend) { Text(verbatim: "Send test keep-alive now (debug)") }
@@ -272,6 +273,31 @@ struct AccountDetailView: View {
             guard let url = action.url else { return }
             openURL(url)
         }
+    }
+
+    /// The account's last warm-up outcomes, newest first — the only
+    /// place a refused keep-alive stays visible after the popover row goes.
+    private var recentWarmUps: some View {
+        let lines = WarmUpOutcomeCopy.lines(account.warmUpOutcomes, now: bannerNow)
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(WarmUpOutcomeCopy.title())
+                .font(Theme.mono(12, bold: true))
+                .foregroundStyle(Theme.creamDim)
+            if lines.isEmpty {
+                Text(WarmUpOutcomeCopy.empty())
+                    .font(Theme.mono(12))
+                    .foregroundStyle(Theme.creamFaint)
+            } else {
+                ForEach(Array(lines.enumerated()), id: \.offset) { entry in
+                    Text(entry.element)
+                        .font(Theme.mono(12))
+                        .foregroundStyle(Theme.cream)
+                        .monospacedDigit()
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("recentWarmUps")
     }
 
     private var header: some View {

@@ -101,9 +101,9 @@ private final class AccountSessionManager {
         conversationID: UUID?,
         for account: AccountRecord,
         mayPost: ClaudeMessageSender.PostGate? = nil
-    ) async throws -> UUID {
+    ) async throws -> ClaudeMessageSender.Receipt {
         try await recycleWebViewOnTimeout(profileID: account.webProfileID) { webView in
-            try await messageSender.send(
+            try await messageSender.sendReporting(
                 prepared: prepared,
                 conversationID: conversationID,
                 mayPost: mayPost,
@@ -154,6 +154,34 @@ private final class AccountSessionManager {
             yieldsToNewerEvaluations: true
         ) { webView in
             try await adapter.refreshPlanDetection(for: snapshot, in: webView)
+        }
+    }
+
+    /// Cursor's past-cycle read. Background and optional like the plan read,
+    /// so it YIELDS the view to a newer evaluation (a usage poll) on timeout.
+    func fetchCursorSpendHistory(
+        for account: AccountRecord,
+        request: CursorHistoryRequest,
+        isSuppressed: @escaping @MainActor () -> Bool
+    ) async throws -> CursorHistoryFetch? {
+        let adapter = try adapterRegistry.adapter(for: account.provider)
+        let profileID = account.webProfileID
+        // Checked at the last native moment before the script reaches the
+        // page: an open sign-in/reauth session shares this account's view,
+        // and the history read must never run under the user's visible login.
+        // `isSuppressed` is the same rule the refresh coordinator checks at
+        // its dispatch (`AppModel.hasOpenSignInSession`).
+        let mayDispatch: @MainActor () throws -> Void = {
+            if isSuppressed() {
+                throw CursorHistoryReadVetoed()
+            }
+        }
+        return try await recycleWebViewOnTimeout(
+            profileID: profileID,
+            yieldsToNewerEvaluations: true,
+            reapsOnCancellation: true
+        ) { webView in
+            try await adapter.fetchCursorSpendHistory(request, mayDispatch: mayDispatch, in: webView)
         }
     }
 
@@ -248,6 +276,7 @@ private final class AccountSessionManager {
     private func recycleWebViewOnTimeout<T>(
         profileID: UUID,
         yieldsToNewerEvaluations: Bool = false,
+        reapsOnCancellation: Bool = false,
         _ operation: (WKWebView) async throws -> T
     ) async rethrows -> T {
         let operatedView = webView(for: profileID)
@@ -257,22 +286,32 @@ private final class AccountSessionManager {
         do {
             return try await operation(operatedView)
         } catch let error as WebUsageClientError where error == .timedOut {
-            if yieldsToNewerEvaluations,
-               let latest = latestEvaluation[profileID],
-               latest.serial != serial,
-               latest.view == ObjectIdentifier(operatedView) {
-                // A newer evaluation is using this view; leave it be.
-                throw error
-            }
-            if isProfileProtected(profileID) {
-                deferRecycle(of: operatedView, profileID: profileID)
-            } else {
-                if webViews[profileID] === operatedView {
-                    webViews.removeValue(forKey: profileID)
-                }
-                tearDown(operatedView, profileID: profileID)
-            }
+            recycle(operatedView, profileID: profileID, serial: serial, yielding: yieldsToNewerEvaluations)
             throw error
+        } catch is CancellationError where reapsOnCancellation && Task.isCancelled {
+            // The caller gave up (account removed, app stopping): the
+            // abandoned in-page script may still be issuing requests, and
+            // only frame destruction stops it — the same reap as a timeout.
+            recycle(operatedView, profileID: profileID, serial: serial, yielding: yieldsToNewerEvaluations)
+            throw CancellationError()
+        }
+    }
+
+    private func recycle(_ operatedView: WKWebView, profileID: UUID, serial: UInt64, yielding: Bool) {
+        if yielding,
+           let latest = latestEvaluation[profileID],
+           latest.serial != serial,
+           latest.view == ObjectIdentifier(operatedView) {
+            // A newer evaluation is using this view; leave it be.
+            return
+        }
+        if isProfileProtected(profileID) {
+            deferRecycle(of: operatedView, profileID: profileID)
+        } else {
+            if webViews[profileID] === operatedView {
+                webViews.removeValue(forKey: profileID)
+            }
+            tearDown(operatedView, profileID: profileID)
         }
     }
 
@@ -547,6 +586,7 @@ final class AppModel: ObservableObject {
     private let historyStore: UsageHistoryStore
     private let appSettings: AppSettings
     private let alertStateStore: AlertStateStore
+    private let cursorHistoryStore: CursorSpendHistoryStore
     private let notificationScheduler: any NotificationScheduling
     private let sessionManager: AccountSessionManager
     private let refreshCoordinator: UsageRefreshCoordinator
@@ -569,6 +609,8 @@ final class AppModel: ObservableObject {
     /// guard — the precise window the disable/remove race exploits. A
     /// no-op in production; tests pin a deterministic interleave here.
     private let beforeAutoStartCommit: @MainActor () async -> Void
+    /// Test-only interleave point at the start of the post-sign-in refresh.
+    private let beforeSignInResumeRefresh: @MainActor () async -> Void
     /// Test-only interleave seam: `retryProfileCleanup` awaits this once per
     /// profile, right after the durable-journal step and BEFORE the final
     /// liveness re-check + deletion — the precise window a rollback-vs-cleanup
@@ -606,6 +648,8 @@ final class AppModel: ObservableObject {
     /// Background plan reads in flight (`refreshPlanInBackground`); a test
     /// barrier awaits them.
     private var planRefreshTasks: [UUID: Task<Void, Never>] = [:]
+    /// Background Cursor history reads in flight, one per account at most.
+    private var cursorHistoryTasks: [UUID: Task<Void, Never>] = [:]
     /// Bumped per background plan read; a read applies only if still latest.
     private var planRequestRevision: [UUID: UInt64] = [:]
     /// Account IDs with a pause currently being persisted. Claimed
@@ -846,6 +890,88 @@ final class AppModel: ObservableObject {
             .filter { !removingAccountIDs.contains($0.id) }
     }
 
+    /// Accounts a usage FETCH may run for: `refreshableAccounts` minus any
+    /// account an open sign-in/reauth session owns.
+    ///
+    /// The session uses the account's own cached web view — the one the
+    /// user is signing in through — and every provider's fetch preparation
+    /// navigates that view (Cursor loads its dashboard, Claude and ChatGPT
+    /// load their usage page when the view is off their domain). A poll
+    /// mid sign-in would pull the user off the login page. Skipping is not a
+    /// failure: no state is written, so the account keeps its last state and
+    /// snapshot, and closing the session brings it back with one refresh
+    /// (`refreshAfterSignInClosed`).
+    ///
+    /// Alert evaluation stays on `refreshableAccounts`: it reads stored data
+    /// and never touches a web view.
+    private var pollableAccounts: [AccountRecord] {
+        refreshableAccounts.filter { !hasOpenSignInSession($0) }
+    }
+
+    /// Whether an open sign-in/reauth session uses this account's web view.
+    /// Matched by account AND profile: a new account's commit adds the
+    /// record before its session closes, and that record already names the
+    /// session's profile.
+    private func hasOpenSignInSession(_ account: AccountRecord) -> Bool {
+        signInSessions.values.contains { session in
+            session.accountID == account.id || session.webProfileID == account.webProfileID
+        }
+    }
+
+    /// The accounts each background poll fetches. The timer asks for this
+    /// on every tick, so a session opened or closed between ticks is honored.
+    private func backgroundRefreshAccounts() -> [AccountRecord] {
+        pollableAccounts
+    }
+
+    /// Starts the background timer. Each tick asks for its accounts afresh.
+    private func startBackgroundPolling() {
+        refreshCoordinator.startBackgroundRefresh { [weak self] in
+            self?.backgroundRefreshAccounts() ?? []
+        }
+    }
+
+    /// One prompt refresh for an account whose sign-in/reauth session just
+    /// closed without its own fetch landing (a cancel, or a commit whose
+    /// snapshot save failed). Polls skipped it while the session was open,
+    /// so waiting for the next tick would leave it behind for a whole poll.
+    /// Fire-and-forget: closing the window must not wait on a fetch.
+    private func refreshAfterSignInClosed(accountID: UUID) {
+        guard pollableAccounts.contains(where: { $0.id == accountID }) else {
+            return
+        }
+        let token = UUID()
+        // Every fetch dispatched from here on started after the close.
+        let dispatchesAtClose = refreshCoordinator.dispatchCount(for: accountID)
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.signInResumeRefreshes[accountID]?.token == token {
+                    self.signInResumeRefreshes.removeValue(forKey: accountID)
+                }
+            }
+            await self.beforeSignInResumeRefresh()
+            // A fetch that started before the window opened may still be
+            // running; `refresh` would only join it. Let it settle, then
+            // fetch afresh.
+            await self.refreshCoordinator.settle(accountID: accountID)
+            // A timer or manual refresh that started after the close already
+            // is the fresh fetch this promised; a second would be a duplicate.
+            guard self.refreshCoordinator.dispatchCount(for: accountID) == dispatchesAtClose else {
+                return
+            }
+            // Re-read: the account may be gone, paused, or back in a window.
+            guard let current = self.pollableAccounts.first(where: { $0.id == accountID }) else {
+                return
+            }
+            await self.refreshCoordinator.refresh(account: current, reason: .manual)
+        }
+        signInResumeRefreshes[accountID] = (token: token, task: task)
+    }
+
+    /// Refreshes started by `refreshAfterSignInClosed`, so tests can await them.
+    private var signInResumeRefreshes: [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
+
     /// The accounts the popover surfaces render and reason over. Settings and
     /// History intentionally use `accounts`/`presentations` instead.
     var visibleAccounts: [AccountRecord] {
@@ -859,6 +985,7 @@ final class AppModel: ObservableObject {
         historyStore: UsageHistoryStore,
         appSettings: AppSettings,
         alertStateStore: AlertStateStore,
+        cursorSpendHistoryStore: CursorSpendHistoryStore? = nil,
         profileManager: any WebProfileManaging,
         adapterRegistry: ProviderAdapterRegistry,
         messageSender: ClaudeMessageSender = ClaudeMessageSender(),
@@ -867,9 +994,13 @@ final class AppModel: ObservableObject {
         beforeSignInPersistence: @escaping @MainActor () async -> Void = {},
         beforeAlertsHydrationCompletes: @escaping @MainActor () async -> Void = {},
         beforeAutoStartCommit: @escaping @MainActor () async -> Void = {},
+        beforeSignInResumeRefresh: @escaping @MainActor () async -> Void = {},
         beforeProfileCleanupDeletion: @escaping @MainActor (UUID) async -> Void = { _ in },
         systemPowerObserver: any SystemPowerObserving = SystemPowerObserver(),
         pendingEdits: PendingEditRegistry = PendingEditRegistry(),
+        refreshSleep: @escaping UsageRefreshCoordinator.Sleep = { duration in
+            try await Task.sleep(for: duration)
+        },
         teardownGrace: @escaping @MainActor () async -> Void = {
             try? await Task.sleep(for: .seconds(30))
         }
@@ -881,11 +1012,14 @@ final class AppModel: ObservableObject {
         self.historyStore = historyStore
         self.appSettings = appSettings
         self.alertStateStore = alertStateStore
+        let cursorHistoryStore = cursorSpendHistoryStore ?? CursorSpendHistoryStore(fileURL: nil)
+        self.cursorHistoryStore = cursorHistoryStore
         self.notificationScheduler = notificationScheduler
         self.now = now
         self.beforeSignInPersistence = beforeSignInPersistence
         self.beforeAlertsHydrationCompletes = beforeAlertsHydrationCompletes
         self.beforeAutoStartCommit = beforeAutoStartCommit
+        self.beforeSignInResumeRefresh = beforeSignInResumeRefresh
         self.beforeProfileCleanupDeletion = beforeProfileCleanupDeletion
         self.systemPowerObserver = systemPowerObserver
 
@@ -904,6 +1038,7 @@ final class AppModel: ObservableObject {
         refreshCoordinator = UsageRefreshCoordinator(
             snapshotStore: snapshotStore,
             now: now,
+            sleep: refreshSleep,
             pollInterval: {
                 // Base cadence + jitter, relaxed in Low Power Mode.
                 PollSchedule.interval(
@@ -917,11 +1052,20 @@ final class AppModel: ObservableObject {
         )
 
         // An open sign-in/reauth session shares its account's web
-        // profile (and live view) with a concurrent timer refresh; protect
-        // it from a timed-out fetch's recycle so a wedged poll never aborts
-        // the user's visible auth navigation.
+        // profile (and live view). Polls skip such an account
+        // (`pollableAccounts`), but a fetch already in flight when the
+        // session opened still runs; protect the view from that fetch's
+        // timeout recycle so a wedged poll never aborts the user's visible
+        // auth navigation.
         sessionManager.isProfileProtected = { [weak self] profileID in
             self?.signInSessions.values.contains { $0.webProfileID == profileID } ?? false
+        }
+        // Re-checked at each refresh's dispatch: a refresh queued before a
+        // sign-in window opened must not reach that window's view. The
+        // session's own verify and fetch go straight to `sessionManager`, not
+        // through the coordinator, so they are never suppressed.
+        refreshCoordinator.isDispatchSuppressed = { [weak self] account in
+            self?.hasOpenSignInSession(account) ?? false
         }
 
         Publishers.CombineLatest4(
@@ -1033,8 +1177,17 @@ final class AppModel: ObservableObject {
                 at: snapshot.fetchedAt
             )
             self?.refreshPlanInBackground(account: account, snapshot: snapshot)
+            self?.refreshCursorHistoryInBackground(account: account, snapshot: snapshot)
+            await self?.retryPendingCursorHistoryRemovals()
             await self?.handleAutoStart(account: account, snapshot: snapshot)
         }
+
+        cursorHistoryStore.$histories
+            .sink { [weak self] histories in
+                guard let self else { return }
+                self.cursorSpendHistories = histories
+            }
+            .store(in: &cancellables)
 
         // Everything else switch advice reads — the account list (pause,
         // removal, order) and settings (thresholds, sort) — recomputes on the
@@ -1126,14 +1279,24 @@ final class AppModel: ObservableObject {
         // invalidates this attempt (see `warmUpStillAllowed`).
         let warmUpGenerationAtStart = warmUpGeneration
         guard warmUpStillAllowed(warmUpGenerationAtStart) else { return }
-        guard AutoStartPolicy.shouldAutoStart(
+        let decision = AutoStartPolicy.decide(
             account: account,
             fiveHour: snapshot.fiveHour,
             weekly: snapshot.weekly,
             now: now(),
             schedule: warmUpSchedule,
             warmUpEnabled: appSettings.featureWarmUpEnabled
-        ) else {
+        )
+        if case .blockedByWeeklyLimit = decision {
+            // Every other condition said fire: a warm-up was due and held.
+            // Folded while it lasts (`WarmUpOutcome.recording`).
+            await recordWarmUpOutcome(
+                .skipped(.weeklyLimitSpent, at: now(), reserved: false),
+                accountID: account.id
+            )
+            return
+        }
+        guard decision == .fire else {
             return
         }
         // Re-check the current stored account: it may have been disabled or
@@ -1143,7 +1306,11 @@ final class AppModel: ObservableObject {
             current.provider == .claude,
             current.autoStartFiveHour,
             !removingAccountIDs.contains(current.id),
-            !sendingKeepAliveAccountIDs.contains(current.id)
+            !sendingKeepAliveAccountIDs.contains(current.id),
+            // A sign-in window on this account's web view: warm-up would
+            // navigate it (see `pollableAccounts`). The next poll after the
+            // session closes decides again.
+            !hasOpenSignInSession(current)
         else {
             return
         }
@@ -1152,11 +1319,20 @@ final class AppModel: ObservableObject {
         // one (only possible outside the real Claude adapter) must skip
         // rather than let discovery pick whatever workspace is active now.
         guard let snapshotOrganizationID = snapshot.organizationID else {
+            await recordWarmUpOutcome(
+                .skipped(.organizationUnknown, at: now(), reserved: false),
+                accountID: current.id
+            )
             return
         }
         sendingKeepAliveAccountIDs.insert(current.id)
         defer { sendingKeepAliveAccountIDs.remove(current.id) }
+        var reservation: (reservedAt: Date, previous: Date?)?
+        let signInVeto = SignInVeto()
 
+        // Whether `lastAutoStartedAt` has been taken for this attempt — what
+        // each recorded outcome says it cost.
+        var reserved = false
         do {
             // Model discovery is read-only and safe to retry on later
             // refreshes; the org itself comes bound from the snapshot.
@@ -1184,6 +1360,8 @@ final class AppModel: ObservableObject {
             guard
                 let atCommit = accounts.first(where: { $0.id == current.id }),
                 !removingAccountIDs.contains(atCommit.id),
+                // A sign-in window opened while `prepareKeepAlive` was suspended.
+                !hasOpenSignInSession(atCommit),
                 // A disable/remove in flight publishes its record only after its
                 // save completes, so `atCommit` can still read `enabled` while the
                 // user has already opted out. `mutatingAccountIDs` is claimed
@@ -1215,13 +1393,29 @@ final class AppModel: ObservableObject {
             // Reserve BEFORE the irreversible POST: even if the send fails or its
             // result is lost, the policy will not re-fire within this window.
             try await accountStore.reserveAutoStart(id: current.id, at: commitNow)
+            reserved = true
+            reservation = (reservedAt: commitNow, previous: atCommit.lastAutoStartedAt)
             // The reservation suspended: the global switch may have gone off
             // meanwhile. The reservation stays (harmless — warm-up is off), but
             // nothing is sent. The same check runs again right before EVERY
             // POST inside the send (conversation create, completion, retry),
             // down to the moment the script is dispatched.
-            guard warmUpStillAllowed(warmUpGenerationAtStart) else { return }
-            let conversationID = try await sessionManager.sendKeepAlive(
+            guard warmUpStillAllowed(warmUpGenerationAtStart) else {
+                await recordWarmUpOutcome(
+                    .skipped(.warmUpTurnedOff, at: now(), reserved: true),
+                    accountID: current.id
+                )
+                return
+            }
+            // A sign-in window may also have opened during the save. Nothing
+            // was sent, so the reservation is handed back: the next eligible
+            // poll after the window closes may try again. A skip, not an
+            // outcome: nothing was attempted against Claude.
+            if hasOpenSignInSession(current) {
+                await releaseReservation(accountID: current.id, reservation)
+                return
+            }
+            let receipt = try await sessionManager.sendKeepAlive(
                 prepared: prepared,
                 conversationID: current.keepAliveConversationID,
                 for: current,
@@ -1229,8 +1423,27 @@ final class AppModel: ObservableObject {
                     guard let self, self.warmUpStillAllowed(warmUpGenerationAtStart) else {
                         throw CancellationError()
                     }
+                    if self.hasOpenSignInSession(current) {
+                        signInVeto.fired = true
+                        throw CancellationError()
+                    }
                 }
             )
+            // The POST landed, but its stream carried an error event: Claude
+            // refused the message inside a 2xx. It did NOT start the window,
+            // so this is a failure on every surface — the popover row and the
+            // Settings list agree — and nothing claims a started window (no
+            // `recordAutoStart`, no refresh). The reservation taken above
+            // stands exactly as for any other post-reservation failure.
+            let landed = WarmUpOutcome.landed(receipt, at: now(), reserved: true)
+            if let streamError = landed.streamErrorType {
+                autoStartFailures[current.id] = AutoStartFailure(
+                    at: now(),
+                    kind: AutoStartFailure.Kind(streamError: streamError)
+                )
+                await recordWarmUpOutcome(landed, accountID: current.id)
+                return
+            }
             // The POST landed — the 5h window HAS started. This attempt is now
             // the latest word on the account, so it takes back any earlier
             // failure rather than leaving both statements standing, and NOTHING
@@ -1239,6 +1452,7 @@ final class AppModel: ObservableObject {
             // running is a lie, and the reservation above means it will not run
             // again this window regardless.
             autoStartFailures.removeValue(forKey: current.id)
+            let conversationID = receipt.conversationID
             // Best-effort from here. A failed record costs only the REUSABLE
             // conversation id: `lastAutoStartedAt` is already reserved, so the
             // sole consequence is that the next window creates a fresh
@@ -1248,12 +1462,17 @@ final class AppModel: ObservableObject {
                 conversationID: conversationID,
                 at: now()
             )
+            await recordWarmUpOutcome(landed, accountID: current.id)
             // Reflect the freshly-started window immediately, instead of waiting
             // for the next refresh cycle. only record history for this
             // re-fetched snapshot after a SUCCESSFUL save — an unconditional
             // record here (regardless of save outcome) previously let the
             // history series record this newer snapshot even when it never
             // (or not yet) landed in `snapshotStore`.
+            //
+            // Skipped when a sign-in window opened on this account meanwhile:
+            // the fetch would navigate the view the user is signing in on.
+            guard !hasOpenSignInSession(current) else { return }
             if let refreshed = try? await sessionManager.fetchUsage(for: current) {
                 do {
                     try await snapshotStore.save(refreshed)
@@ -1262,13 +1481,63 @@ final class AppModel: ObservableObject {
                 } catch {}
             }
         } catch is CancellationError {
+            // Vetoed at a POST gate by a sign-in window: that POST, and so
+            // the completion that starts the window, never went out. The
+            // reservation is handed back, as in the post-save check above,
+            // and no outcome is recorded. (The gate checks the warm-up switch
+            // first, so a sign-in veto means the switch was still on.)
+            if signInVeto.fired {
+                await releaseReservation(accountID: current.id, reservation)
+            } else if reserved, !warmUpStillAllowed(warmUpGenerationAtStart) {
+                // A veto from the send's `mayPost` gate after the reservation:
+                // the switch went off mid-send. Any other cancellation
+                // (removal, shutdown) is not a warm-up outcome.
+                await recordWarmUpOutcome(
+                    .skipped(.warmUpTurnedOff, at: now(), reserved: true),
+                    accountID: current.id
+                )
+            }
             return
         } catch {
+            // A sign-in window opened mid-attempt: whatever failed ran in (or
+            // raced) the view the user is signing in on. A skip, not a
+            // warm-up failure to report.
+            guard !hasOpenSignInSession(current) else { return }
             autoStartFailures[current.id] = AutoStartFailure(
                 at: now(),
                 kind: AutoStartFailure.Kind(error: error)
             )
+            await recordWarmUpOutcome(
+                .failure(error, at: now(), reserved: reserved),
+                accountID: current.id
+            )
         }
+    }
+
+    /// Set by a warm-up POST gate that refused because a sign-in window
+    /// opened, so the catch can tell it from the warm-up switch going off.
+    private final class SignInVeto {
+        var fired = false
+    }
+
+    /// Hands back a reservation whose attempt sent nothing. Best effort: a
+    /// failed save only means this window is not retried.
+    private func releaseReservation(
+        accountID: UUID,
+        _ reservation: (reservedAt: Date, previous: Date?)?
+    ) async {
+        guard let reservation else { return }
+        try? await accountStore.releaseAutoStartReservation(
+            id: accountID,
+            reservedAt: reservation.reservedAt,
+            restoring: reservation.previous
+        )
+    }
+
+    /// Best-effort: a lost record never affects the warm-up itself, and
+    /// an account removed meanwhile simply has nowhere to keep it.
+    private func recordWarmUpOutcome(_ outcome: WarmUpOutcome, accountID: UUID) async {
+        try? await accountStore.recordWarmUpOutcome(id: accountID, outcome: outcome)
     }
 
     /// Synchronously claims the account-mutation marker (throws if a mutation
@@ -1363,7 +1632,8 @@ final class AppModel: ObservableObject {
         guard
             account.provider == .claude,
             snapshot.organizationID != nil,
-            planRefreshTasks[account.id] == nil
+            planRefreshTasks[account.id] == nil,
+            !hasOpenSignInSession(account)
         else { return }
         let organizationID = snapshot.organizationID
         let revision: UInt64 = (planRequestRevision[account.id] ?? 0) &+ 1
@@ -1371,6 +1641,9 @@ final class AppModel: ObservableObject {
         planRefreshTasks[account.id] = Task { @MainActor [weak self] in
             defer { self?.planRefreshTasks[account.id] = nil }
             guard let self else { return }
+            // The task starts on a later turn: a sign-in window may have
+            // opened on this account's web view since it was scheduled.
+            guard !self.hasOpenSignInSession(account) else { return }
             let detection = try? await self.sessionManager.refreshPlanDetection(
                 for: account,
                 snapshot: snapshot
@@ -1386,6 +1659,201 @@ final class AppModel: ObservableObject {
             else { return }
             await self.applyDetectedPlan(accountID: account.id, detection: detection, at: self.now())
         }
+    }
+
+    /// Cursor's per-account history as last persisted (mirrors the store so
+    /// views observing `AppModel` redraw when it changes).
+    @Published private(set) var cursorSpendHistories: [UUID: CursorSpendHistory] = [:]
+
+    /// The account's stored closed cycles, oldest first.
+    func cursorSpendCycles(for accountID: UUID) -> [CursorSpendCycle] {
+        cursorSpendHistories[accountID]?.cycles ?? []
+    }
+
+    /// Reads Cursor's past cycles in the background when some are owed: the
+    /// one-time backfill (12 cycles), or the cycle that just closed after a
+    /// rollover. Never awaited by the poll that triggered it, and at most one
+    /// per account at a time; `CursorSpendHistoryPlanner` limits a failed read
+    /// to one retry per day. A read that fails leaves the cycles untouched.
+    private func refreshCursorHistoryInBackground(account: AccountRecord, snapshot: UsageSnapshot) {
+        guard
+            account.provider == .cursor,
+            let currentStart = snapshot.cursorSpend?.periodStart,
+            cursorHistoryTasks[account.id] == nil,
+            isLiveAccount(account.id),
+            // Never while a sign-in/reauth session uses this account's view —
+            // the same rule the refresh coordinator applies at dispatch.
+            !hasOpenSignInSession(account)
+        else { return }
+        let moment = now()
+        let accountID = account.id
+        let rollback = pendingAttemptRollbacks[accountID]
+        let planned = CursorSpendHistoryPlanner.request(
+            history: cursorHistoryStore.history(for: accountID),
+            currentPeriodStart: currentStart,
+            now: moment
+        )
+        guard rollback != nil || planned != nil else { return }
+        cursorHistoryTasks[accountID] = Task { @MainActor [weak self] in
+            defer { self?.cursorHistoryTasks[accountID] = nil }
+            guard let self else { return }
+            var request = planned
+            if let rollback {
+                // A hand-back that failed earlier goes first, so its stamp
+                // does not block today's retry; the plan is then re-made.
+                let handedBack = await self.handBackAttempt(
+                    accountID: accountID, stamp: rollback.stamp, previous: rollback.previous
+                )
+                guard handedBack else { return }
+                request = CursorSpendHistoryPlanner.request(
+                    history: self.cursorHistoryStore.history(for: accountID),
+                    currentPeriodStart: currentStart,
+                    now: moment
+                )
+            }
+            guard let request else { return }
+            let isLive: @MainActor () -> Bool = { [weak self] in
+                self?.isLiveAccount(accountID) ?? false
+            }
+            let isSuppressed: @MainActor () -> Bool = { [weak self] in
+                guard let self else { return true }
+                return self.hasOpenSignInSession(account)
+            }
+            // A session that opened since the poll: skip, consuming nothing.
+            guard !isSuppressed() else { return }
+            let previous = self.cursorHistoryStore.history(for: accountID)
+            // Recorded BEFORE the read, so a read that hangs, crashes the page
+            // or is cut short by quitting still counts as today's attempt. If
+            // the stamp cannot be saved there is no daily limit to rely on:
+            // skip the read rather than let every poll start another one.
+            let stamped: Bool
+            do {
+                stamped = try await self.cursorHistoryStore.update(accountID: accountID, isLive: isLive) { history in
+                    CursorSpendHistoryPlanner.recordingAttempt(history, at: moment, currentPeriodStart: currentStart)
+                }
+            } catch {
+                return
+            }
+            guard stamped, !Task.isCancelled else { return }
+            let fetched: CursorHistoryFetch?
+            do {
+                fetched = try await self.sessionManager.fetchCursorSpendHistory(
+                    for: account, request: request, isSuppressed: isSuppressed
+                )
+            } catch is CursorHistoryReadVetoed {
+                // Suppressed at dispatch by a sign-in session: nothing reached
+                // the page, so the attempt is handed back — the read runs on
+                // the next poll after the session closes, not a day later. A
+                // failed hand-back stays pending and is retried first.
+                _ = await self.handBackAttempt(accountID: accountID, stamp: moment, previous: previous)
+                return
+            } catch {
+                return
+            }
+            guard let fetched, !Task.isCancelled else { return }
+            let landedAt = self.now()
+            _ = try? await self.cursorHistoryStore.update(accountID: accountID, isLive: isLive) { history in
+                CursorSpendHistoryPlanner.merged(history, fetch: fetched, request: request, now: landedAt)
+            }
+        }
+    }
+
+    /// TEST seam: the account's in-flight history read, if any.
+    func cursorHistoryTaskForTesting(accountID: UUID) -> Task<Void, Never>? {
+        cursorHistoryTasks[accountID]
+    }
+
+    /// Accounts whose history entry is recorded for deletion but not yet
+    /// confirmed gone from disk. The record is itself on disk
+    /// (`CursorSpendHistoryStore`), so it survives a relaunch; every later
+    /// write, every saved poll and every launch retries it.
+    var pendingCursorHistoryRemovals: Set<UUID> { cursorHistoryStore.pendingDeletions }
+
+    private static let cursorHistoryLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "agency.izzy.ration",
+        category: "cursor-history"
+    )
+
+    private func removeCursorHistory(accountID: UUID) async {
+        do {
+            try await cursorHistoryStore.remove(accountID: accountID)
+        } catch {
+            Self.cursorHistoryLogger.error("cursor history deletion failed; recorded for retry")
+        }
+    }
+
+    /// Retries every recorded deletion.
+    func retryPendingCursorHistoryRemovals() async {
+        do {
+            try await cursorHistoryStore.retryPendingDeletions()
+        } catch {
+            Self.cursorHistoryLogger.error("cursor history deletion retry failed")
+        }
+    }
+
+    /// Attempt stamps a sign-in veto could not hand back (a failed save),
+    /// with the stamp they replaced. Retried before the account's next
+    /// attempt check, so a transient failure never spends the day.
+    private var pendingAttemptRollbacks: [UUID: (stamp: Date, previous: CursorSpendHistory)] = [:]
+
+    /// Puts back the attempt stamp `stamp` replaced, unless a later attempt
+    /// has already overwritten it. True once nothing is left to hand back.
+    private func handBackAttempt(accountID: UUID, stamp: Date, previous: CursorSpendHistory) async -> Bool {
+        let isLive: @MainActor () -> Bool = { [weak self] in
+            self?.isLiveAccount(accountID) ?? false
+        }
+        do {
+            try await cursorHistoryStore.update(accountID: accountID, isLive: isLive) { history in
+                guard history.lastAttemptAt == stamp else { return history }
+                var restored = history
+                restored.lastAttemptAt = previous.lastAttemptAt
+                restored.lastAttemptCycleStart = previous.lastAttemptCycleStart
+                return restored
+            }
+            pendingAttemptRollbacks.removeValue(forKey: accountID)
+            return true
+        } catch {
+            pendingAttemptRollbacks[accountID] = (stamp, previous)
+            return false
+        }
+    }
+
+    /// An account that exists and is not being removed.
+    private func isLiveAccount(_ accountID: UUID) -> Bool {
+        !removingAccountIDs.contains(accountID)
+            && !alertTombstones.contains(accountID)
+            && accounts.contains { $0.id == accountID }
+    }
+
+    /// TEST barrier: resolves once every background Cursor history read has landed.
+    func flushCursorHistoryRefreshes() async {
+        while let pending = cursorHistoryTasks.values.first {
+            await pending.value
+        }
+    }
+
+    /// TEST barrier: resolves once every post-sign-in refresh has finished.
+    func flushSignInResumeRefreshes() async {
+        while let pending = signInResumeRefreshes.values.first {
+            await pending.task.value
+        }
+    }
+
+    /// Test-only: starts the background timer through the same wiring
+    /// `load()` uses, without running the rest of `load()`.
+    func startBackgroundPollingForTesting() {
+        startBackgroundPolling()
+    }
+
+    /// Test-only: turns off the coordinator's dispatch-time check, so a test
+    /// can pin the timer's account supplier on its own.
+    func disableDispatchSuppressionForTesting() {
+        refreshCoordinator.isDispatchSuppressed = { _ in false }
+    }
+
+    /// Test-only: the accounts the background timer would fetch right now.
+    func backgroundRefreshAccountIDsForTesting() -> [UUID] {
+        backgroundRefreshAccounts().map(\.id)
     }
 
     /// TEST barrier: resolves once every background plan read has applied.
@@ -1528,24 +1996,42 @@ final class AppModel: ObservableObject {
             && warmUpGeneration == generation
     }
 
-    // Field-level pass-throughs (not the whole-pair `setThresholds`/
-    // `setCursorSpend`): the Alerts pane commits one field at a time on blur,
-    // and composing a whole value from a locally-held copy would let a second
-    // field's commit carry a stale sibling value back over an edit that
-    // hasn't round-tripped yet. See `AppSettings.setWarningPercent`.
+    // Draft pass-throughs (not the whole-pair `setThresholds(_:…)`/
+    // `setCursorSpend(_:)`): the Alerts pane commits a row's edited fields as
+    // one draft, and the unedited field is read from the store inside the
+    // serialized mutation, never from a copy the pane held. They return the
+    // pair as saved, which the pane shows. See
+    // `AppSettings.setThresholds(warning:critical:…)`.
     /// Each setter re-evaluates AFTER the settings have actually persisted —
     /// `decideAlerts` reads `appSettings.data` synchronously, so evaluating
     /// before the await would resolve the OLD thresholds. A throw skips the
     /// re-evaluation, which is correct: nothing changed.
     /// See `evaluateAlertsAfterThresholdChange()`.
-    func setWarningPercent(_ value: Int, provider: Provider, window: UsageWindowKind) async throws {
-        try await appSettings.setWarningPercent(value, provider: provider, window: window)
+    @discardableResult
+    func setThresholds(
+        warning: FieldEdit<Int>,
+        critical: FieldEdit<Int>,
+        provider: Provider,
+        window: UsageWindowKind
+    ) async throws -> ThresholdPair {
+        let pair = try await appSettings.setThresholds(
+            warning: warning,
+            critical: critical,
+            provider: provider,
+            window: window
+        )
         evaluateAlertsAfterThresholdChange()
+        return pair
     }
 
-    func setCriticalPercent(_ value: Int, provider: Provider, window: UsageWindowKind) async throws {
-        try await appSettings.setCriticalPercent(value, provider: provider, window: window)
-        evaluateAlertsAfterThresholdChange()
+    @discardableResult
+    func setWarningPercent(_ value: Int, provider: Provider, window: UsageWindowKind) async throws -> ThresholdPair {
+        try await setThresholds(warning: .set(value), critical: .keep, provider: provider, window: window)
+    }
+
+    @discardableResult
+    func setCriticalPercent(_ value: Int, provider: Provider, window: UsageWindowKind) async throws -> ThresholdPair {
+        try await setThresholds(warning: .keep, critical: .set(value), provider: provider, window: window)
     }
 
     func setNotificationEnabled(_ enabled: Bool, forKey key: String) async throws {
@@ -1566,14 +2052,24 @@ final class AppModel: ObservableObject {
         evaluateAlertsAfterThresholdChange()
     }
 
-    func setSpendWarningCents(_ value: Int?) async throws {
-        try await appSettings.setSpendWarningCents(value)
+    @discardableResult
+    func setCursorSpend(
+        warning: FieldEdit<Int?>,
+        critical: FieldEdit<Int?>
+    ) async throws -> SpendThresholds {
+        let spend = try await appSettings.setCursorSpend(warning: warning, critical: critical)
         evaluateAlertsAfterThresholdChange()
+        return spend
     }
 
-    func setSpendCriticalCents(_ value: Int?) async throws {
-        try await appSettings.setSpendCriticalCents(value)
-        evaluateAlertsAfterThresholdChange()
+    @discardableResult
+    func setSpendWarningCents(_ value: Int?) async throws -> SpendThresholds {
+        try await setCursorSpend(warning: .set(value), critical: .keep)
+    }
+
+    @discardableResult
+    func setSpendCriticalCents(_ value: Int?) async throws -> SpendThresholds {
+        try await setCursorSpend(warning: .keep, critical: .set(value))
     }
 
     /// Records that the first-run wizard has been seen.
@@ -1640,8 +2136,12 @@ final class AppModel: ObservableObject {
         try await appSettings.setHolidayEnd(id: id, end)
     }
 
+    /// Also drops the holiday's label editor: a label edit whose save failed
+    /// is otherwise kept for a quit to retry, which is pointless once the
+    /// holiday is gone.
     func removeHoliday(id: UUID) async throws {
         try await appSettings.removeHoliday(id: id)
+        pendingEdits.removeEditor(forKey: HolidayLabelEditor.registryKey(holidayID: id))
     }
 
     /// Synchronous-intent request (sibling of `requestSetAutoStart`): claims
@@ -2429,6 +2929,10 @@ final class AppModel: ObservableObject {
             errorMessage = "Debug send: already sending for this account."
             return
         }
+        guard !hasOpenSignInSession(account) else {
+            errorMessage = "Debug send: a sign-in window is open for this account."
+            return
+        }
         sendingKeepAliveAccountIDs.insert(account.id)
         defer { sendingKeepAliveAccountIDs.remove(account.id) }
         errorMessage = "Debug send: warming session…"
@@ -2443,11 +2947,16 @@ final class AppModel: ObservableObject {
             // succeeded; a failed warm-up falls back to live discovery (nil),
             // which matches the user's manual send-now intent.
             let warmUpSnapshot = try? await sessionManager.fetchUsage(for: account)
+            // Every await below can see a sign-in window open on this view.
+            guard !hasOpenSignInSession(account) else {
+                errorMessage = "Debug send: a sign-in window opened; skipped."
+                return
+            }
             let prepared = try await sessionManager.prepareKeepAlive(
                 for: account,
                 boundToOrganizationID: warmUpSnapshot?.organizationID
             )
-            let conversationID = try await sessionManager.sendKeepAlive(
+            let receipt = try await sessionManager.sendKeepAlive(
                 prepared: prepared,
                 conversationID: account.keepAliveConversationID,
                 for: account,
@@ -2455,13 +2964,31 @@ final class AppModel: ObservableObject {
                     guard let self, self.warmUpStillAllowed(warmUpGenerationAtStart) else {
                         throw CancellationError()
                     }
+                    guard !self.hasOpenSignInSession(account) else {
+                        throw CancellationError()
+                    }
                 }
             )
+            // Same classification as the automatic warm-up: a refusal inside
+            // the stream is reported as one and records no started window.
+            // Nothing was reserved before this manual send.
+            let landed = WarmUpOutcome.landed(receipt, at: now(), reserved: false)
+            await recordWarmUpOutcome(landed, accountID: account.id)
+            if let streamError = landed.streamErrorType {
+                errorMessage = "Debug send REFUSED in the reply (\(streamError.rawValue)). "
+                    + "Nothing recorded as started."
+                return
+            }
+            let conversationID = receipt.conversationID
             try await accountStore.recordAutoStart(
                 id: account.id,
                 conversationID: conversationID,
                 at: now()
             )
+            if hasOpenSignInSession(account) {
+                errorMessage = "Debug send OK; refetch skipped (a sign-in window is open)."
+                return
+            }
             if let refreshed = try? await sessionManager.fetchUsage(for: account) {
                 try? await snapshotStore.save(refreshed)
             }
@@ -2507,6 +3034,9 @@ final class AppModel: ObservableObject {
             ),
             alertStateStore: AlertStateStore(
                 fileURL: baseDirectory.appending(path: "alert-state.json")
+            ),
+            cursorSpendHistoryStore: CursorSpendHistoryStore(
+                fileURL: baseDirectory.appending(path: "cursor-spend-history.json")
             ),
             profileManager: WebProfileManager(
                 contractRecorder: contractRecorder,
@@ -2588,6 +3118,13 @@ final class AppModel: ObservableObject {
             for orphanID in alertStateStore.states.keys where !activeAccountIDs.contains(orphanID) {
                 try? await alertStateStore.remove(accountID: orphanID)
             }
+            // Cursor's past-cycle totals: non-fatal like the alert state, and
+            // pruned the same way — an entry left by a removal that did not
+            // finish (crash, force-quit) belongs to no account.
+            await cursorHistoryStore.load()
+            for orphanID in cursorHistoryStore.histories.keys where !activeAccountIDs.contains(orphanID) {
+                try? await cursorHistoryStore.remove(accountID: orphanID)
+            }
 
             // STARTUP READINESS BARRIER (see `alertsHydrated`'s doc). Everything
             // the alert pipeline depends on — accounts, snapshots, and the
@@ -2630,9 +3167,7 @@ final class AppModel: ObservableObject {
             startSwitchAdviceTimer()
 
             guard startBackgroundRefresh else { return }
-            refreshCoordinator.startBackgroundRefresh { [weak self] in
-                self?.refreshableAccounts ?? []
-            }
+            startBackgroundPolling()
             await refreshAll(reason: .launch)
         } catch {
             // A thrown launch failure means this attempt never completed —
@@ -2935,6 +3470,7 @@ final class AppModel: ObservableObject {
     func stop() {
         refreshCoordinator.stopBackgroundRefresh()
         for task in planRefreshTasks.values { task.cancel() }
+        for task in cursorHistoryTasks.values { task.cancel() }
         systemPowerObserver.stop()
         switchAdviceTimer?.invalidate()
         switchAdviceTimer = nil
@@ -3149,6 +3685,8 @@ final class AppModel: ObservableObject {
                 // This session may have been protecting a profile
                 // whose timeout recycle was deferred.
                 sessionManager.completeDeferredRecycles()
+                // The account is live but its snapshot never landed.
+                refreshAfterSignInClosed(accountID: session.accountID)
                 errorMessage = error.localizedDescription
             } else if cancelRequestedSessionIDs.remove(sessionID) != nil {
                 await cancelSignIn(sessionID: sessionID)
@@ -3218,6 +3756,8 @@ final class AppModel: ObservableObject {
             // This session may have been protecting a profile whose
             // timeout recycle was deferred (e.g. the reauth case).
             sessionManager.completeDeferredRecycles()
+            // Polls skipped this account while the window was open.
+            refreshAfterSignInClosed(accountID: session.accountID)
             return
         }
 
@@ -3373,7 +3913,7 @@ final class AppModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         await refreshCoordinator.refreshAll(
-            accounts: refreshableAccounts,
+            accounts: pollableAccounts,
             reason: reason
         )
     }
@@ -3541,6 +4081,10 @@ final class AppModel: ObservableObject {
         try await pendingProfileDeletionStore.enqueue(account.webProfileID)
 
         await refreshCoordinator.cancel(accountID: id)
+        // Any Cursor history read in flight: cancelled before the profile is
+        // touched, which reaps its page (its stored totals go last, below).
+        cursorHistoryTasks.removeValue(forKey: id)?.cancel()
+        pendingAttemptRollbacks.removeValue(forKey: id)
         signInSessions = signInSessions.filter { $0.value.accountID != id }
         pruneSessionBookkeeping()
         // A reauth session on this account may have been protecting
@@ -3646,6 +4190,12 @@ final class AppModel: ObservableObject {
         alertSideEffectQueue.enqueue { [weak self] in
             try? await self?.alertStateStore.remove(accountID: id)
         }
+        // Its Cursor spend history. Last, so the synchronous run above stays
+        // unbroken. The store's queue runs this after any update already
+        // queued; a later update sees the tombstone (`isLiveAccount`) and
+        // drops itself, so nothing can bring the entry back. A failed delete
+        // is kept pending and retried (see `removeCursorHistory`).
+        await removeCursorHistory(accountID: id)
     }
 
     private func requireActive(_ session: SignInSession) throws {
@@ -3835,3 +4385,6 @@ private final class ProviderContractCaptureErrorRelay {
         model?.errorMessage = message
     }
 }
+
+/// The history read was refused at dispatch (a sign-in session holds the view).
+struct CursorHistoryReadVetoed: Error {}

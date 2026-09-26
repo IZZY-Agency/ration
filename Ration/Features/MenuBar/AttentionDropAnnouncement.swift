@@ -17,13 +17,21 @@ enum AttentionDropAnnouncement {
     /// - Returns: the sentence to announce, if any, and the ids to remember
     ///   for the next evaluation (empty once the drop closes, so its next
     ///   appearance speaks again).
+    ///   - isTestDrop: the rows are the Settings › Diagnostics sample. The
+    ///     sentence then opens with "Test drop, sample data", so sample
+    ///     crossings are never announced as real ones.
     static func evaluate(
         rows: [AttentionRow],
-        previouslySeen: Set<AttentionRow.ID>
+        previouslySeen: Set<AttentionRow.ID>,
+        isTestDrop: Bool = false,
+        locale: Locale = .current
     ) -> (announcement: String?, seen: Set<AttentionRow.ID>) {
         let seen = Set(rows.map(\.id))
         guard !seen.subtracting(previouslySeen).isEmpty else { return (nil, seen) }
-        return (AttentionDropView.headerAccessibilityLabel(rows: rows), seen)
+        let label = AttentionDropView.headerAccessibilityLabel(rows: rows, locale: locale)
+        guard isTestDrop else { return (label, seen) }
+        let prefix = AttentionDropView.testDropSpokenPrefix(locale: locale)
+        return (prefix + ", " + label, seen)
     }
 
     /// Posts `text` as a high-priority VoiceOver announcement without moving

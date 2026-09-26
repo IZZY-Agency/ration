@@ -14,8 +14,27 @@ struct FocusView: View {
     /// Show this account as the hero; nil → back to the automatic hero.
     let onShowHero: (UUID?) -> Void
     let onReauthenticate: (UUID) -> Void
+    /// A click on a problem badge — the header's STALE click. nil keeps the
+    /// badges plain.
+    var onProblem: ((FreshnessHelp.Target) -> Void)? = nil
+    /// The pointer entered / left an account's problem badge.
+    var onProblemHover: (UUID, BadgeHoverEvent) -> Void = { _, _ in }
 
     private static let inset: CGFloat = 16
+
+    private func problemAction(_ presentation: AccountPresentation) -> AccountBadgeProblemAction? {
+        guard let onProblem else { return nil }
+        let id = presentation.id
+        let hover = onProblemHover
+        return AccountStateBadge.problemAction(
+            for: presentation,
+            now: now,
+            perform: onProblem,
+            hoverChanged: { event in
+                hover(id, event)
+            }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -368,7 +387,8 @@ struct FocusView: View {
                     state: state,
                     style: .compact,
                     now: now,
-                    onReauthenticate: { onReauthenticate(line.presentation.id) }
+                    onReauthenticate: { onReauthenticate(line.presentation.id) },
+                    problemAction: problemAction(line.presentation)
                 )
             }
         }
@@ -514,7 +534,8 @@ struct FocusView: View {
                     state: state,
                     style: .compact,
                     now: now,
-                    onReauthenticate: { onReauthenticate(entry.presentation.id) }
+                    onReauthenticate: { onReauthenticate(entry.presentation.id) },
+                    problemAction: problemAction(entry.presentation)
                 )
             }
         }

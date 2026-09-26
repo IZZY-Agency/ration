@@ -60,14 +60,15 @@ struct AlertsDetailView: View {
     /// untouched, so allowing notifications restores them as they were.
     var notificationPermission: NotificationPermission? = nil
     var onAllowNotifications: () -> Void = {}
-    // Field-level, not whole-pair: each commits ONE field against the
-    // freshest stored value inside `AppSettings`'s serialized mutation, so a
-    // second field's commit can never carry a stale sibling value back over
-    // an edit that hasn't round-tripped yet. See `AppSettings.setWarningPercent`.
-    let onSetWarningPercent: (Int, Provider, UsageWindowKind) async throws -> Void
-    let onSetCriticalPercent: (Int, Provider, UsageWindowKind) async throws -> Void
-    let onSetSpendWarningCents: (Int?) async throws -> Void
-    let onSetSpendCriticalCents: (Int?) async throws -> Void
+    /// Where each row's editor registers, so a quit saves a row that still
+    /// has focus. `nil` in previews and snapshots.
+    var pendingEdits: PendingEditRegistry? = nil
+    // A row's draft, not one field and not a whole pair composed here: the
+    // changed fields go to the store together and the unchanged one is read
+    // there, inside the serialized mutation. Each returns the pair as saved,
+    // which the row then shows. See `ThresholdDraftEditor`.
+    let onSetThresholds: (FieldEdit<Int>, FieldEdit<Int>, Provider, UsageWindowKind) async throws -> ThresholdPair
+    let onSetCursorSpend: (FieldEdit<Int?>, FieldEdit<Int?>) async throws -> SpendThresholds
     let onSetDropEnabled: (Bool, String) async throws -> Void
     let onSetNotificationEnabled: (Bool, String) async throws -> Void
     let onSetResetLeadDays: (Int, Provider) async throws -> Void
@@ -127,8 +128,8 @@ struct AlertsDetailView: View {
                             pair: settings.data.thresholds(provider: row.provider, window: row.window),
                             channels: settings.data.channels(forKey: row.id),
                             notifyBlockedNote: notifyBlockedNote,
-                            onSetWarningPercent: onSetWarningPercent,
-                            onSetCriticalPercent: onSetCriticalPercent,
+                            pendingEdits: pendingEdits,
+                            onSetThresholds: onSetThresholds,
                             onSetDropEnabled: onSetDropEnabled,
                             onSetNotificationEnabled: onSetNotificationEnabled,
                             onError: onError
@@ -156,8 +157,8 @@ struct AlertsDetailView: View {
                     spend: settings.cursorSpend,
                     channels: settings.data.channels(forKey: AppSettingsData.cursorSpendKey),
                     notifyBlockedNote: notifyBlockedNote,
-                    onSetWarningCents: onSetSpendWarningCents,
-                    onSetCriticalCents: onSetSpendCriticalCents,
+                    pendingEdits: pendingEdits,
+                    onSetCursorSpend: onSetCursorSpend,
                     onSetDropEnabled: onSetDropEnabled,
                     onSetNotificationEnabled: onSetNotificationEnabled,
                     onError: onError
@@ -171,39 +172,34 @@ struct AlertsDetailView: View {
     }
 }
 
-/// One provider × window row: warning/critical percent fields that commit on
-/// blur, following the `HolidayRow` pattern (`WarmUpDetailView.swift`) — a
+/// One provider × window row: warning/critical percent fields, committed
+/// together by a `ThresholdDraftEditor` when focus leaves the row — a
 /// per-keystroke write would race the store, which only publishes AFTER a
 /// successful save.
 ///
 /// `ThresholdPair.init` canonicalises (critical 2...100, warning
-/// 1...critical-1), so a value the user typed can come back changed. The
-/// fields must reflect that back rather than keep showing the raw entry, or
-/// the UI would silently lie about what got saved — `onChange(of: pair)`
-/// re-syncs from the freshly published value once the field isn't focused.
+/// 1...critical-1), so a value the user typed can come back changed. Both
+/// fields show the pair the store returned, so the UI never shows a value
+/// that was not saved.
 private struct ThresholdFieldsRow: View {
     let row: AlertsGridRow
     let pair: ThresholdPair
     let channels: AlertChannels
     let notifyBlockedNote: String?
-    let onSetWarningPercent: (Int, Provider, UsageWindowKind) async throws -> Void
-    let onSetCriticalPercent: (Int, Provider, UsageWindowKind) async throws -> Void
     let onSetDropEnabled: (Bool, String) async throws -> Void
     let onSetNotificationEnabled: (Bool, String) async throws -> Void
     let onError: (Error) -> Void
 
-    @State private var warningText: String
-    @State private var criticalText: String
-    @FocusState private var warningFocused: Bool
-    @FocusState private var criticalFocused: Bool
+    @StateObject private var editor: ThresholdDraftEditor<ThresholdPair, Int>
+    @FocusState private var focus: ThresholdField?
 
     init(
         row: AlertsGridRow,
         pair: ThresholdPair,
         channels: AlertChannels,
         notifyBlockedNote: String?,
-        onSetWarningPercent: @escaping (Int, Provider, UsageWindowKind) async throws -> Void,
-        onSetCriticalPercent: @escaping (Int, Provider, UsageWindowKind) async throws -> Void,
+        pendingEdits: PendingEditRegistry?,
+        onSetThresholds: @escaping (FieldEdit<Int>, FieldEdit<Int>, Provider, UsageWindowKind) async throws -> ThresholdPair,
         onSetDropEnabled: @escaping (Bool, String) async throws -> Void,
         onSetNotificationEnabled: @escaping (Bool, String) async throws -> Void,
         onError: @escaping (Error) -> Void
@@ -212,13 +208,18 @@ private struct ThresholdFieldsRow: View {
         self.pair = pair
         self.channels = channels
         self.notifyBlockedNote = notifyBlockedNote
-        self.onSetWarningPercent = onSetWarningPercent
-        self.onSetCriticalPercent = onSetCriticalPercent
         self.onSetDropEnabled = onSetDropEnabled
         self.onSetNotificationEnabled = onSetNotificationEnabled
         self.onError = onError
-        _warningText = State(initialValue: String(pair.warningPercent))
-        _criticalText = State(initialValue: String(pair.criticalPercent))
+        _editor = StateObject(
+            wrappedValue: SettingsEditors.thresholdRow(
+                row,
+                stored: pair,
+                in: pendingEdits,
+                save: onSetThresholds,
+                onError: onError
+            )
+        )
     }
 
     var body: some View {
@@ -230,8 +231,8 @@ private struct ThresholdFieldsRow: View {
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
                 percentField(
-                    $warningText,
-                    focused: $warningFocused,
+                    $editor.warningText,
+                    field: .warning,
                     identifier: "alertWarningField.\(row.id)"
                 )
                 Text(verbatim: "%")
@@ -243,8 +244,8 @@ private struct ThresholdFieldsRow: View {
                     .foregroundStyle(Theme.creamDim)
                     .padding(.leading, 8)
                 percentField(
-                    $criticalText,
-                    focused: $criticalFocused,
+                    $editor.criticalText,
+                    field: .critical,
                     identifier: "alertCriticalField.\(row.id)"
                 )
                 Text(verbatim: "%")
@@ -264,21 +265,22 @@ private struct ThresholdFieldsRow: View {
                 )
             }
         }
+        // A reopened pane may get an editor that outlived the last one.
+        .task { editor.storeDidChange(pair) }
         .onChange(of: pair) { _, newValue in
-            if !warningFocused { warningText = String(newValue.warningPercent) }
-            if !criticalFocused { criticalText = String(newValue.criticalPercent) }
+            editor.storeDidChange(newValue)
         }
-        .onChange(of: warningFocused) { _, focused in
-            if !focused { commitWarning() }
+        .onChange(of: focus) { _, newValue in
+            editor.focusChanged(to: newValue)
         }
-        .onChange(of: criticalFocused) { _, focused in
-            if !focused { commitCritical() }
-        }
+        // Starts the save; a quit that outruns it is covered by the
+        // `PendingEditRegistry` the editor registered with.
+        .onDisappear { editor.submit() }
     }
 
     private func percentField(
         _ text: Binding<String>,
-        focused: FocusState<Bool>.Binding,
+        field: ThresholdField,
         identifier: String
     ) -> some View {
         TextField("", text: text)
@@ -286,53 +288,40 @@ private struct ThresholdFieldsRow: View {
             .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.trailing)
             .frame(width: 44)
-            .focused(focused)
-            .onSubmit { focused.wrappedValue = false }
+            .modifier(FlaggedFieldMarker(flag: editor.flagged[field]))
+            .focused($focus, equals: field)
+            .onSubmit {
+                focus = nil
+                editor.submit()
+            }
             .accessibilityIdentifier(identifier)
     }
+}
 
-    /// Unparseable or unchanged input reverts the field to the current
-    /// canonical value instead of submitting — a stray blur on an empty or
-    /// half-typed field must not silently discard the other field's value.
-    ///
-    /// Submits ONLY the edited field's raw `Int`, never a `ThresholdPair`
-    /// composed from the locally-held `pair` — `AppSettings.setWarningPercent`
-    /// reads the freshest stored critical value inside its own serialized
-    /// mutation, so this can't race a concurrent edit to the sibling field.
-    private func commitWarning() {
-        guard let value = Int(warningText), value != pair.warningPercent else {
-            warningText = String(pair.warningPercent)
-            return
-        }
-        submitWarning(value)
+/// Marks a threshold field whose text would not be saved as shown (see
+/// `ThresholdDraftEditor.flagged`): a red border, and for VoiceOver a hint
+/// saying why. The hint is empty — nothing is announced — while the field is
+/// not flagged. The modifiers stay in place either way, so the field keeps
+/// its identity (and focus) as the flag comes and goes.
+private struct FlaggedFieldMarker: ViewModifier {
+    let flag: ThresholdFieldFlag?
+
+    func body(content: Content) -> some View {
+        let note: String = ThresholdFieldFlag.accessibilityNote(flag) ?? ""
+        content
+            .overlay { FlaggedFieldBorder(isFlagged: flag != nil) }
+            .accessibilityHint(Text(verbatim: note))
     }
+}
 
-    private func commitCritical() {
-        guard let value = Int(criticalText), value != pair.criticalPercent else {
-            criticalText = String(pair.criticalPercent)
-            return
-        }
-        submitCritical(value)
-    }
+private struct FlaggedFieldBorder: View {
+    let isFlagged: Bool
 
-    private func submitWarning(_ value: Int) {
-        Task {
-            do {
-                try await onSetWarningPercent(value, row.provider, row.window)
-            } catch {
-                onError(error)
-            }
-        }
-    }
-
-    private func submitCritical(_ value: Int) {
-        Task {
-            do {
-                try await onSetCriticalPercent(value, row.provider, row.window)
-            } catch {
-                onError(error)
-            }
-        }
+    var body: some View {
+        RoundedRectangle(cornerRadius: 5)
+            .strokeBorder(Theme.crit, lineWidth: 1.5)
+            .opacity(isFlagged ? 1 : 0)
+            .allowsHitTesting(false)
     }
 }
 
@@ -466,28 +455,23 @@ enum CursorSpendFieldLayout {
 
 private struct CursorSpendSection: View {
     let spend: SpendThresholds
-    // Field-level, same reasoning as `ThresholdFieldsRow`: composing a whole
-    // `SpendThresholds` from the locally-held `spend` would let one field's
-    // commit clobber the other's if it hasn't round-tripped yet.
+    // One draft for both fields, same reasoning as `ThresholdFieldsRow`: the
+    // section commits when focus leaves it, and shows what the store returned.
     let channels: AlertChannels
     let notifyBlockedNote: String?
-    let onSetWarningCents: (Int?) async throws -> Void
-    let onSetCriticalCents: (Int?) async throws -> Void
     let onSetDropEnabled: (Bool, String) async throws -> Void
     let onSetNotificationEnabled: (Bool, String) async throws -> Void
     let onError: (Error) -> Void
 
-    @State private var warningText: String
-    @State private var criticalText: String
-    @FocusState private var warningFocused: Bool
-    @FocusState private var criticalFocused: Bool
+    @StateObject private var editor: ThresholdDraftEditor<SpendThresholds, Int?>
+    @FocusState private var focus: ThresholdField?
 
     init(
         spend: SpendThresholds,
         channels: AlertChannels,
         notifyBlockedNote: String?,
-        onSetWarningCents: @escaping (Int?) async throws -> Void,
-        onSetCriticalCents: @escaping (Int?) async throws -> Void,
+        pendingEdits: PendingEditRegistry?,
+        onSetCursorSpend: @escaping (FieldEdit<Int?>, FieldEdit<Int?>) async throws -> SpendThresholds,
         onSetDropEnabled: @escaping (Bool, String) async throws -> Void,
         onSetNotificationEnabled: @escaping (Bool, String) async throws -> Void,
         onError: @escaping (Error) -> Void
@@ -495,22 +479,26 @@ private struct CursorSpendSection: View {
         self.spend = spend
         self.channels = channels
         self.notifyBlockedNote = notifyBlockedNote
-        self.onSetWarningCents = onSetWarningCents
-        self.onSetCriticalCents = onSetCriticalCents
         self.onSetDropEnabled = onSetDropEnabled
         self.onSetNotificationEnabled = onSetNotificationEnabled
         self.onError = onError
-        _warningText = State(initialValue: CursorSpendFieldParsing.dollarsText(fromCents: spend.warningCents))
-        _criticalText = State(initialValue: CursorSpendFieldParsing.dollarsText(fromCents: spend.criticalCents))
+        _editor = StateObject(
+            wrappedValue: SettingsEditors.cursorSpend(
+                stored: spend,
+                in: pendingEdits,
+                save: onSetCursorSpend,
+                onError: onError
+            )
+        )
     }
 
     var body: some View {
         Section(SettingsSectionTitle.cursorSpend) {
             LabeledContent("Warning") {
-                dollarField($warningText, focused: $warningFocused, identifier: "cursorSpendWarningField")
+                dollarField($editor.warningText, field: .warning, identifier: "cursorSpendWarningField")
             }
             LabeledContent("Critical") {
-                dollarField($criticalText, focused: $criticalFocused, identifier: "cursorSpendCriticalField")
+                dollarField($editor.criticalText, field: .critical, identifier: "cursorSpendCriticalField")
             }
             LabeledContent("Deliver to") {
                 ChannelToggles(
@@ -526,68 +514,33 @@ private struct CursorSpendSection: View {
                 .font(Theme.mono(12))
                 .foregroundStyle(Theme.creamDim)
         }
+        // A reopened pane may get an editor that outlived the last one.
+        .task { editor.storeDidChange(spend) }
         .onChange(of: spend) { _, newValue in
-            if !warningFocused { warningText = CursorSpendFieldParsing.dollarsText(fromCents: newValue.warningCents) }
-            if !criticalFocused { criticalText = CursorSpendFieldParsing.dollarsText(fromCents: newValue.criticalCents) }
+            editor.storeDidChange(newValue)
         }
-        .onChange(of: warningFocused) { _, focused in
-            if !focused { commitWarning() }
+        .onChange(of: focus) { _, newValue in
+            editor.focusChanged(to: newValue)
         }
-        .onChange(of: criticalFocused) { _, focused in
-            if !focused { commitCritical() }
-        }
+        .onDisappear { editor.submit() }
     }
 
     private func dollarField(
         _ text: Binding<String>,
-        focused: FocusState<Bool>.Binding,
+        field: ThresholdField,
         identifier: String
     ) -> some View {
         TextField("off", text: text)
             .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.trailing)
             .frame(width: CursorSpendFieldLayout.width())
-            .focused(focused)
-            .onSubmit { focused.wrappedValue = false }
+            .modifier(FlaggedFieldMarker(flag: editor.flagged[field]))
+            .focused($focus, equals: field)
+            .onSubmit {
+                focus = nil
+                editor.submit()
+            }
             .accessibilityIdentifier(identifier)
-    }
-
-    private func commitWarning() {
-        guard let parsed = CursorSpendFieldParsing.parsedCents(warningText) else {
-            warningText = CursorSpendFieldParsing.dollarsText(fromCents: spend.warningCents)
-            return
-        }
-        guard parsed != spend.warningCents else { return }
-        submitWarning(parsed)
-    }
-
-    private func commitCritical() {
-        guard let parsed = CursorSpendFieldParsing.parsedCents(criticalText) else {
-            criticalText = CursorSpendFieldParsing.dollarsText(fromCents: spend.criticalCents)
-            return
-        }
-        guard parsed != spend.criticalCents else { return }
-        submitCritical(parsed)
-    }
-
-    private func submitWarning(_ value: Int?) {
-        Task {
-            do {
-                try await onSetWarningCents(value)
-            } catch {
-                onError(error)
-            }
-        }
-    }
-
-    private func submitCritical(_ value: Int?) {
-        Task {
-            do {
-                try await onSetCriticalCents(value)
-            } catch {
-                onError(error)
-            }
-        }
     }
 }
 

@@ -17,6 +17,15 @@ protocol ProviderAdapter {
         for snapshot: UsageSnapshot,
         in webView: WKWebView
     ) async throws -> PlanDetection?
+    /// Cursor's past-cycle totals: a separate, heavier read than the usage
+    /// fetch, run in the background. nil = the provider has none. Default: none.
+    /// `mayDispatch` runs at the last native moment before the read reaches
+    /// the page; throwing vetoes it.
+    func fetchCursorSpendHistory(
+        _ request: CursorHistoryRequest,
+        mayDispatch: @escaping @MainActor () throws -> Void,
+        in webView: WKWebView
+    ) async throws -> CursorHistoryFetch?
 }
 
 extension ProviderAdapter {
@@ -24,6 +33,12 @@ extension ProviderAdapter {
         for snapshot: UsageSnapshot,
         in webView: WKWebView
     ) async throws -> PlanDetection? { nil }
+
+    func fetchCursorSpendHistory(
+        _ request: CursorHistoryRequest,
+        mayDispatch: @escaping @MainActor () throws -> Void,
+        in webView: WKWebView
+    ) async throws -> CursorHistoryFetch? { nil }
 }
 
 enum ProviderResponseValidator {

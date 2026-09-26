@@ -76,6 +76,12 @@ struct AccountRecord: Codable, Equatable, Identifiable, Sendable {
     // unknown values in accounts.json → nil.
     var plan: PlanTier?
     var planSource: PlanSource?
+    // The newest `WarmUpOutcome.capacity` warm-up outcomes, oldest first.
+    // Status codes and kinds only — see `WarmUpOutcome`.
+    // Backward-compatible: absent in older accounts.json → []; an entry a
+    // newer build wrote that this one cannot read is dropped, never the
+    // account.
+    var warmUpOutcomes: [WarmUpOutcome]
 
     init(
         id: UUID,
@@ -90,7 +96,8 @@ struct AccountRecord: Codable, Equatable, Identifiable, Sendable {
         billingRenewalDay: Int? = nil,
         isPaused: Bool = false,
         plan: PlanTier? = nil,
-        planSource: PlanSource? = nil
+        planSource: PlanSource? = nil,
+        warmUpOutcomes: [WarmUpOutcome] = []
     ) {
         self.id = id
         self.provider = provider
@@ -105,6 +112,7 @@ struct AccountRecord: Codable, Equatable, Identifiable, Sendable {
         self.isPaused = isPaused
         self.plan = plan
         self.planSource = planSource
+        self.warmUpOutcomes = warmUpOutcomes
     }
 
     init(from decoder: any Decoder) throws {
@@ -135,5 +143,21 @@ struct AccountRecord: Codable, Equatable, Identifiable, Sendable {
         planSource = plan == nil
             ? nil
             : (try? container.decodeIfPresent(PlanSource.self, forKey: .planSource)) ?? nil
+        // Lenient per entry: an outcome this build cannot read is dropped.
+        let storedOutcomes = try? container.decodeIfPresent(
+            [LenientWarmUpOutcome].self,
+            forKey: .warmUpOutcomes
+        )
+        let readable = (storedOutcomes ?? []).compactMap(\.outcome)
+        warmUpOutcomes = Array(readable.suffix(WarmUpOutcome.capacity))
+    }
+}
+
+/// One `warmUpOutcomes` entry that decodes to nil instead of throwing.
+private struct LenientWarmUpOutcome: Decodable {
+    let outcome: WarmUpOutcome?
+
+    init(from decoder: any Decoder) throws {
+        outcome = try? WarmUpOutcome(from: decoder)
     }
 }

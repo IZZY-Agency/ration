@@ -102,6 +102,74 @@ final class ClaudeMessageSenderTests: XCTestCase {
         XCTAssertTrue(stub.postPaths[2].contains(used.uuidString.lowercased()))
     }
 
+    // MARK: Receipt
+
+    func testSendReportingReturnsTheLandedStatusAndNoStreamError() async throws {
+        let stub = WebEvalStub()
+        stub.postStatuses = [201]
+        let sender = makeSender(stub)
+        let prepared = try await sender.prepare(in: WKWebView(frame: .zero))
+        let existing = UUID()
+
+        let receipt = try await sender.sendReporting(
+            prepared: prepared,
+            conversationID: existing,
+            in: WKWebView(frame: .zero)
+        )
+
+        XCTAssertEqual(
+            receipt,
+            ClaudeMessageSender.Receipt(conversationID: existing, status: 201, streamErrorType: nil)
+        )
+    }
+
+    func testSendReportingSurfacesAnErrorEventInA200Stream() async throws {
+        let stub = WebEvalStub()
+        stub.completionStreamErrors = ["overloaded_error"]
+        let sender = makeSender(stub)
+        let prepared = try await sender.prepare(in: WKWebView(frame: .zero))
+
+        let receipt = try await sender.sendReporting(
+            prepared: prepared,
+            conversationID: UUID(),
+            in: WKWebView(frame: .zero)
+        )
+
+        XCTAssertEqual(receipt.status, 200)
+        XCTAssertEqual(receipt.streamErrorType, .overloaded)
+    }
+
+    /// After a 404 the RETRY's stream is the one that counts.
+    func testSendReportingReadsTheRetriedCompletionsStream() async throws {
+        let stub = WebEvalStub()
+        stub.postStatuses = [404, 200, 200]
+        stub.completionStreamErrors = [nil, "rate_limit_error"]
+        let sender = makeSender(stub)
+        let prepared = try await sender.prepare(in: WKWebView(frame: .zero))
+
+        let receipt = try await sender.sendReporting(
+            prepared: prepared,
+            conversationID: UUID(),
+            in: WKWebView(frame: .zero)
+        )
+
+        XCTAssertEqual(receipt.streamErrorType, .rateLimit)
+    }
+
+    /// Only the completion POST peeks at its stream; the conversation create
+    /// keeps the plain POST (the stream peek is not a new behaviour there).
+    func testOnlyTheCompletionUsesTheStreamPeekingScript() async throws {
+        let stub = WebEvalStub()
+        let sender = makeSender(stub)
+        let prepared = try await sender.prepare(in: WKWebView(frame: .zero))
+
+        _ = try await sender.send(prepared: prepared, conversationID: nil, in: WKWebView(frame: .zero))
+
+        XCTAssertEqual(stub.postScripts.count, 2)
+        XCTAssertFalse(stub.postScripts[0].contains("__streamErrorKind"))
+        XCTAssertTrue(stub.postScripts[1].contains("__streamErrorKind"))
+    }
+
     func testMissingOrganizationThrows() async throws {
         let stub = WebEvalStub()
         stub.resourcePaths = []
@@ -390,6 +458,9 @@ private final class WebEvalStub {
     /// the 1 MB-cap sentinel; a 5xx mimics a transient server error.
     var conversationsStatus = 200
     var postStatuses: [Int] = [200]
+    /// `streamError` the completion script reports per completion POST.
+    var completionStreamErrors: [String?] = []
+    private(set) var postScripts: [String] = []
     private(set) var postPaths: [String] = []
     private(set) var postBodies: [String] = []
     private(set) var getPaths: [String] = []
@@ -410,11 +481,21 @@ private final class WebEvalStub {
         if script.contains("method: \"POST\"") {
             postPaths.append(arguments["path"] as? String ?? "")
             postBodies.append(arguments["bodyJSON"] as? String ?? "")
+            postScripts.append(script)
             let index = postPaths.count - 1
             let status = index < postStatuses.count
                 ? postStatuses[index]
                 : postStatuses.last ?? 200
-            return ["status": status, "retryAfter": NSNull(), "body": ""]
+            var streamError: Any = NSNull()
+            let path = postPaths[index]
+            if path.hasSuffix("/completion") {
+                let completionIndex = postPaths.filter { $0.hasSuffix("/completion") }.count - 1
+                if completionIndex < completionStreamErrors.count,
+                   let error = completionStreamErrors[completionIndex] {
+                    streamError = error
+                }
+            }
+            return ["status": status, "retryAfter": NSNull(), "body": "", "streamError": streamError]
         }
         getPaths.append(arguments["path"] as? String ?? "")
         return ["status": conversationsStatus, "retryAfter": NSNull(), "body": conversationsJSON]

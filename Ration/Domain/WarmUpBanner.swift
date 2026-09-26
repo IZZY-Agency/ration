@@ -26,6 +26,11 @@ struct AutoStartFailure: Equatable {
                 self = .transient
             }
         }
+
+        /// A refusal carried inside a 2xx completion stream.
+        init(streamError: WarmUpOutcome.StreamErrorKind) {
+            self = streamError.meansSignedOut ? .authenticationRequired : .transient
+        }
     }
 
     let at: Date

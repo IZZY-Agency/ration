@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.7.0
+
+- Cursor spend history: the Cursor card shows six small bars for recent billing
+  cycles and how this cycle compares with your average; History has a Cursor
+  section with up to 12 past cycles. Past cycles are read once from Cursor in
+  the background; only totals are kept.
+- A card's problem badge (for example "stale") opens that account's settings,
+  like the STALE word in the header.
+- An expired Cursor or Claude sign-in now asks you to sign in again instead of
+  going stale.
+- Ration no longer refreshes an account while its sign-in window is open, so a
+  background refresh can't pull you off the login page.
+- Alert thresholds: both fields of a row save together, a row saves about a
+  second after you stop typing when nothing would change on screen, and a
+  value that would be adjusted is marked (also for VoiceOver). Holiday labels
+  and thresholds typed in a field that still has focus are saved when you quit.
+- Claude warm-up: each account's Settings lists its recent warm-ups and whether
+  Claude accepted or refused them, including refusals carried inside the reply.
+- Cursor: a spend alert no longer fires twice when Cursor briefly reports an
+  earlier invoice date.
+- Settings › General › Diagnostics has a "Show test drop" button for checking
+  where the attention drop appears.
+
 ## 1.6.0
 
 - When the popover header says STALE or OFFLINE, hover it to see which

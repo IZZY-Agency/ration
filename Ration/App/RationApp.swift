@@ -354,7 +354,8 @@ struct RationApp: App {
                 model: model,
                 launchAtLogin: launchAtLogin,
                 appearance: appDelegate.appearance,
-                onOpenSetupGuide: openSetupGuide
+                onOpenSetupGuide: openSetupGuide,
+                onShowTestDrop: showTestDrop
             )
         }
         .defaultSize(width: SettingsView.minimumWindowWidth, height: 564)
@@ -393,6 +394,13 @@ struct RationApp: App {
     /// The delegate is captured from the adaptor rather than looked up via
     /// `NSApp.delegate`, which does NOT vend the adaptor instance back (a cast
     /// to `RationApplicationDelegate` returns nil — verified at runtime).
+    /// The drop has one owner too, `MenuBarController`; the scene reaches it
+    /// the same way the Setup Guide does.
+    private var showTestDrop: () -> Void {
+        let delegate = appDelegate
+        return SettingsTestDrop.action { delegate.menuBarController }
+    }
+
     private var openSetupGuide: () -> Void {
         let delegate = appDelegate
         return {
@@ -496,6 +504,9 @@ struct MenuBarContent: View {
                     isAccountCurrent: isCurrent,
                     refreshInterval: 300
                 )
+            },
+            cursorHistory: { accountID in
+                model.cursorSpendCycles(for: accountID)
             },
             orderingPinByProvider: pinSnapshot.orderingPinByProvider,
             resetLeadDaysByProvider: Dictionary(
@@ -659,15 +670,24 @@ private struct AddAccountWindowContent: View {
     }
 }
 
-private struct SettingsWindowContent: View {
+struct SettingsWindowContent: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: AppModel
     @ObservedObject var launchAtLogin: LaunchAtLoginController
     let appearance: AppearanceController
     let onOpenSetupGuide: () -> Void
+    /// Required, not optional: the scene must never drop Diagnostics.
+    let onShowTestDrop: () -> Void
 
     var body: some View {
+        settingsView
+            .onExitCommand { dismiss() }
+    }
+
+    /// The Settings view this scene shows — separate so a test can check the
+    /// wiring without a window.
+    var settingsView: SettingsView {
         SettingsView(
             model: model,
             launchAtLogin: launchAtLogin,
@@ -681,9 +701,9 @@ private struct SettingsWindowContent: View {
                 NSApplication.shared.activate()
                 openWindow(id: "sign-in", value: sessionID)
             },
-            onOpenSetupGuide: onOpenSetupGuide
+            onOpenSetupGuide: onOpenSetupGuide,
+            onShowTestDrop: onShowTestDrop
         )
-        .onExitCommand { dismiss() }
     }
 }
 

@@ -242,8 +242,7 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         )
         let alerts = AlertsDetailView(
             settings: model.settings, providers: [.claude, .chatGPT, .cursor], notificationPermission: .denied,
-            onSetWarningPercent: { _, _, _ in }, onSetCriticalPercent: { _, _, _ in },
-            onSetSpendWarningCents: { _ in }, onSetSpendCriticalCents: { _ in },
+            onSetThresholds: { _, _, _, _ in .default }, onSetCursorSpend: { _, _ in .off },
             onSetDropEnabled: { _, _ in }, onSetNotificationEnabled: { _, _ in },
             onSetResetLeadDays: { _, _ in }, onError: { _ in }
         )
@@ -590,6 +589,124 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             if let best = observation.topCandidates(1).first { lines.append(best.string) }
         }
         return lines
+    }
+
+    // MARK: Cursor spend history
+
+    /// The popover card's width: the 540 pt popover less the list's insets.
+    private static let cursorCardWidth: CGFloat = 534
+
+    /// The UTC month `now` falls in — the open Cursor cycle's start.
+    private var cursorCycleStart: Date {
+        let calendar = CursorSpendHistoryPlanner.utcCalendar
+        return calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
+    }
+
+    /// Closed cycles before the open one, oldest first.
+    private func cursorCycles(_ cents: [Int]) -> [CursorSpendCycle] {
+        let calendar = CursorSpendHistoryPlanner.utcCalendar
+        var cycles: [CursorSpendCycle] = []
+        for (index, value) in cents.enumerated() {
+            let start = calendar.date(byAdding: .month, value: index - cents.count, to: cursorCycleStart)!
+            let end = calendar.date(byAdding: .month, value: 1, to: start)!
+            cycles.append(CursorSpendCycle(periodStart: start, periodEnd: end, spentCents: value, isClosed: true))
+        }
+        return cycles
+    }
+
+    private func cursorPresentation(_ label: String, spentCents: Int) -> AccountPresentation {
+        let id = UUID()
+        let record = AccountRecord(
+            id: id, provider: .cursor, label: label, webProfileID: UUID(), displayOrder: 0,
+            createdAt: now.addingTimeInterval(-400 * 86_400)
+        )
+        let spend = CursorSpend(
+            spentCents: spentCents, periodStart: cursorCycleStart,
+            resetsAt: now.addingTimeInterval(12 * 86_400 + 4 * 3600), planLabel: "Pro"
+        )
+        let snapshot = UsageSnapshot(
+            accountID: id, fetchedAt: now.addingTimeInterval(-60), fiveHour: nil, weekly: nil, cursorSpend: spend
+        )
+        return AccountPresentation(account: record, snapshot: snapshot, state: .current)
+    }
+
+    /// Six closed cycles averaging $29.80 and $41.20 this cycle (+38%), as in
+    /// the mockup — the widest "vs average" line. Twelve for History.
+    private var cursorSixCycles: [Int] { [2980, 2410, 3410, 2980, 3550, 2550] }
+    private var cursorTwelveCycles: [Int] { [1520, 2210, 3890, 2750, 1980, 3120] + cursorSixCycles }
+
+    /// Gated: the Cursor card (bars + the "vs average" line, and the all-$0
+    /// form) at the popover's width, and the History section, dark and light.
+    func testCursorSpendHistory() async throws {
+        let dir = try directory
+        let busy = cursorPresentation("Agency Cursor Team", spentCents: 4120)
+        let idle = cursorPresentation("Personal", spentCents: 0)
+        let cards = VStack(spacing: 0) {
+            AccountCardView(presentation: busy, onReauthenticate: {}, now: now, cursorHistory: cursorCycles(cursorSixCycles))
+            AccountCardView(presentation: idle, onReauthenticate: {}, now: now, cursorHistory: cursorCycles([0, 0, 0, 0, 0, 0]))
+            AccountCardView(presentation: idle, onReauthenticate: {}, now: now, cursorHistory: cursorCycles([1200]))
+        }
+        .frame(width: Self.cursorCardWidth)
+        .background(Theme.ink)
+        let history = CursorSpendHistory(cycles: cursorCycles(cursorTwelveCycles), syncedThrough: cursorCycleStart)
+        let zeroHistory = CursorSpendHistory(cycles: cursorCycles([0, 0, 0]), syncedThrough: cursorCycleStart)
+        let sections = VStack(alignment: .leading, spacing: 22) {
+            CursorSpendHistorySection(label: "Agency Cursor Team", history: history, current: busy.snapshot?.cursorSpend)
+            CursorSpendHistorySection(label: "Personal", history: zeroHistory, current: idle.snapshot?.cursorSpend)
+            CursorSpendHistorySection(label: "New", history: CursorSpendHistory(), current: idle.snapshot?.cursorSpend)
+        }
+        .padding(16)
+        .frame(width: 680, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Theme.ink)
+        for (scheme, suffix) in Self.schemes {
+            try write(render(cards, scheme), dir, "cursor-cards-\(suffix).png")
+            try write(await renderHosted(sections, width: 680, height: 1060, scheme, settle: 1),
+                      dir, "history-cursor-\(suffix).png")
+        }
+    }
+
+    /// Not gated: the line under the Cursor card is drawn in full on one line
+    /// at the popover's card width, and the History table's "so far" row and
+    /// column titles are drawn, in the run's language.
+    func testCursorSpendHistoryTextIsDrawn() throws {
+        AppFonts.register(in: .main)
+        let busy = cursorPresentation("Agency Cursor Team", spentCents: 4120)
+        let closed = cursorCycles(cursorSixCycles)
+        let trend = CursorSpendTrend.card(closed: closed, current: busy.snapshot?.cursorSpend)
+        let line = try XCTUnwrap(CursorSpendHistoryCopy.cardLine(trend))
+        let cardLines = try recognizedLines(
+            AccountCardView(presentation: busy, onReauthenticate: {}, now: now, cursorHistory: closed),
+            width: Self.cursorCardWidth
+        )
+        let wanted = Self.letters(line)
+        XCTAssertTrue(cardLines.contains { Self.editDistance(Self.letters($0), wanted) <= 1 },
+                      "card line “\(line)” not drawn in full; read: \(cardLines)")
+
+        let zeroClosed = cursorCycles([0, 0, 0])
+        let idle = cursorPresentation("Personal", spentCents: 0)
+        let zeroTrend = CursorSpendTrend.card(closed: zeroClosed, current: idle.snapshot?.cursorSpend)
+        let zeroLine = try XCTUnwrap(CursorSpendHistoryCopy.cardLine(zeroTrend))
+        let zeroLines = try recognizedLines(
+            AccountCardView(presentation: idle, onReauthenticate: {}, now: now, cursorHistory: zeroClosed),
+            width: Self.cursorCardWidth
+        )
+        XCTAssertTrue(zeroLines.contains { Self.editDistance(Self.letters($0), Self.letters(zeroLine)) <= 1 },
+                      "zero line “\(zeroLine)” not drawn in full; read: \(zeroLines)")
+
+        let history = CursorSpendHistory(cycles: closed, syncedThrough: cursorCycleStart)
+        let sectionLines = try recognizedLines(
+            CursorSpendHistorySection(label: "Team", history: history, current: busy.snapshot?.cursorSpend),
+            width: 648
+        )
+        let drawn = Self.letters(sectionLines.joined(separator: " "))
+        let historyTrend = CursorSpendTrend.history(closed: closed, current: busy.snapshot?.cursorSpend)
+        let currentRow = CursorSpendHistoryCopy.rowRange(try XCTUnwrap(historyTrend.currentBar))
+        XCTAssertTrue(drawn.contains(Self.letters(currentRow)), "row “\(currentRow)” not drawn; read: \(sectionLines)")
+        let titles = CursorSpendHistoryCopy.columnTitles()
+        for title in [titles.cycle, titles.spend, titles.versusAverage, CursorSpendHistoryCopy.sectionSubtitle()] {
+            XCTAssertTrue(drawn.contains(Self.letters(title)), "“\(title)” not drawn; read: \(sectionLines)")
+        }
     }
 
     // MARK: Onboarding, plan step, About, sign-in

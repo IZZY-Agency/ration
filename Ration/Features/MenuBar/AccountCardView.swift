@@ -10,6 +10,13 @@ struct AccountCardView: View {
     var showsResetCredits: Bool = true
     var now: Date = .now
     var resetLeadDays: Int = 1
+    /// Cursor only: the account's stored closed cycles, oldest first.
+    var cursorHistory: [CursorSpendCycle] = []
+    /// A click on a problem badge — the header's STALE click
+    /// (`MenuBarView.onFreshnessAction`). nil keeps the badge plain.
+    var onProblem: ((FreshnessHelp.Target) -> Void)? = nil
+    /// The pointer entered / left the problem badge, or it moved.
+    var onProblemHover: (BadgeHoverEvent) -> Void = { _ in }
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -53,6 +60,16 @@ struct AccountCardView: View {
         }
     }
 
+    private func problemAction(now currentDate: Date) -> AccountBadgeProblemAction? {
+        guard let onProblem else { return nil }
+        return AccountStateBadge.problemAction(
+            for: presentation,
+            now: currentDate,
+            perform: onProblem,
+            hoverChanged: onProblemHover
+        )
+    }
+
     private func card(relativeTo currentDate: Date) -> some View {
         let phase = InUsePhase.classify(activeUsage, now: currentDate)
         let highlighted = Self.isHighlighted(phase: phase)
@@ -92,7 +109,9 @@ struct AccountCardView: View {
                     state: presentation.state,
                     style: .compact,
                     now: currentDate,
-                    onReauthenticate: onReauthenticate
+                    onReauthenticate: onReauthenticate,
+                    agedOut: AccountStateBadge.showsAgedOut(presentation, now: currentDate),
+                    problemAction: problemAction(now: currentDate)
                 )
             }
 
@@ -103,7 +122,10 @@ struct AccountCardView: View {
             )
 
             if presentation.account.provider == .cursor {
-                CursorSpendRowView(spend: presentation.snapshot?.cursorSpend, now: currentDate)
+                let spend: CursorSpend? = presentation.snapshot?.cursorSpend
+                let trend = CursorSpendTrend.card(closed: cursorHistory, current: spend)
+                CursorSpendRowView(spend: spend, now: currentDate, trend: trend)
+                CursorSpendTrendLine(trend: trend)
             } else {
                 let kinds = AccountLimitLayout.kinds(
                     for: presentation.account.provider,

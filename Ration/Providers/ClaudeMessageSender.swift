@@ -67,6 +67,15 @@ struct ClaudeMessageSender {
         return Prepared(organizationID: organizationID, model: model)
     }
 
+    /// What the completion POST that landed reported: the conversation used
+    /// (to persist), its 2xx status, and — when the head of its SSE stream
+    /// carried an error event — that event's sanitized `type`.
+    struct Receipt: Equatable {
+        let conversationID: UUID
+        let status: Int
+        let streamErrorType: WarmUpOutcome.StreamErrorKind?
+    }
+
     /// The single irreversible send. Reuses `conversationID` when supplied;
     /// on a 404 (the stored keep-alive conversation was deleted) retries once
     /// with a fresh id, since the completion POST creates the conversation.
@@ -79,6 +88,27 @@ struct ClaudeMessageSender {
         mayPost: PostGate? = nil,
         in webView: WKWebView
     ) async throws -> UUID {
+        let receipt = try await sendReporting(
+            prepared: prepared,
+            conversationID: conversationID,
+            prompt: prompt,
+            mayPost: mayPost,
+            in: webView
+        )
+        return receipt.conversationID
+    }
+
+    /// `send`, also reporting the landed POST's status and any in-stream
+    /// error. A 2xx whose stream carried an error still RETURNS (it is not
+    /// thrown): the message was dispatched, and what that should mean for the
+    /// reservation is an open decision — the caller only records it.
+    func sendReporting(
+        prepared: Prepared,
+        conversationID: UUID?,
+        prompt: String = "Keeping this window active.",
+        mayPost: PostGate? = nil,
+        in webView: WKWebView
+    ) async throws -> Receipt {
         // The completion endpoint 404s on an unknown conversation — it does not
         // auto-create — so ensure the keep-alive conversation exists first.
         let conversation: UUID
@@ -91,14 +121,14 @@ struct ClaudeMessageSender {
                 in: webView
             )
         }
-        let status = try await postCompletion(
+        let first = try await postCompletion(
             prepared: prepared,
             conversation: conversation,
             prompt: prompt,
             mayPost: mayPost,
             in: webView
         )
-        if status == 404 {
+        if first.status == 404 {
             // Stored conversation is gone (deleted or stale) — create a fresh one
             // and retry the completion once.
             let fresh = try await createConversation(
@@ -106,22 +136,30 @@ struct ClaudeMessageSender {
                 mayPost: mayPost,
                 in: webView
             )
-            let retryStatus = try await postCompletion(
+            let retry = try await postCompletion(
                 prepared: prepared,
                 conversation: fresh,
                 prompt: prompt,
                 mayPost: mayPost,
                 in: webView
             )
-            guard (200..<300).contains(retryStatus) else {
-                throw SendError.rejected(status: retryStatus)
+            guard (200..<300).contains(retry.status) else {
+                throw SendError.rejected(status: retry.status)
             }
-            return fresh
+            return Receipt(
+                conversationID: fresh,
+                status: retry.status,
+                streamErrorType: retry.streamErrorType
+            )
         }
-        guard (200..<300).contains(status) else {
-            throw SendError.rejected(status: status)
+        guard (200..<300).contains(first.status) else {
+            throw SendError.rejected(status: first.status)
         }
-        return conversation
+        return Receipt(
+            conversationID: conversation,
+            status: first.status,
+            streamErrorType: first.streamErrorType
+        )
     }
 
     /// Creates the reusable keep-alive conversation with a client-generated uuid.
@@ -172,7 +210,7 @@ struct ClaudeMessageSender {
         prompt: String,
         mayPost: PostGate?,
         in webView: WKWebView
-    ) async throws -> Int {
+    ) async throws -> WebResponseEnvelope {
         // Check right before the irreversible POST so a cancelled auto-start
         // (e.g. account removal mid-refresh) cannot send.
         try Task.checkCancellation()
@@ -190,12 +228,12 @@ struct ClaudeMessageSender {
         let path = "/api/organizations/\(prepared.organizationID)"
             + "/chat_conversations/\(conversation.uuidString.lowercased())/completion"
         do {
-            return try await client.postJSON(
+            return try await client.postCompletion(
                 path: path,
                 bodyJSON: try Self.jsonString(from: body),
                 mayDispatch: mayPost,
                 in: webView
-            ).status
+            )
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as SendError {

@@ -4,6 +4,16 @@ import XCTest
 @testable import Ration
 
 final class ProviderAdapterTests: XCTestCase {
+    /// Every shipped provider has a live adapter, in the display order the
+    /// app relies on.
+    @MainActor
+    func testLiveProviderAdaptersAreClaudeChatGPTAndCursorInOrder() {
+        XCTAssertEqual(
+            LiveProviderAdapters.all.map(\.provider),
+            [.claude, .chatGPT, .cursor]
+        )
+    }
+
     func testSuccessfulEnvelopeReturnsBody() throws {
         let envelope = WebResponseEnvelope(
             status: 200,

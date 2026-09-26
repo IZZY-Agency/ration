@@ -178,11 +178,11 @@ struct ProviderContractCapture: Codable, Equatable, Hashable, Sendable {
     }
 }
 
-private enum ProviderContractSanitizer {
-    private static let allowedMethods = Set([
-        "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
-    ])
-    private static let allowedPathSegments = Set([
+/// The probe's allowlists: the ONE source of truth. The Swift sanitizer
+/// reads them directly and `ProviderContractProbeScript.source` injects them
+/// into the page script as JSON, so the two sides cannot drift.
+enum ProviderContractAllowlist {
+    static let pathSegments: Set<String> = [
         "account", "accounts", "api", "backend-api", "billing", "chat",
         "chat_conversations", "codex", "completion", "conversations", "limits",
         "messages", "organizations", "plans", "rate-limits", "retry_completion",
@@ -191,13 +191,10 @@ private enum ProviderContractSanitizer {
         // `aiserver.v1.dashboardservice`/`getcurrentperiodusage` segments were
         // dropped with the cancelled cross-origin api2.cursor.sh primitive —
         // everything this app reads is same-origin cursor.com.
-        // NOTE: this set is duplicated in `ProviderContractProbeScript.source`
-        // below; keep the two in sync (deriving one from the other is a
-        // worthwhile follow-up, out of scope for this branch).
         "auth", "stripe", "dashboard", "get-monthly-invoice",
         "get-filtered-usage-events", "get-hard-limit"
-    ])
-    private static let allowedFieldNames = Set([
+    ]
+    static let fieldNames: Set<String> = [
         "active", "allowed", "attachments", "cap", "capabilities", "content", "conversation_uuid",
         "count", "current", "current_leaf_message_uuid", "daily", "data",
         "days", "end", "ends_at", "error", "files", "five_hour", "hours", "interval",
@@ -225,6 +222,19 @@ private enum ProviderContractSanitizer {
         "total", "type", "uuid",
         "usage", "used", "used_percent", "utilization", "value", "weekly",
         "weekly_limit", "window", "window_duration_mins", "window_minutes", "windows"
+    ]
+
+    /// Cross-origin hosts the probe may capture FROM a provider page — an
+    /// explicit compile-time candidate set (Phase 0 gate 2); everything else
+    /// stays dropped exactly as before. Cursor's dashboard is believed (from
+    /// community tooling — unverified until the probe run) to fetch its usage
+    /// numbers from `api2.cursor.sh` rather than the page origin.
+    static let candidateCrossOriginHosts: Set<String> = ["api2.cursor.sh"]
+}
+
+private enum ProviderContractSanitizer {
+    private static let allowedMethods = Set([
+        "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
     ])
 
     static func provider(for host: String) -> Provider? {
@@ -240,13 +250,6 @@ private enum ProviderContractSanitizer {
         return nil
     }
 
-    /// Cross-origin hosts the probe may capture FROM a provider page — an
-    /// explicit compile-time candidate set (Phase 0 gate 2); everything else
-    /// stays dropped exactly as before. Cursor's dashboard is believed (from
-    /// community tooling — unverified until the probe run) to fetch its usage
-    /// numbers from `api2.cursor.sh` rather than the page origin.
-    static let candidateCrossOriginHosts: Set<String> = ["api2.cursor.sh"]
-
     /// Sanitized target origin for a capture: nil for same-origin requests,
     /// the exact origin for a candidate host, `:redacted` otherwise (the JS
     /// drops non-candidates already; this is defense-in-depth if that guard
@@ -254,7 +257,8 @@ private enum ProviderContractSanitizer {
     static func targetOrigin(_ raw: String?) -> String? {
         guard let raw, !raw.isEmpty else { return nil }
         guard let url = URL(string: raw), let host = url.host()?.lowercased(),
-              candidateCrossOriginHosts.contains(host), url.scheme == "https" else {
+              ProviderContractAllowlist.candidateCrossOriginHosts.contains(host),
+              url.scheme == "https" else {
             return ":redacted"
         }
         return "https://\(host)"
@@ -281,13 +285,13 @@ private enum ProviderContractSanitizer {
         let sanitized = segments.map { segment -> String in
             let decoded = String(segment).removingPercentEncoding ?? String(segment)
             let normalized = decoded.lowercased()
-            return allowedPathSegments.contains(normalized) ? normalized : ":redacted"
+            return ProviderContractAllowlist.pathSegments.contains(normalized) ? normalized : ":redacted"
         }
         return "/" + sanitized.joined(separator: "/")
     }
 
     static func fieldName(_ rawName: String) -> String {
-        allowedFieldNames.contains(rawName) ? rawName : ":redacted"
+        ProviderContractAllowlist.fieldNames.contains(rawName) ? rawName : ":redacted"
     }
 }
 
@@ -324,7 +328,35 @@ actor ProviderContractRecorder {
 enum ProviderContractProbeScript {
     static let messageHandlerName = "providerContractProbe"
 
-    static let source = #"""
+    /// The page script with the allowlists substituted in.
+    static let source: String = template
+        .replacingOccurrences(
+            of: "__RATION_PATH_SEGMENTS__",
+            with: arrayLiteral(ProviderContractAllowlist.pathSegments)
+        )
+        .replacingOccurrences(
+            of: "__RATION_FIELD_NAMES__",
+            with: arrayLiteral(ProviderContractAllowlist.fieldNames)
+        )
+        .replacingOccurrences(
+            of: "__RATION_CANDIDATE_HOSTS__",
+            with: arrayLiteral(ProviderContractAllowlist.candidateCrossOriginHosts)
+        )
+
+    /// A sorted JSON array, which is also a valid JS array literal. An
+    /// encoding failure yields `[]`, which fails CLOSED: every segment and
+    /// field is redacted and no cross-origin capture is allowed.
+    static func arrayLiteral(_ values: Set<String>) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        guard let data = try? encoder.encode(values.sorted()),
+              let text = String(data: data, encoding: .utf8) else {
+            return "[]"
+        }
+        return text
+    }
+
+    private static let template = #"""
     (() => {
       if (window.__rationContractProbeInstalled) return;
       window.__rationContractProbeInstalled = true;
@@ -332,46 +364,9 @@ enum ProviderContractProbeScript {
       const handler = window.webkit?.messageHandlers?.providerContractProbe;
       if (!handler) return;
 
-      const allowedPathSegments = new Set([
-        "account", "accounts", "api", "backend-api", "billing", "chat",
-        "chat_conversations", "codex", "completion", "conversations", "limits",
-        "messages", "organizations", "plans", "rate-limits", "retry_completion",
-        "subscription", "subscriptions", "usage", "v1", "v2", "v3", "wham",
-        // Cursor, live-verified 2026-07-28 (docs/provider-contracts/cursor.md).
-        // Without these the dashboard paths the adapter actually reads would be
-        // redacted here, making a probe run unable to corroborate the contract.
-        "auth", "stripe", "dashboard", "get-monthly-invoice",
-        "get-filtered-usage-events", "get-hard-limit"
-      ]);
-      const allowedFieldNames = new Set([
-        "active", "allowed", "attachments", "cap", "capabilities", "content", "conversation_uuid",
-        "count", "current", "current_leaf_message_uuid", "daily", "data",
-        "days", "end", "ends_at", "error", "files", "five_hour", "hours", "interval",
-        "limit", "limit_reached", "limit_window_seconds", "limits", "max",
-        "message", "minutes", "model", "monthly", "name", "next",
-        "parent_message_uuid", "percent", "percentage",
-        // Cursor, LIVE-VERIFIED 2026-07-28 against a real authenticated account
-        // (docs/provider-contracts/cursor.md). The earlier `totalPercentUsed`/
-        // `apiPercentUsed` guesses were DISPROVEN — cursor.com exposes no
-        // percentage at all — so they are dropped rather than left implying they
-        // might still show up:
-        "membershipType", "individualMembershipType", "isYearlyPlan",
-        "subscriptionStatus", "startOfMonth", "pricingDescription",
-        "periodStartMs", "periodEndMs",
-        "totalUsageEventsCount", "usageEventsDisplay",
-        "isChargeable", "chargedCents", "isTokenBasedCall",
-        "requestsCosts", "usageBasedCosts", "tokenUsage", "noUsageBasedAllowed",
-        "personalized_styles", "plan", "plan_type", "primary", "primary_window",
-        "prompt", "rate_limit",
-        "rate_limits", "remaining", "rendering_mode", "reset", "reset_after_seconds",
-        "reset_at", "reset_time",
-        "resets_at", "rolling", "secondary", "seconds", "seven_day", "start",
-        "secondary_window", "starts_at", "status", "subscription", "sync_sources",
-        "text", "timestamp", "timezone", "tools",
-        "total", "type", "uuid",
-        "usage", "used", "used_percent", "utilization", "value", "weekly",
-        "weekly_limit", "window", "window_duration_mins", "window_minutes", "windows"
-      ]);
+      // Injected from `ProviderContractAllowlist`; never edit them here.
+      const allowedPathSegments = new Set(__RATION_PATH_SEGMENTS__);
+      const allowedFieldNames = new Set(__RATION_FIELD_NAMES__);
 
       const sanitizePath = pathname => "/" + pathname
         .split("/")
@@ -419,7 +414,7 @@ enum ProviderContractProbeScript {
       // (Phase 0 gate 2) — everything else stays dropped. Only presence
       // BOOLEANS about authentication ever leave the page; no header value
       // has a field to travel through.
-      const candidateCrossOriginHosts = new Set(["api2.cursor.sh"]);
+      const candidateCrossOriginHosts = new Set(__RATION_CANDIDATE_HOSTS__);
 
       const post = (urlValue, method, status, payload, requestBody, hasAuthorizationHeader, usedCredentialsInclude) => {
         try {

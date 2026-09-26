@@ -32,6 +32,9 @@ final class AttentionDropModelObject: ObservableObject {
     /// `AppModel.switchAdvice`: a limit row of an advice's `from` account
     /// names the account to switch to.
     @Published var switchAdvice: [SwitchAdvice] = []
+    /// The rows are the Settings › Diagnostics sample (`AttentionDropSample`),
+    /// not real crossings. The header then says so in place of its title.
+    @Published var isTestDrop = false
 
     /// Set once by the controller; not published — changing a callback must
     /// not invalidate the view.
@@ -137,25 +140,24 @@ struct AttentionDropView: View {
             // 320 pt panel and the title wrapped to "NEARING / LIMITS",
             // growing the header by a line. The counts alone already say what
             // the panel is, so the title yields when it does not fit.
+            //
+            // A test drop is the exception: its title is the one thing that
+            // must never yield, so its fallback drops the counts instead.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 7) {
-                    Text(Self.headerTitle(hasLimitRows: !limitRows.isEmpty))
-                        .font(Theme.mono(11))
-                        .tracking(1.2)
-                        .foregroundStyle(Theme.creamFaint)
-                        .lineLimit(1)
-                        .fixedSize()
+                    headerTitleText
                     counts
                 }
-                counts
+                if model.isTestDrop {
+                    headerTitleText
+                } else {
+                    counts
+                }
             }
             // One spoken element whichever branch is drawn: the fallback
             // drops the title from the tree, but VoiceOver must still hear it.
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Self.headerAccessibilityLabel(
-                critical: criticalCount, warning: warningCount,
-                resets: resetRowCount, hasLimitRows: !limitRows.isEmpty
-            ))
+            .accessibilityLabel(headerSpokenLabel)
 
             Spacer(minLength: 8)
 
@@ -176,6 +178,37 @@ struct AttentionDropView: View {
         .padding(.trailing, 5)
         .padding(.vertical, 6)
         .accessibilityElement(children: .contain)
+    }
+
+    private var headerTitleText: some View {
+        let title = model.isTestDrop
+            ? Self.testDropTitle()
+            : Self.headerTitle(hasLimitRows: !limitRows.isEmpty)
+        return Text(title)
+            .font(Theme.mono(11))
+            .tracking(1.2)
+            .foregroundStyle(model.isTestDrop ? Theme.warn : Theme.creamFaint)
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    private var headerSpokenLabel: String {
+        let label = Self.headerAccessibilityLabel(
+            critical: criticalCount, warning: warningCount,
+            resets: resetRowCount, hasLimitRows: !limitRows.isEmpty
+        )
+        guard model.isTestDrop else { return label }
+        return Self.testDropSpokenPrefix() + ", " + label
+    }
+
+    /// The header title of a test drop: "TEST DROP · SAMPLE".
+    static func testDropTitle(locale: Locale = .current) -> String {
+        LocalizedStringResource.dropTestHeader.string(in: locale)
+    }
+
+    /// What VoiceOver hears before a test drop's counts.
+    static func testDropSpokenPrefix(locale: Locale = .current) -> String {
+        LocalizedStringResource.dropTestSpoken.string(in: locale)
     }
 
     /// The drawn header title — uppercase in the catalog.

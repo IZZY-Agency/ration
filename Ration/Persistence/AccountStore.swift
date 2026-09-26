@@ -222,6 +222,25 @@ final class AccountStore: ObservableObject {
         }
     }
 
+    /// Undoes `reserveAutoStart` for an attempt that sent nothing, so the next
+    /// eligible poll may try again. Only when the stored timestamp is still
+    /// this reservation's: a newer write is left alone.
+    func releaseAutoStartReservation(
+        id: UUID,
+        reservedAt: Date,
+        restoring previous: Date?
+    ) async throws {
+        try await mutations.run { [self] in
+            guard let index = accounts.firstIndex(where: { $0.id == id }) else {
+                throw AccountStoreError.accountNotFound
+            }
+            guard accounts[index].lastAutoStartedAt == reservedAt else { return }
+            var candidate = accounts
+            candidate[index].lastAutoStartedAt = previous
+            try await persist(candidate)
+        }
+    }
+
     /// Records a completed auto-start: the reusable conversation and when it
     /// fired, so the policy does not re-fire within the same window.
     func recordAutoStart(
@@ -236,6 +255,24 @@ final class AccountStore: ObservableObject {
             var candidate = accounts
             candidate[index].keepAliveConversationID = conversationID
             candidate[index].lastAutoStartedAt = date
+            try await persist(candidate)
+        }
+    }
+
+    /// Appends one warm-up outcome to the account's ring. Skips the save
+    /// when `WarmUpOutcome.recording` folds it into the newest entry, since an
+    /// unreserved outcome recurs on every poll while it lasts.
+    func recordWarmUpOutcome(id: UUID, outcome: WarmUpOutcome) async throws {
+        try await mutations.run { [self] in
+            guard let index = accounts.firstIndex(where: { $0.id == id }) else {
+                throw AccountStoreError.accountNotFound
+            }
+            let ring = accounts[index].warmUpOutcomes
+            guard let updated = WarmUpOutcome.recording(outcome, into: ring) else {
+                return
+            }
+            var candidate = accounts
+            candidate[index].warmUpOutcomes = updated
             try await persist(candidate)
         }
     }

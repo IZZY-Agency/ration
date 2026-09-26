@@ -100,6 +100,57 @@ struct TerminationTestModel {
         )
     }
 
+    /// The settings as a relaunched app reads them from disk.
+    func settingsOnDisk() async throws -> AppSettings {
+        let settings = AppSettings(fileURL: directory.appending(path: "app-settings.json"))
+        try await settings.load()
+        return settings
+    }
+
+    // The editors below come from the SAME factories the panes use
+    // (`SettingsEditors`), bound to the model by the SAME closures
+    // `SettingsView` passes, so a broken key, registry or binding fails here.
+
+    /// A percent row's editor as `AlertsDetailView` builds it.
+    func thresholdEditor(
+        provider: Provider,
+        window: UsageWindowKind
+    ) -> ThresholdDraftEditor<ThresholdPair, Int> {
+        SettingsEditors.thresholdRow(
+            AlertsGridRow(provider: provider, window: window),
+            stored: model.settings.data.thresholds(provider: provider, window: window),
+            in: model.pendingEdits,
+            save: SettingsEditors.thresholdsSave(model),
+            onError: { _ in }
+        )
+    }
+
+    /// Cursor's spend editor as `AlertsDetailView` builds it.
+    func cursorSpendEditor() -> ThresholdDraftEditor<SpendThresholds, Int?> {
+        SettingsEditors.cursorSpend(
+            stored: model.settings.cursorSpend,
+            in: model.pendingEdits,
+            save: SettingsEditors.cursorSpendSave(model),
+            onError: { _ in }
+        )
+    }
+
+    /// A holiday's label editor as `WarmUpDetailView` builds it. `save`
+    /// defaults to the model binding `SettingsView` passes.
+    func holidayLabelEditor(
+        _ holiday: HolidayRange,
+        save: SettingsEditors.HolidayLabelSave? = nil,
+        onError: @escaping (Error) -> Void = { _ in }
+    ) -> HolidayLabelEditor {
+        let bound = SettingsEditors.holidayLabelSave(model)
+        return SettingsEditors.holidayLabel(
+            holiday,
+            in: model.pendingEdits,
+            save: save ?? bound,
+            onError: onError
+        )
+    }
+
     nonisolated func removeFiles() {
         try? FileManager.default.removeItem(at: directory)
     }

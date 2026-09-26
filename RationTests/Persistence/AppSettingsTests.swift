@@ -442,10 +442,10 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(pair.warningPercent, 49)
     }
 
-    /// Pins the fix for the whole-pair race: a UI that commits one field at a
-    /// time (`AlertsDetailView.ThresholdFieldsRow`, on blur) must not have a
-    /// second field's commit carry a stale sibling value back over an edit
-    /// that hasn't round-tripped yet. `setWarningPercent`/`setCriticalPercent`
+    /// Pins the fix for the whole-pair race: a commit of one field must not
+    /// carry a stale sibling value back over an edit that hasn't
+    /// round-tripped yet. (The Alerts pane now commits a row's fields as one
+    /// draft — see `ThresholdDraftEditorTests`; the field setters remain.) `setWarningPercent`/`setCriticalPercent`
     /// each read the FRESHEST stored pair from inside `mutate`'s serialized
     /// queue rather than composing from a value the caller held locally, so
     /// firing both without awaiting the first must still land both edits —
@@ -456,11 +456,9 @@ final class AppSettingsTests: XCTestCase {
         let store = AppSettings(fileURL: directory.appending(path: "settings.json"))
         try await store.load()
 
-        // Fired back-to-back WITHOUT awaiting the first — exactly the shape
-        // of blurring Warn then immediately blurring Crit before the first
-        // save has round-tripped.
-        async let warning: Void = store.setWarningPercent(60, provider: .claude, window: .fiveHour)
-        async let critical: Void = store.setCriticalPercent(95, provider: .claude, window: .fiveHour)
+        // Fired back-to-back WITHOUT awaiting the first.
+        async let warning = store.setWarningPercent(60, provider: .claude, window: .fiveHour)
+        async let critical = store.setCriticalPercent(95, provider: .claude, window: .fiveHour)
         _ = try await (warning, critical)
 
         let pair = store.data.thresholds(provider: .claude, window: .fiveHour)

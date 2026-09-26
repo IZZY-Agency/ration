@@ -35,6 +35,38 @@ final class AttentionCopyLocalizationTests: XCTestCase {
     private let threeHours: TimeInterval = 3 * 3600
     private let tenMinutes: TimeInterval = 10 * 60
 
+    // MARK: Popover account badge — the clickable problem badge
+
+    /// VoiceOver hears the badge as a button that opens the account's
+    /// settings; sighted users get the header card's own hint line.
+    @MainActor
+    func testProblemBadgeCopy() throws {
+        let stale = presentation("Work", .cursor, age: threeHours, state: .stale(lastError: .transport))
+        let changed = presentation("Team", .claude, age: tenMinutes, state: .integrationChanged)
+
+        func spoken(_ p: AccountPresentation, _ locale: Locale) throws -> String {
+            let action = try XCTUnwrap(
+                AccountStateBadge.problemAction(for: p, now: now, locale: locale, perform: { _ in })
+            )
+            return action.spokenLabel
+        }
+
+        XCTAssertEqual(try spoken(stale, L10n.en), "Work: stale. Opens its settings.")
+        XCTAssertEqual(try spoken(changed, L10n.en), "Team: needs update. Opens its settings.")
+        XCTAssertEqual(try spoken(stale, L10n.fr), "Work\(nb): obsolète. Ouvre ses réglages.")
+        XCTAssertEqual(try spoken(changed, L10n.fr), "Team\(nb): mise à jour requise. Ouvre ses réglages.")
+        XCTAssertEqual(try spoken(stale, L10n.uk), "Work: застаріло. Відкриває його параметри.")
+        XCTAssertEqual(try spoken(changed, L10n.uk), "Team: потрібне оновлення. Відкриває його параметри.")
+
+        // The hover hint reuses the header card's line.
+        XCTAssertEqual(LocalizedStringResource.freshnessHelpHintStale.string(in: L10n.en), "Click to see what to do.")
+        XCTAssertEqual(LocalizedStringResource.freshnessHelpHintStale.string(in: L10n.fr), "Cliquez pour voir quoi faire.")
+        XCTAssertEqual(
+            LocalizedStringResource.freshnessHelpHintStale.string(in: L10n.uk),
+            "Натисніть, щоб дізнатися, що робити."
+        )
+    }
+
     // MARK: Banner — sign-in expired
 
     func testSignInExpired() throws {

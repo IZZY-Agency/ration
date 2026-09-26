@@ -71,6 +71,208 @@ final class TerminationFlushTests: XCTestCase {
         XCTAssertEqual(cells, [0, 22, 23])
     }
 
+    func testAFocusedHolidayLabelIsSavedWhenQuitting() async throws {
+        let fixture = try await TerminationTestModel.make()
+        self.fixture = fixture
+        let holiday = HolidayRange(
+            start: LocalDate(year: 2026, month: 12, day: 24),
+            end: LocalDate(year: 2026, month: 12, day: 26),
+            label: ""
+        )
+        try await fixture.model.addHoliday(holiday)
+        let editor = fixture.holidayLabelEditor(holiday)
+        let quit = makeQuit(model: fixture.model)
+
+        editor.focusChanged(true)
+        editor.text = "Winter"  // still focused: no blur has committed it
+        XCTAssertTrue(fixture.model.requiresTerminationPreparation)
+        let reply = quit.delegate.applicationShouldTerminate(NSApplication.shared)
+
+        XCTAssertEqual(reply, .terminateLater)
+        await quit.delegate.terminationPreparation?.value
+        XCTAssertEqual(quit.replies.values, [true])
+        let settings = try await fixture.settingsOnDisk()
+        XCTAssertEqual(settings.holidays.map(\.label), ["Winter"])
+    }
+
+    /// The pane closes, its label save then fails. The edit must not
+    /// go with the pane: reopening shows it and the error, and a quit saves it.
+    func testAHolidayLabelWhoseSaveFailedAfterThePaneClosedSurvivesUntilQuit() async throws {
+        let fixture = try await TerminationTestModel.make()
+        self.fixture = fixture
+        let holiday = HolidayRange(
+            start: LocalDate(year: 2026, month: 12, day: 24),
+            end: LocalDate(year: 2026, month: 12, day: 26),
+            label: "Old"
+        )
+        try await fixture.model.addHoliday(holiday)
+        let disk = FlakyLabelSave(fixture.model)
+        let errors = ErrorLog()
+        var pane: HolidayLabelEditor? = fixture.holidayLabelEditor(
+            holiday,
+            save: disk.save,
+            onError: { errors.values.append($0) }
+        )
+        weak var closed = pane
+
+        pane?.text = "Winter"
+        pane?.commit()  // the pane's `.onDisappear`
+        pane = nil
+        await waitUntil { errors.values.count == 1 }
+        await waitUntil { closed?.isSaving == false }
+        XCTAssertNotNil(closed, "an unsaved edit outlives its pane")
+        XCTAssertTrue(fixture.model.requiresTerminationPreparation)
+
+        let reopenedErrors = ErrorLog()
+        let reopened = fixture.holidayLabelEditor(
+            holiday,
+            save: disk.save,
+            onError: { reopenedErrors.values.append($0) }
+        )
+        XCTAssertTrue(reopened === closed, "the reopened pane continues with the live editor")
+        XCTAssertEqual(reopened.text, "Winter")
+        reopened.paneAppeared()
+        XCTAssertEqual(reopenedErrors.values.count, 1, "the failed save is reported again")
+
+        let quit = makeQuit(model: fixture.model)
+        let reply = quit.delegate.applicationShouldTerminate(NSApplication.shared)
+        await quit.delegate.terminationPreparation?.value
+        XCTAssertEqual(reply, .terminateLater)
+        XCTAssertEqual(quit.replies.values, [true])
+        let settings = try await fixture.settingsOnDisk()
+        XCTAssertEqual(settings.holidays.map(\.label), ["Winter"])
+    }
+
+    /// A failed label edit is kept for quit — but not once its
+    /// holiday has been removed.
+    func testRemovingAHolidayDropsItsFailedLabelEditSoQuitDoesNotRetryIt() async throws {
+        let fixture = try await TerminationTestModel.make()
+        self.fixture = fixture
+        let holiday = HolidayRange(
+            start: LocalDate(year: 2026, month: 12, day: 24),
+            end: LocalDate(year: 2026, month: 12, day: 26),
+            label: "Old"
+        )
+        try await fixture.model.addHoliday(holiday)
+        let disk = FlakyLabelSave(fixture.model)
+        let errors = ErrorLog()
+        var pane: HolidayLabelEditor? = fixture.holidayLabelEditor(
+            holiday,
+            save: disk.save,
+            onError: { errors.values.append($0) }
+        )
+        weak var closed = pane
+        pane?.text = "Winter"
+        pane?.commit()
+        pane = nil
+        await waitUntil { errors.values.count == 1 }
+        await waitUntil { closed?.isSaving == false }
+        XCTAssertNotNil(closed)
+
+        try await fixture.model.removeHoliday(id: holiday.id)
+
+        XCTAssertNil(closed, "the removed holiday's edit is released")
+        XCTAssertFalse(fixture.model.requiresTerminationPreparation)
+        let quit = makeQuit(model: fixture.model)
+        let reply = quit.delegate.applicationShouldTerminate(NSApplication.shared)
+        XCTAssertEqual(reply, .terminateNow)
+        XCTAssertEqual(disk.calls, 1, "quit does not retry the stale edit")
+    }
+
+    func testASavedHolidayLabelEditorIsReleasedWithItsPane() async throws {
+        let fixture = try await TerminationTestModel.make()
+        self.fixture = fixture
+        let holiday = HolidayRange(
+            start: LocalDate(year: 2026, month: 12, day: 24),
+            end: LocalDate(year: 2026, month: 12, day: 26),
+            label: "Old"
+        )
+        try await fixture.model.addHoliday(holiday)
+        var pane: HolidayLabelEditor? = fixture.holidayLabelEditor(holiday)
+        weak var closed = pane
+
+        pane?.text = "Winter"
+        await pane?.flushPendingEdit()
+        pane = nil
+
+        XCTAssertNil(closed, "nothing unsaved, nothing kept alive")
+        XCTAssertFalse(fixture.model.requiresTerminationPreparation)
+    }
+
+    func testAFocusedThresholdFieldIsSavedThroughValidationWhenQuitting() async throws {
+        let fixture = try await TerminationTestModel.make()
+        self.fixture = fixture
+        let editor = fixture.thresholdEditor(provider: .claude, window: .fiveHour)
+        let quit = makeQuit(model: fixture.model)
+
+        editor.focusChanged(to: .critical)
+        editor.criticalText = "60"  // canonicalises warning 75 → 59
+        XCTAssertTrue(fixture.model.requiresTerminationPreparation)
+        let reply = quit.delegate.applicationShouldTerminate(NSApplication.shared)
+
+        XCTAssertEqual(reply, .terminateLater)
+        await quit.delegate.terminationPreparation?.value
+        XCTAssertEqual(quit.replies.values, [true])
+        let settings = try await fixture.settingsOnDisk()
+        XCTAssertEqual(
+            settings.data.thresholds(provider: .claude, window: .fiveHour),
+            ThresholdPair(warningPercent: 59, criticalPercent: 60)
+        )
+    }
+
+    func testAnInvalidFocusedThresholdFieldSavesNothingWhenQuitting() async throws {
+        let fixture = try await TerminationTestModel.make()
+        self.fixture = fixture
+        let editor = fixture.thresholdEditor(provider: .claude, window: .fiveHour)
+        let quit = makeQuit(model: fixture.model)
+
+        editor.focusChanged(to: .warning)
+        editor.warningText = "6o"
+        let reply = quit.delegate.applicationShouldTerminate(NSApplication.shared)
+        await quit.delegate.terminationPreparation?.value
+
+        XCTAssertEqual(reply, .terminateLater)
+        XCTAssertEqual(quit.replies.values, [true])
+        let settings = try await fixture.settingsOnDisk()
+        XCTAssertTrue(settings.alertThresholds.isEmpty, "invalid text never reaches the file")
+        XCTAssertEqual(editor.warningText, "75")
+    }
+
+    func testAFocusedCursorSpendFieldIsSavedWhenQuitting() async throws {
+        let fixture = try await TerminationTestModel.make()
+        self.fixture = fixture
+        let editor = fixture.cursorSpendEditor()
+        let quit = makeQuit(model: fixture.model)
+
+        editor.focusChanged(to: .critical)
+        editor.criticalText = "12.50"
+        let reply = quit.delegate.applicationShouldTerminate(NSApplication.shared)
+        await quit.delegate.terminationPreparation?.value
+
+        XCTAssertEqual(reply, .terminateLater)
+        XCTAssertEqual(quit.replies.values, [true])
+        let settings = try await fixture.settingsOnDisk()
+        XCTAssertEqual(settings.cursorSpend, SpendThresholds(warningCents: nil, criticalCents: 1_250))
+    }
+
+    func testAnInvalidFocusedCursorSpendFieldSavesNothingWhenQuitting() async throws {
+        let fixture = try await TerminationTestModel.make()
+        self.fixture = fixture
+        let editor = fixture.cursorSpendEditor()
+        let quit = makeQuit(model: fixture.model)
+
+        editor.focusChanged(to: .warning)
+        editor.warningText = "12..5"
+        let reply = quit.delegate.applicationShouldTerminate(NSApplication.shared)
+        await quit.delegate.terminationPreparation?.value
+
+        XCTAssertEqual(reply, .terminateLater)
+        XCTAssertEqual(quit.replies.values, [true])
+        let settings = try await fixture.settingsOnDisk()
+        XCTAssertEqual(settings.cursorSpend, .off)
+        XCTAssertEqual(editor.warningText, "")
+    }
+
     func testNoPendingEditQuitsAtOnce() async throws {
         let fixture = try await TerminationTestModel.make()
         self.fixture = fixture
@@ -113,6 +315,50 @@ final class TerminationFlushTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 1.5)
         XCTAssertTrue(gate.isHanging, "the save really was stuck")
         gate.release()
+    }
+}
+
+private extension TerminationFlushTests {
+    func waitUntil(
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(2)
+        while !condition() && Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(condition(), "timed out waiting for condition", file: file, line: line)
+    }
+}
+
+@MainActor
+private final class ErrorLog {
+    var values: [Error] = []
+}
+
+private struct LabelDiskError: Error {}
+
+/// The model's holiday-label save, failing its first call.
+@MainActor
+private final class FlakyLabelSave {
+    private let bound: SettingsEditors.HolidayLabelSave
+    private var failed = false
+    private(set) var calls = 0
+
+    init(_ model: AppModel) {
+        bound = SettingsEditors.holidayLabelSave(model)
+    }
+
+    var save: SettingsEditors.HolidayLabelSave {
+        { [self] id, label in
+            calls += 1
+            if !failed {
+                failed = true
+                throw LabelDiskError()
+            }
+            try await bound(id, label)
+        }
     }
 }
 

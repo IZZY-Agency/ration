@@ -106,3 +106,16 @@ exists to substitute for it (no percentage is exposed, and the legacy
 `/api/usage` counters are `gpt-4`-only and read zero). The caption says "no
 usage-based charges" rather than "this cycle" so a true zero is distinguishable
 from a failed read.
+
+## Cursor spend history can miss an event if Cursor's list shifts mid-read (accepted 2026-09-27)
+
+Past Cursor cycles are rebuilt from `get-filtered-usage-events`, which pages by
+offset over a list that can change while Ration reads it. Ration validates every
+field, removes duplicates, fails closed on any count or order change, and reads
+page 1 again after a multi-page walk. A change that happens entirely beyond page
+1 while the total count stays the same can still skip one event without being
+detected. Cursor offers no stable (keyset) pagination to close this. Closed
+cycles are accepted only when the invoice ends at the next UTC month start;
+anything else is not saved and retried on a later day. An account with more than
+10,000 events before its oldest missing month keeps those months unfilled.
+

@@ -14,8 +14,9 @@ import SwiftUI
 ///   on disappear, or on quit) rather than silently dropping edits.
 /// * Holidays use atomic, FIELD-SPECIFIC id-addressed deltas on `AppSettings`
 ///   (label / start / end), which compose inside the serialized mutation.
-///   Labels commit on blur so per-keystroke writes never race; clamping lives
-///   in `AppSettings`, on current data.
+///   Labels commit on blur (through `HolidayLabelEditor`, which a quit also
+///   flushes) so per-keystroke writes never race; clamping lives in
+///   `AppSettings`, on current data.
 struct WarmUpDetailView: View {
     @ObservedObject var settings: AppSettings
     let autoStartEnabledCount: Int
@@ -27,6 +28,9 @@ struct WarmUpDetailView: View {
     let onRemoveHoliday: (UUID) async throws -> Void
     let onError: (Error) -> Void
     var calendar: Calendar = .autoupdatingCurrent
+    /// Where each holiday's label editor registers, so a quit saves a label
+    /// that still has focus.
+    private let pendingEdits: PendingEditRegistry?
 
     /// One per app while it has work (see `QuietHoursAutosave.editor`), so
     /// the save closure it keeps is the first one passed in. `SettingsView`'s
@@ -56,6 +60,7 @@ struct WarmUpDetailView: View {
         self.onRemoveHoliday = onRemoveHoliday
         self.onError = onError
         self.calendar = calendar
+        self.pendingEdits = pendingEdits
         _quietHours = StateObject(
             wrappedValue: QuietHoursAutosave.editor(
                 stored: settings.quietHours,
@@ -113,7 +118,9 @@ struct WarmUpDetailView: View {
                     HolidayRow(
                         holiday: holiday,
                         calendar: calendar,
-                        onSetLabel: { label in perform { try await onSetHolidayLabel(holiday.id, label) } },
+                        pendingEdits: pendingEdits,
+                        saveLabel: onSetHolidayLabel,
+                        onError: onError,
                         onSetStart: { start in perform { try await onSetHolidayStart(holiday.id, start) } },
                         onSetEnd: { end in perform { try await onSetHolidayEnd(holiday.id, end) } },
                         onRemove: { perform { try await onRemoveHoliday(holiday.id) } }
@@ -158,46 +165,57 @@ struct WarmUpDetailView: View {
     }
 }
 
-/// One holiday range. Owns its label locally and commits on blur/submit so a
-/// per-keystroke write can never race the settings store. Each editor calls a
-/// FIELD-specific delta, so a label commit and a date change compose in the
-/// store instead of overwriting each other's field.
+/// One holiday range. Its label lives in a `HolidayLabelEditor`, which
+/// commits on blur/submit so a per-keystroke write can never race the settings
+/// store, and which a quit flushes. Each editor calls a FIELD-specific delta,
+/// so a label commit and a date change compose in the store instead of
+/// overwriting each other's field.
 private struct HolidayRow: View {
     let holiday: HolidayRange
     let calendar: Calendar
-    let onSetLabel: (String) -> Void
     let onSetStart: (LocalDate) -> Void
     let onSetEnd: (LocalDate) -> Void
     let onRemove: () -> Void
 
-    @State private var label: String
+    @StateObject private var labelEditor: HolidayLabelEditor
     @FocusState private var labelFocused: Bool
 
     init(
         holiday: HolidayRange,
         calendar: Calendar,
-        onSetLabel: @escaping (String) -> Void,
+        pendingEdits: PendingEditRegistry?,
+        saveLabel: @escaping (UUID, String) async throws -> Void,
+        onError: @escaping (Error) -> Void,
         onSetStart: @escaping (LocalDate) -> Void,
         onSetEnd: @escaping (LocalDate) -> Void,
         onRemove: @escaping () -> Void
     ) {
         self.holiday = holiday
         self.calendar = calendar
-        self.onSetLabel = onSetLabel
         self.onSetStart = onSetStart
         self.onSetEnd = onSetEnd
         self.onRemove = onRemove
-        _label = State(initialValue: holiday.label)
+        _labelEditor = StateObject(
+            wrappedValue: SettingsEditors.holidayLabel(
+                holiday,
+                in: pendingEdits,
+                save: saveLabel,
+                onError: onError
+            )
+        )
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            TextField("Label", text: $label)
+            TextField("Label", text: $labelEditor.text)
                 .frame(maxWidth: 140)
                 .focused($labelFocused)
-                .onSubmit { labelFocused = false }
+                .onSubmit {
+                    labelFocused = false
+                    labelEditor.commit()
+                }
                 .onChange(of: labelFocused) { _, focused in
-                    if !focused { commitLabel() }
+                    labelEditor.focusChanged(focused)
                 }
             DatePicker("", selection: dateBinding(isStart: true), displayedComponents: .date)
                 .labelsHidden()
@@ -212,11 +230,20 @@ private struct HolidayRow: View {
             .foregroundStyle(Theme.crit)
             .accessibilityLabel(removeLabel)
         }
-        .onChange(of: holiday.label) { _, newValue in
-            // Re-sync the field only when the user isn't mid-edit, so a store
-            // republish (e.g. from another edit) doesn't yank the caret.
-            if !labelFocused, newValue != label { label = newValue }
+        // A reopened pane may get an editor that outlived the last one, and
+        // that may still hold an edit whose save failed: show the error again.
+        .task {
+            labelEditor.storeDidChange(holiday.label)
+            labelEditor.paneAppeared()
         }
+        .onChange(of: holiday.label) { _, newValue in
+            // Adopted only while the user has nothing uncommitted, so a store
+            // republish (e.g. from another edit) doesn't yank the caret.
+            labelEditor.storeDidChange(newValue)
+        }
+        // Starts the save; a quit that outruns it is covered by the
+        // `PendingEditRegistry` the editor registered with.
+        .onDisappear { labelEditor.commit() }
     }
 
     /// "Remove Winter break", or "Remove range" for an unnamed one. The
@@ -226,11 +253,6 @@ private struct HolidayRow: View {
             return Text("Remove range")
         }
         return Text("Remove \(holiday.label)")
-    }
-
-    private func commitLabel() {
-        guard label != holiday.label else { return }
-        onSetLabel(label)
     }
 
     /// Bridges `LocalDate` <-> `Date` for `DatePicker`. Clamping lives in the

@@ -96,6 +96,17 @@ final class MenuBarController: NSObject {
     /// refresh tick of the drop's rows.
     let attentionPresence = AttentionDropPresence()
     private var attentionObservers: [any NSObjectProtocol] = []
+    /// The Settings › Diagnostics sample while a test drop is up; nil
+    /// otherwise. While set it REPLACES the model's rows on every refresh, so
+    /// the sample survives the 60 s tick, and the ✕ ends it without touching
+    /// alert state (see `dismissAttentionDrop`).
+    private var attentionTestRows: [AttentionRow]?
+    /// Identifies a pending delayed test drop; cleared to cancel it.
+    private var attentionTestDropToken: UUID?
+    /// The placement last written to the `drop` log for the panel on screen,
+    /// so a refresh that lands the panel exactly where it already was stays
+    /// silent. nil while no panel is shown.
+    private var attentionLoggedPlacement: AttentionDropPlacement?
 
     private var statusItemFrameObservation: NSKeyValueObservation?
     /// Redraws the rings when the menu bar's OWN appearance changes (macOS
@@ -368,7 +379,7 @@ final class MenuBarController: NSObject {
     /// It only mutates the observable model — the hosting view and its SwiftUI
     /// tree are created once and never replaced.
     func refreshAttentionDrop() {
-        let rows = model.attentionRows(now: now())
+        let rows = attentionTestRows ?? model.attentionRows(now: now())
         guard !rows.isEmpty else {
             closeAttentionPanel()
             return
@@ -385,6 +396,10 @@ final class MenuBarController: NSObject {
             attentionModel.switchAdvice = model.switchAdvice
         }
         attentionModel.now = now()
+        let isTestDrop = attentionTestRows != nil
+        if attentionModel.isTestDrop != isTestDrop {
+            attentionModel.isTestDrop = isTestDrop
+        }
         attentionModel.showsTicker = anchoredToStatusItem
         attentionModel.availableRowsHeight = AttentionDropGeometry.availableRowsHeight(
             visibleFrame: currentVisibleFrame()
@@ -395,10 +410,7 @@ final class MenuBarController: NSObject {
                 self?.dismissAttentionDrop()
             }
             attentionModel.onSelect = { [weak self] row in
-                guard let self else { return }
-                self.model.dismissAttentionRows([row])
-                self.refreshAttentionDrop()
-                self.showPopoverFromDrop()
+                self?.selectAttentionRow(row)
             }
             let hosting = NSHostingView(rootView: AttentionDropView(model: attentionModel))
             let panel = AttentionDropPanel()
@@ -440,15 +452,20 @@ final class MenuBarController: NSObject {
             }
         }
 
+        let isNewPresentation = attentionLoggedPlacement == nil
         positionAttentionPanel()
         attentionPanel?.orderFrontRegardless()
         attentionPresence.set(true)
+        if isNewPresentation {
+            logAttentionPlacement(event: .present)
+        }
 
         // The panel never becomes key, so VoiceOver would never find it on
         // its own — announce it, once per appearance or new row.
         let announcement = AttentionDropAnnouncement.evaluate(
             rows: rows,
-            previouslySeen: attentionAnnouncedIDs
+            previouslySeen: attentionAnnouncedIDs,
+            isTestDrop: isTestDrop
         )
         attentionAnnouncedIDs = announcement.seen
         if let text = announcement.announcement {
@@ -456,10 +473,30 @@ final class MenuBarController: NSObject {
         }
     }
 
+    /// A click on a drop row: dismiss that row, then open the popover.
+    func selectAttentionRow(_ row: AttentionRow) {
+        // A sample row belongs to no account: end the test drop and open the
+        // popover, as a real row would, but record nothing.
+        if attentionTestRows != nil {
+            endTestAttentionDrop()
+            showPopoverFromDrop()
+            return
+        }
+        model.dismissAttentionRows([row])
+        refreshAttentionDrop()
+        showPopoverFromDrop()
+    }
+
     /// The panel's ✕, and the popover's keyboard route to it: snoozes the
     /// drop (acknowledging its reset rows) and closes it.
     func dismissAttentionDrop() {
         guard !attentionModel.rows.isEmpty else { return }
+        // A test drop's ✕ only ends the test: snoozing here would silence
+        // real crossings over rows that were never real.
+        if attentionTestRows != nil {
+            endTestAttentionDrop()
+            return
+        }
         // Dismiss exactly what is on screen — re-deriving here could pick up
         // a row that appeared after the user decided to clear.
         model.snoozeAttentionDrop(attentionModel.rows)
@@ -539,15 +576,149 @@ final class MenuBarController: NSObject {
             screen: screenFrame,
             visibleFrame: visibleFrame
         )
-        panel.setFrame(
-            AttentionDropGeometry.frame(
-                anchor: anchor,
-                screen: screenFrame,
-                visibleFrame: visibleFrame,
-                panelSize: size
-            ),
-            display: true
+        let panelFrame = AttentionDropGeometry.frame(
+            anchor: anchor,
+            screen: screenFrame,
+            visibleFrame: visibleFrame,
+            panelSize: size
         )
+        panel.setFrame(panelFrame, display: true)
+
+        // Only a panel already on screen can REposition; the first placement
+        // is logged as the presentation, once the panel is ordered front.
+        guard panel.isVisible, attentionLoggedPlacement != nil else { return }
+        logAttentionPlacement(event: .reposition)
+    }
+
+    /// Everything the placement log records, read fresh from AppKit.
+    ///
+    /// Resolves the screen exactly as `positionAttentionPanel` does, so the
+    /// log describes the decision that was taken rather than a second one.
+    private func currentAttentionPlacement() -> AttentionDropPlacement? {
+        guard let panel = attentionPanel else { return nil }
+        let buttonFrame = statusItemFrameInScreen()
+        let screenFrames = NSScreen.screens.map(\.frame)
+        let mainFrame = NSScreen.main?.frame ?? screenFrames.first ?? .zero
+        let screenFrame = AttentionDropGeometry.screen(
+            forButtonFrame: buttonFrame,
+            screens: screenFrames,
+            main: mainFrame
+        )
+        let screen = NSScreen.screens.first { $0.frame == screenFrame }
+        let visibleFrame = screen?.visibleFrame ?? screenFrame
+        let anchor = AttentionDropGeometry.anchor(
+            buttonFrameInScreen: buttonFrame,
+            screen: screenFrame,
+            visibleFrame: visibleFrame
+        )
+        var hasNotch = false
+        if let screen { hasNotch = screen.safeAreaInsets.top > 0 }
+        var isMain = false
+        if let screen, let main = NSScreen.main { isMain = screen == main }
+        return AttentionDropPlacement(
+            buttonFrame: buttonFrame,
+            screenFrame: screenFrame,
+            visibleFrame: visibleFrame,
+            isMainScreen: isMain,
+            hasNotch: hasNotch,
+            screenCount: NSScreen.screens.count,
+            anchor: anchor,
+            panelFrame: panel.frame
+        )
+    }
+
+    /// Writes one `drop` log line — on presentation always, on a reposition
+    /// only when something about the placement actually changed.
+    private func logAttentionPlacement(event: AttentionDropPlacementReport.Event) {
+        guard let placement = currentAttentionPlacement() else { return }
+        if event == .reposition, placement == attentionLoggedPlacement { return }
+        attentionLoggedPlacement = placement
+        let report = AttentionDropPlacementReport(
+            event: event,
+            isTestDrop: attentionTestRows != nil,
+            buttonFrame: placement.buttonFrame,
+            screenFrame: placement.screenFrame,
+            visibleFrame: placement.visibleFrame,
+            isMainScreen: placement.isMainScreen,
+            hasNotch: placement.hasNotch,
+            screenCount: placement.screenCount,
+            anchor: placement.anchor,
+            panelFrame: placement.panelFrame,
+            appIsActive: NSApp.isActive,
+            panelIsKey: attentionPanel?.isKeyWindow ?? false,
+            rationIsFrontmost: rationIsFrontmost()
+        )
+        AttentionDropPlacementLog.record(report)
+    }
+
+    /// Whether the frontmost application is this process.
+    private func rationIsFrontmost() -> Bool {
+        guard let front = NSWorkspace.shared.frontmostApplication else { return false }
+        return front.processIdentifier == ProcessInfo.processInfo.processIdentifier
+    }
+
+    // MARK: Test drop (Settings › General › Diagnostics)
+
+    /// Shows the sample drop through the real presentation path — panel,
+    /// shield, geometry, placement log, VoiceOver announcement — so the live
+    /// placement checks can be walked on demand. Touches no alert state, posts no
+    /// notification and persists nothing: the rows come from
+    /// `AttentionDropSample`, never from the model.
+    ///
+    /// The Settings button passes `testDropDelay`: clicking it activates the
+    /// app, and the checks that matter (another Space, over a full-screen
+    /// app, focus retained in the frontmost app) need something ELSE in front
+    /// when the panel appears. A newer request supersedes a pending one, and
+    /// `stop()` cancels it.
+    func showTestAttentionDrop(after delay: TimeInterval = 0) {
+        let token = UUID()
+        attentionTestDropToken = token
+        guard delay > 0 else {
+            presentTestAttentionDrop()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.attentionTestDropToken == token else { return }
+                self.presentTestAttentionDrop()
+            }
+        }
+    }
+
+    /// How long the Settings button waits before showing the test drop.
+    static let testDropDelay: TimeInterval = 5
+
+    private func presentTestAttentionDrop() {
+        attentionTestDropToken = nil
+        // Close whatever is up first, so this is a fresh presentation: a new
+        // settle shield and a `present` log line, exactly like a real drop.
+        closeAttentionPanel()
+        attentionTestRows = AttentionDropSample.rows(now: now())
+        refreshAttentionDrop()
+    }
+
+    /// Test seam: shows a pending delayed test drop now instead of waiting
+    /// the delay out, so a test can put work INSIDE the delay without
+    /// racing a timer.
+    func firePendingTestAttentionDropForTesting() {
+        guard attentionTestDropToken != nil else { return }
+        presentTestAttentionDrop()
+    }
+
+    /// Whether a delayed test drop is waiting to appear.
+    var hasPendingTestAttentionDrop: Bool { attentionTestDropToken != nil }
+
+    /// Whether the drop on screen is the test drop.
+    var isShowingTestAttentionDrop: Bool { attentionTestRows != nil }
+
+    /// The rows the drop is showing right now.
+    var attentionRowsOnScreen: [AttentionRow] { attentionModel.rows }
+
+    /// Ends a test drop; real crossings, if any, come straight back.
+    private func endTestAttentionDrop() {
+        attentionTestRows = nil
+        closeAttentionPanel()
+        refreshAttentionDrop()
     }
 
     /// Re-checks shortly after, for as long as a mouse button is held.
@@ -566,6 +737,7 @@ final class MenuBarController: NSObject {
 
     private func closeAttentionPanel() {
         attentionSettleToken = nil
+        attentionLoggedPlacement = nil
         attentionAnnouncedIDs = []
         attentionPresence.set(false)
         attentionModel.rows = []
@@ -663,6 +835,8 @@ final class MenuBarController: NSObject {
             NotificationCenter.default.removeObserver(observer)
         }
         attentionObservers.removeAll()
+        attentionTestRows = nil
+        attentionTestDropToken = nil
         closeAttentionPanel()
 
         hotKeyController?.unregister()
@@ -889,7 +1063,8 @@ final class MenuBarController: NSObject {
                 selectionRequest: selectionRequest,
                 onRefreshNow: { [weak self] in
                     self?.refreshAction()
-                }
+                },
+                onShowTestDrop: SettingsTestDrop.action { [weak self] in self }
             )
         )
         settingsWindowController = controller
@@ -1248,5 +1423,21 @@ private final class WindowCloseObserver: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         onClose()
+    }
+}
+
+/// The Settings › General › Diagnostics › Test drop action, built in ONE place
+/// for both ways Settings opens — `MenuBarController.showSettings` and the
+/// SwiftUI `Window("Settings")` scene (⌘,) — so neither can quietly lose the
+/// Diagnostics group.
+@MainActor
+enum SettingsTestDrop {
+    static func action(
+        controller: @escaping @MainActor () -> MenuBarController?
+    ) -> () -> Void {
+        return {
+            let target = controller()
+            target?.showTestAttentionDrop(after: MenuBarController.testDropDelay)
+        }
     }
 }

@@ -1151,6 +1151,29 @@
         }
       }
     },
+    "Diagnostics" : {
+      "comment" : "Settings › General: collapsed group holding diagnostic tools.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostics"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diagnostic"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Діагностика"
+          }
+        }
+      }
+    },
     "Dismiss alerts" : {
       "comment" : "VoiceOver: the Dismiss Alerts button.",
       "localizations" : {
@@ -3014,6 +3037,29 @@
         }
       }
     },
+    "Show" : {
+      "comment" : "Button: shows the test drop under the menu bar.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показати"
+          }
+        }
+      }
+    },
     "Show this in the menu-bar drop" : {
       "comment" : "Settings › Alerts tooltip on the Drop checkbox.",
       "localizations" : {
@@ -3056,6 +3102,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Показувати кільця використання в рядку меню"
+          }
+        }
+      }
+    },
+    "Shows the menu-bar drop with sample rows 5 seconds after you click, so you can switch to another app, Space or full-screen app first. Changes nothing: no alerts, no notifications, nothing saved." : {
+      "comment" : "Settings › General › Diagnostics: explains the Test drop button, which shows the drop after a 5-second delay.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows the menu-bar drop with sample rows 5 seconds after you click, so you can switch to another app, Space or full-screen app first. Changes nothing: no alerts, no notifications, nothing saved."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche le panneau sous la barre des menus avec des lignes d’exemple 5 secondes après le clic, pour vous laisser passer d’abord à une autre app, un autre Space ou une app en plein écran. Ne modifie rien : aucune alerte, aucune notification, rien n’est enregistré."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показує панель під рядком меню зі зразковими рядками через 5 секунд після натискання, щоб ви встигли перейти в іншу програму, інший Space або повноекранну програму. Нічого не змінює: стан сповіщень не зачіпається, нічого не надсилається й не зберігається."
           }
         }
       }
@@ -3286,6 +3355,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Вихідний код"
+          }
+        }
+      }
+    },
+    "Test drop" : {
+      "comment" : "Settings › General › Diagnostics row: shows the menu-bar drop with sample rows.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test drop"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Panneau de test"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тестова панель"
           }
         }
       }
@@ -4159,6 +4251,366 @@
         }
       }
     },
+    "account.warmUps.empty" : {
+      "comment" : "Settings › account › Automation › Recent warm-ups: shown when no warm-up has run yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None yet."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun pour l’instant."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поки що немає."
+          }
+        }
+      }
+    },
+    "account.warmUps.failed" : {
+      "comment" : "Settings › account › Recent warm-ups: the attempt failed for another reason. Lowercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "failed"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "échec"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не вдалося"
+          }
+        }
+      }
+    },
+    "account.warmUps.heldWeeklyLimit" : {
+      "comment" : "Settings › account › Recent warm-ups: not sent because the weekly limit was used up. Lowercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "held: weekly limit used up"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "suspendu : limite hebdomadaire épuisée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "відкладено: тижневий ліміт вичерпано"
+          }
+        }
+      }
+    },
+    "account.warmUps.modelNotFound" : {
+      "comment" : "Settings › account › Recent warm-ups: no Claude model could be found to send with. Lowercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no model found"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aucun modèle trouvé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "модель не знайдено"
+          }
+        }
+      }
+    },
+    "account.warmUps.refused" : {
+      "comment" : "Settings › account › Recent warm-ups: Claude refused the message. %lld = HTTP status code, e.g. 429. Lowercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "refused (%lld)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "refusé (%lld)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "відхилено (%lld)"
+          }
+        }
+      }
+    },
+    "account.warmUps.refusedInReply" : {
+      "comment" : "Settings › account › Recent warm-ups: Claude accepted the request but its reply carried an error. %@ = the error's technical name, e.g. rate_limit_error. Lowercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "refused in the reply (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "refusé dans la réponse (%@)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "відхилено у відповіді (%@)"
+          }
+        }
+      }
+    },
+    "account.warmUps.sent" : {
+      "comment" : "Settings › account › Recent warm-ups: the keep-alive message was sent and accepted. Lowercase; follows “Today 14:02 · ”.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sent"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "envoyé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "надіслано"
+          }
+        }
+      }
+    },
+    "account.warmUps.skippedTurnedOff" : {
+      "comment" : "Settings › account › Recent warm-ups: not sent because Claude warm-up was turned off while it was starting. Lowercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "skipped: warm-up turned off"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ignoré : préchauffage désactivé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "пропущено: розігрів вимкнено"
+          }
+        }
+      }
+    },
+    "account.warmUps.skippedWorkspaceUnknown" : {
+      "comment" : "Settings › account › Recent warm-ups: not sent because the workspace (organization) of the usage reading was unknown. Lowercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "skipped: workspace unknown"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ignoré : espace de travail inconnu"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "пропущено: робочий простір невідомий"
+          }
+        }
+      }
+    },
+    "account.warmUps.timedOut" : {
+      "comment" : "Settings › account › Recent warm-ups: Claude did not answer in time. Lowercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no answer in time"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pas de réponse à temps"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "відповідь не надійшла вчасно"
+          }
+        }
+      }
+    },
+    "account.warmUps.title" : {
+      "comment" : "Settings › account › Automation: heading of the list of the last warm-up attempts (automatic keep-alive messages).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recent warm-ups"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Préchauffages récents"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Останні розігріви"
+          }
+        }
+      }
+    },
+    "account.warmUps.today" : {
+      "comment" : "Settings › account › Recent warm-ups: when an attempt happened today. %@ = time, e.g. 14:02.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aujourd’hui %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сьогодні %@"
+          }
+        }
+      }
+    },
+    "account.warmUps.unreachable" : {
+      "comment" : "Settings › account › Recent warm-ups: the request did not get through (network). Lowercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "couldn’t reach Claude"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude injoignable"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "не вдалося зв’язатися з Claude"
+          }
+        }
+      }
+    },
+    "account.warmUps.workspaceNotFound" : {
+      "comment" : "Settings › account › Recent warm-ups: the Claude workspace (organization) could not be found. Lowercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "workspace not found"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "espace de travail introuvable"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "робочий простір не знайдено"
+          }
+        }
+      }
+    },
+    "account.warmUps.yesterday" : {
+      "comment" : "Settings › account › Recent warm-ups: when an attempt happened yesterday. %@ = time, e.g. 09:00.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yesterday %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hier %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Учора %@"
+          }
+        }
+      }
+    },
     "accountState.current" : {
       "comment" : "Account status (VoiceOver): the data is up to date.",
       "extractionState" : "manual",
@@ -4203,6 +4655,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "потрібне оновлення"
+          }
+        }
+      }
+    },
+    "accountState.opensSettingsSpoken" : {
+      "comment" : "VoiceOver label of a popover account's problem badge, which is a button. %1$@ = account label, %2$@ = the badge's state (“stale”, “retry in 5 minutes”). Clicking it opens Settings on that account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@. Opens its settings."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : %2$@. Ouvre ses réglages."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@. Відкриває його параметри."
           }
         }
       }
@@ -5769,6 +6245,78 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "alerts.field.invalid" : {
+      "comment" : "Settings › Alerts: VoiceOver value on a threshold field whose text is not a valid number. It is not saved.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid value: not saved"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valeur non valide : non enregistrée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Недійсне значення: не збережено"
+          }
+        }
+      }
+    },
+    "alerts.field.willAdjust" : {
+      "comment" : "Settings › Alerts: VoiceOver value on a threshold field whose typed value the app will change when saving (e.g. a warning above critical). %@ = the value it will become, as the field shows it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Will be adjusted to %@ when saved"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sera ajustée à %@ à l’enregistrement"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Під час збереження буде змінено на %@"
+          }
+        }
+      }
+    },
+    "alerts.field.willTurnOff" : {
+      "comment" : "Settings › Alerts: VoiceOver value on a Cursor spend warning field that will be turned off when saved, because it is not below the critical amount.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Will be turned off when saved"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sera désactivée à l’enregistrement"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Під час збереження буде вимкнено"
           }
         }
       }
@@ -7513,6 +8061,534 @@
         }
       }
     },
+    "cursorHistory.average" : {
+      "comment" : "History › Cursor chart: label of the dashed average line. %@ = dollars.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "avg %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "moy. %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "сер. %@"
+          }
+        }
+      }
+    },
+    "cursorHistory.bar.current" : {
+      "comment" : "History › Cursor chart: axis label of the current (still open) billing cycle. %@ = abbreviated month (Sep).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (now)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (actuel)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (зараз)"
+          }
+        }
+      }
+    },
+    "cursorHistory.card.noCharges" : {
+      "comment" : "Line under the Cursor card when every recent closed billing cycle had no usage-based charges. cycles = how many cycles (2–6).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "no usage-based charges in your last %#@cycles@"
+          },
+          "substitutions" : {
+            "cycles" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg cycle"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg cycles"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aucuns frais à l’usage sur vos %#@cycles@"
+          },
+          "substitutions" : {
+            "cycles" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg derniers cycles"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg dernier cycle"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg derniers cycles"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "без оплати за використання за останні %#@cycles@"
+          },
+          "substitutions" : {
+            "cycles" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "few" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg цикли"
+                    }
+                  },
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg циклів"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg цикл"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg циклу"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cursorHistory.column.cycle" : {
+      "comment" : "History › Cursor table column: billing cycle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cycle"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cycle"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цикл"
+          }
+        }
+      }
+    },
+    "cursorHistory.column.spend" : {
+      "comment" : "History › Cursor table column: usage-based spend.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spend"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dépenses"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Витрати"
+          }
+        }
+      }
+    },
+    "cursorHistory.column.versusAverage" : {
+      "comment" : "History › Cursor table column: difference from the average cycle, as a percentage.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vs avg"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vs moyenne"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "від середнього"
+          }
+        }
+      }
+    },
+    "cursorHistory.noCharges" : {
+      "comment" : "History › Cursor section note when every cycle shown had no usage-based charges (the bars all show $0).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No usage-based charges in the cycles shown."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucuns frais à l’usage sur les cycles affichés."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Без оплати за використання в показаних циклах."
+          }
+        }
+      }
+    },
+    "cursorHistory.noData" : {
+      "comment" : "History › Cursor section when no spend has been read yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No spend read yet."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune dépense lue pour l’instant."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Витрати ще не зчитано."
+          }
+        }
+      }
+    },
+    "cursorHistory.noEarlierCycles" : {
+      "comment" : "History › Cursor section note when Cursor reported no earlier billing cycle with usage.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No earlier cycles with Cursor usage."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun cycle précédent avec une utilisation de Cursor."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Немає попередніх циклів із використанням Cursor."
+          }
+        }
+      }
+    },
+    "cursorHistory.pending" : {
+      "comment" : "History › Cursor section note before earlier billing cycles have been read.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earlier cycles are read from Cursor in the background."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les cycles précédents sont lus depuis Cursor en arrière-plan."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Попередні цикли зчитуються з Cursor у фоновому режимі."
+          }
+        }
+      }
+    },
+    "cursorHistory.row.current" : {
+      "comment" : "History › Cursor table: the current billing cycle, still open. %@ = its first day (Sep 1).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Since %@ (so far)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depuis le %@ (en cours)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "З %@ (поки що)"
+          }
+        }
+      }
+    },
+    "cursorHistory.row.range" : {
+      "comment" : "History › Cursor table: a closed billing cycle. %1$@ = first day, %2$@ = the day the next cycle starts (Aug 1, Sep 1).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ – %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ – %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ – %2$@"
+          }
+        }
+      }
+    },
+    "cursorHistory.section.subtitle" : {
+      "comment" : "History › Cursor section subtitle, also the chart's VoiceOver name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spend per billing cycle"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dépenses par cycle de facturation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Витрати за цикл оплати"
+          }
+        }
+      }
+    },
+    "cursorHistory.section.title" : {
+      "comment" : "History › Cursor section title. %@ = the user's own account label. Cursor is a brand.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cursor · %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cursor · %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cursor · %@"
+          }
+        }
+      }
+    },
+    "cursorHistory.vsAverage" : {
+      "comment" : "Line under the Cursor card: this cycle's spend against the average of the last closed cycles. %1$@ = signed percentage (+38%, −19%); cycles = how many closed cycles are averaged (2–6); %3$@ = the average in dollars.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ vs your %#@cycles@ average (%3$@)"
+          },
+          "substitutions" : {
+            "cycles" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg-cycle"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg-cycle"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ par rapport à votre moyenne sur %#@cycles@ (%3$@)"
+          },
+          "substitutions" : {
+            "cycles" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg cycles"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg cycle"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg cycles"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ порівняно з вашим середнім за %#@cycles@ (%3$@)"
+          },
+          "substitutions" : {
+            "cycles" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "few" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg цикли"
+                    }
+                  },
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg циклів"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg цикл"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg циклу"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "cursorSpend.noCharges" : {
       "comment" : "Cursor card caption when nothing was spent this billing cycle beyond the plan.",
       "extractionState" : "manual",
@@ -8588,6 +9664,78 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "СУМА"
+          }
+        }
+      }
+    },
+    "drop.test.header" : {
+      "comment" : "Drop panel header of the Settings › Diagnostics test drop, uppercase monospaced, one line in a 320 pt panel: keep it short. Says the rows are fake sample data.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TEST DROP · SAMPLE"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PANNEAU TEST · EXEMPLE"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ТЕСТ ПАНЕЛІ · ЗРАЗОК"
+          }
+        }
+      }
+    },
+    "drop.test.sampleAccount" : {
+      "comment" : "Account name shown on every row of the Settings › Diagnostics test drop. Must read as obviously fake; short (it shares a 320 pt row with a meter and a countdown).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SAMPLE"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXEMPLE"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ЗРАЗОК"
+          }
+        }
+      }
+    },
+    "drop.test.spoken" : {
+      "comment" : "VoiceOver: read before the counts of the Settings › Diagnostics test drop, whose rows are fake sample data.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test drop, sample data"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Panneau de test, données d’exemple"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тестова панель, зразкові дані"
           }
         }
       }

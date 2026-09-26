@@ -224,3 +224,22 @@ enum AlertChannelKey {
         }
     }
 }
+
+/// One field of a threshold draft: left as stored, or set to a new value.
+///
+/// A row's two fields are committed together as ONE draft
+/// (`AppSettings.setThresholds(warning:critical:…)`), so the pair is
+/// canonicalised once, from both values the user typed, and the order in
+/// which the fields were edited cannot change the result.
+enum FieldEdit<Value: Equatable & Sendable>: Equatable, Sendable {
+    case keep
+    case set(Value)
+
+    /// The value this edit leaves in place of `current`.
+    func applied(to current: Value) -> Value {
+        switch self {
+        case .keep: return current
+        case .set(let value): return value
+        }
+    }
+}

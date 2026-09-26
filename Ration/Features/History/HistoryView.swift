@@ -119,9 +119,9 @@ struct HistoryView: View {
                 case .patterns:
                     if model.accounts.isEmpty {
                         emptyAccountsState
-                    } else if effectiveKind == nil {
+                    } else if effectiveKind == nil && cursorPresentations.isEmpty {
                         noRollingWindowState
-                    } else if series.isEmpty {
+                    } else if series.isEmpty && cursorPresentations.isEmpty {
                         emptyHistoryState
                     } else {
                         content
@@ -203,11 +203,30 @@ struct HistoryView: View {
         .padding(.vertical, 12)
     }
 
+    /// The scope's Cursor accounts: each gets its spend-per-cycle section
+    /// below the rolling-window charts (or alone, in a Cursor-only scope).
+    private var cursorPresentations: [AccountPresentation] {
+        scopedPresentations.filter { $0.account.provider == .cursor }
+    }
+
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                dayChart
-                heatmap
+                if !series.isEmpty {
+                    dayChart
+                    heatmap
+                } else if effectiveKind != nil {
+                    Text("Usage is recorded as it's fetched.")
+                        .font(Theme.mono(12))
+                        .foregroundStyle(Theme.creamDim)
+                }
+                ForEach(cursorPresentations) { presentation in
+                    CursorSpendHistorySection(
+                        label: presentation.account.historyLabel,
+                        history: model.cursorSpendHistories[presentation.id] ?? CursorSpendHistory(),
+                        current: presentation.snapshot?.cursorSpend
+                    )
+                }
             }
             .padding(16)
         }

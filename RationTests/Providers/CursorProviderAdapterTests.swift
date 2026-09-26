@@ -14,6 +14,32 @@ final class CursorProviderAdapterTests: XCTestCase {
         XCTAssertEqual(spend.planLabel, "Pro")
     }
 
+    /// `isYearlyPlan` was decoded but never read, so the payload no
+    /// longer carries it. The current shape decodes; a body that still has
+    /// the field (the older shape) decodes too, the key simply ignored.
+    func testDecodesPayloadWithoutIsYearlyPlan() async throws {
+        let body = #"{"membershipType":"pro","periodStartMs":1000000,"periodEndMs":5000000,"spentCents":1234}"#
+        let spend = try await CursorProviderAdapter.parse(body)
+        XCTAssertEqual(spend.spentCents, 1234)
+        XCTAssertEqual(spend.planLabel, "Pro")
+    }
+
+    func testFetchScriptEmitsOnlyFieldsTheAdapterReads() async throws {
+        let captured = CapturedScript()
+        let client = WebUsageClient { script, _, _ in
+            captured.value = script
+            return [
+                "status": 200,
+                "retryAfter": NSNull(),
+                "body": #"{"membershipType":"pro","periodStartMs":1000000,"periodEndMs":5000000,"spentCents":0}"#
+            ]
+        }
+        _ = try await client.fetchCursor(in: WKWebView())
+        let script = try XCTUnwrap(captured.value)
+        XCTAssertTrue(script.contains("spentCents: Math.round(spentCents)"), "wrong script captured")
+        XCTAssertFalse(script.contains("isYearlyPlan"), "isYearlyPlan is unused and must not be emitted")
+    }
+
     func testResetsAtConvertsMillisecondsToSeconds() async throws {
         // periodEndMs is milliseconds; resetsAt divides by 1000.
         let body = #"{"membershipType":"ultra","isYearlyPlan":true,"periodStartMs":1000000,"periodEndMs":1784487780000,"spentCents":0}"#
@@ -247,6 +273,38 @@ final class CursorProviderAdapterTests: XCTestCase {
         XCTAssertEqual(spend.planLabel, "Pro")
     }
 
+    /// The history read never navigates: off the dashboard (e.g. a reauth
+    /// session left the view on the authenticator) it neither loads the
+    /// dashboard nor dispatches a script.
+    func testHistoryReadOffTheDashboardNeverNavigatesOrDispatches() async {
+        var evaluations = 0
+        var prepares = 0
+        let client = WebUsageClient { _, _, _ in
+            evaluations += 1
+            return nil
+        }
+        let adapter = CursorProviderAdapter(
+            client: client,
+            prepareWebView: { _ in prepares += 1 },
+            pageState: { _ in
+                CursorPageState(url: URL(string: "https://authenticator.cursor.sh/?client_id=x"), isLoading: false)
+            },
+            sleep: { _ in }
+        )
+        let request = CursorHistoryRequest(
+            months: [CursorInvoiceMonth(year: 2026, month: 7)],
+            currentPeriodStart: Date(timeIntervalSince1970: 1_788_220_800)
+        )
+        do {
+            _ = try await adapter.fetchCursorSpendHistory(request, mayDispatch: {}, in: WKWebView())
+            XCTFail("expected a failure")
+        } catch {
+            XCTAssertEqual(error as? ProviderError, .transport)
+        }
+        XCTAssertEqual(prepares, 0)
+        XCTAssertEqual(evaluations, 0)
+    }
+
     func testFetchUsageMapsUnauthorizedToAuthenticationRequired() async {
         let client = WebUsageClient { _, _, _ in
             ["status": 401, "retryAfter": NSNull(), "body": ""]
@@ -307,6 +365,188 @@ final class CursorProviderAdapterTests: XCTestCase {
         }
     }
 
+    // MARK: - Fetch cut off by the sign-out redirect (1.6.0 Sign In ↔ STALE flap)
+
+    private static let dashboard = URL(string: "https://cursor.com/dashboard")!
+    private static let authenticator = URL(string: "https://authenticator.cursor.sh/?client_id=x")!
+
+    /// What WebKit throws when a navigation tears down the frame under a
+    /// pending `callAsyncJavaScript` (probed 2026-09-26: WKErrorDomain 5).
+    private static let interruptedEvaluation = NSError(
+        domain: WKError.errorDomain,
+        code: WKError.Code.javaScriptResultTypeIsUnsupported.rawValue
+    )
+
+    private func adapter(
+        evaluator: @escaping WebUsageClient.Evaluator,
+        pages: ScriptedPages,
+        sleep: @escaping CursorProviderAdapter.Sleep = { _ in }
+    ) -> CursorProviderAdapter {
+        CursorProviderAdapter(
+            client: WebUsageClient(evaluator: evaluator),
+            prepareWebView: { _ in },
+            pageState: { _ in pages.next() },
+            sleep: sleep
+        )
+    }
+
+    func testInterruptedFetchThatSettlesOnTheAuthenticatorAsksToSignIn() async {
+        let pages = ScriptedPages([
+            CursorPageState(url: Self.dashboard, isLoading: true),
+            CursorPageState(url: Self.authenticator, isLoading: true),
+            CursorPageState(url: Self.authenticator, isLoading: false)
+        ])
+        let adapter = adapter(
+            evaluator: { _, _, _ in throw Self.interruptedEvaluation },
+            pages: pages
+        )
+        await assertFetchThrows(adapter, .authenticationRequired)
+        XCTAssertEqual(pages.reads, 3, "polls until the redirect settles")
+    }
+
+    /// Off-origin the script returns `null` → `invalidResponse`. Same cause.
+    func testOffOriginNullOnTheAuthenticatorAsksToSignIn() async {
+        let pages = ScriptedPages([CursorPageState(url: Self.authenticator, isLoading: false)])
+        let adapter = adapter(evaluator: { _, _, _ in NSNull() }, pages: pages)
+        await assertFetchThrows(adapter, .authenticationRequired)
+    }
+
+    /// The live flap: the dashboard looks settled when the fetch fails, and
+    /// Cursor's client-side redirect only fires 1.5 s later. A settled
+    /// dashboard must not end the watch early.
+    func testSettledDashboardThenLateRedirectAsksToSignIn() async {
+        let polls = Int(Duration.milliseconds(1500) / CursorProviderAdapter.settlePollInterval)
+        var states = Array(
+            repeating: CursorPageState(url: Self.dashboard, isLoading: false),
+            count: polls
+        )
+        states.append(CursorPageState(url: Self.authenticator, isLoading: true))
+        states.append(CursorPageState(url: Self.authenticator, isLoading: false))
+        let pages = ScriptedPages(states)
+        let slept = SleepLog()
+        let adapter = adapter(
+            evaluator: { _, _, _ in throw Self.interruptedEvaluation },
+            pages: pages,
+            sleep: { slept.durations.append($0) }
+        )
+        await assertFetchThrows(adapter, .authenticationRequired)
+        XCTAssertEqual(pages.reads, polls + 2)
+        XCTAssertEqual(slept.total, .milliseconds(1600))
+    }
+
+    /// Stays on the dashboard: watched for the whole bound, then `.transport`.
+    func testFailedFetchThatStaysOnTheDashboardIsTransportAfterTheBound() async {
+        let pages = ScriptedPages([CursorPageState(url: Self.dashboard, isLoading: false)])
+        let slept = SleepLog()
+        let adapter = adapter(
+            evaluator: { _, _, _ in throw Self.interruptedEvaluation },
+            pages: pages,
+            sleep: { slept.durations.append($0) }
+        )
+        await assertFetchThrows(adapter, .transport)
+        XCTAssertEqual(slept.total, CursorProviderAdapter.settleTimeout)
+        XCTAssertEqual(pages.reads, slept.durations.count + 1)
+    }
+
+    /// A page that never settles is waited out for `settleTimeout`, no more.
+    func testSettleWaitIsBounded() async {
+        let pages = ScriptedPages([CursorPageState(url: Self.dashboard, isLoading: true)])
+        let slept = SleepLog()
+        let adapter = adapter(
+            evaluator: { _, _, _ in throw Self.interruptedEvaluation },
+            pages: pages,
+            sleep: { slept.durations.append($0) }
+        )
+        await assertFetchThrows(adapter, .transport)
+        XCTAssertEqual(slept.total, CursorProviderAdapter.settleTimeout)
+        XCTAssertEqual(pages.reads, slept.durations.count + 1)
+    }
+
+    func testSettleWaitStopsOnCancellation() async {
+        let pages = ScriptedPages([CursorPageState(url: Self.dashboard, isLoading: false)])
+        let adapter = adapter(
+            evaluator: { _, _, _ in throw Self.interruptedEvaluation },
+            pages: pages,
+            sleep: { try await Task.sleep(for: $0) }
+        )
+        let task = Task { @MainActor in
+            try await adapter.fetchUsage(accountID: UUID(), in: WKWebView())
+        }
+        // Let it reach the settle wait (bounded, so a regression fails
+        // instead of hanging), then cancel.
+        let clock = ContinuousClock()
+        let reachDeadline = clock.now.advanced(by: .seconds(3))
+        while pages.reads == 0, clock.now < reachDeadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertGreaterThan(pages.reads, 0, "never reached the settle wait")
+        task.cancel()
+        let started = clock.now
+        do {
+            _ = try await task.value
+            XCTFail("expected cancellation")
+        } catch is CancellationError {
+            XCTAssertLessThan(clock.now - started, .seconds(2))
+        } catch {
+            XCTFail("expected CancellationError, got \(error)")
+        }
+    }
+
+    /// The timeout keeps its passthrough even when the view shows the
+    /// authenticator: `AccountSessionManager` recycles the web view on it,
+    /// and a navigation settles a pending call rather than hanging it.
+    func testTimedOutPassesThroughWithoutWaitingForTheRedirect() async {
+        let pages = ScriptedPages([CursorPageState(url: Self.authenticator, isLoading: false)])
+        let adapter = CursorProviderAdapter(
+            client: WebUsageClient(
+                evaluator: { _, _, _ in
+                    await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                    return nil
+                },
+                sleep: { _ in }
+            ),
+            prepareWebView: { _ in },
+            pageState: { _ in pages.next() },
+            sleep: { _ in }
+        )
+        do {
+            _ = try await adapter.fetchUsage(accountID: UUID(), in: WKWebView())
+            XCTFail("expected timedOut")
+        } catch let error as WebUsageClientError {
+            XCTAssertEqual(error, .timedOut)
+        } catch {
+            XCTFail("timedOut must pass through, got \(error)")
+        }
+        XCTAssertEqual(pages.reads, 0)
+    }
+
+    /// The script's first request is `/api/auth/stripe`; a 401/403 there comes
+    /// back as that status and `ProviderResponseValidator` maps it to Sign In
+    /// with no settle wait.
+    func testForbiddenFromTheFirstRequestAsksToSignIn() async {
+        let pages = ScriptedPages([CursorPageState(url: Self.dashboard, isLoading: false)])
+        let adapter = adapter(
+            evaluator: { _, _, _ in ["status": 403, "retryAfter": NSNull(), "body": ""] },
+            pages: pages
+        )
+        await assertFetchThrows(adapter, .authenticationRequired)
+        XCTAssertEqual(pages.reads, 0)
+    }
+
+    private func assertFetchThrows(
+        _ adapter: CursorProviderAdapter,
+        _ expected: ProviderError,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            _ = try await adapter.fetchUsage(accountID: UUID(), in: WKWebView())
+            XCTFail("expected \(expected)", file: file, line: line)
+        } catch {
+            XCTAssertEqual(error as? ProviderError, expected, file: file, line: line)
+        }
+    }
+
     // MARK: - Helpers (do/catch idiom; this suite has no async-throws helper)
 
     private func assertPlanLabel(
@@ -338,5 +578,40 @@ final class CursorProviderAdapterTests: XCTestCase {
                 line: line
             )
         }
+    }
+}
+
+@MainActor
+private final class CapturedScript {
+    var value: String?
+}
+
+/// Page states read in order; the last one repeats.
+@MainActor
+private final class ScriptedPages {
+    private let states: [CursorPageState]
+    private(set) var reads = 0
+
+    init(_ states: [CursorPageState]) {
+        self.states = states
+    }
+
+    func next() -> CursorPageState {
+        let index = min(reads, states.count - 1)
+        reads += 1
+        return states[index]
+    }
+}
+
+@MainActor
+private final class SleepLog {
+    var durations: [Duration] = []
+
+    var total: Duration {
+        var sum = Duration.zero
+        for duration in durations {
+            sum += duration
+        }
+        return sum
     }
 }

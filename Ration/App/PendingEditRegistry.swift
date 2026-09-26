@@ -26,6 +26,11 @@ protocol PendingEditFlushing: AnyObject {
 /// pane is. So "registered and pending" is asked of the editor itself at
 /// quit time, never kept as a separate flag that could drift from it.
 ///
+/// An editor whose unsaved edit can outlive its pane with no save running
+/// (a holiday label whose save failed) asks to be held strongly while it is
+/// pending (`setRetained`), so reopening the pane finds the edit and a quit
+/// can still save it.
+///
 /// `requiresTerminationPreparation` asks `hasPendingEdits`, and
 /// `prepareForTermination()` awaits `flushAll()`, bounded by `timeout` so a
 /// save that never returns cannot hold the quit forever.
@@ -37,6 +42,8 @@ final class PendingEditRegistry {
 
     private struct Entry {
         weak var editor: (any PendingEditFlushing)?
+        /// Set while the editor asked to be kept alive.
+        var retained: (any PendingEditFlushing)?
     }
 
     private var entries: [String: Entry] = [:]
@@ -68,6 +75,20 @@ final class PendingEditRegistry {
     func register(_ editor: any PendingEditFlushing, key: String) {
         pruneGoneEditors()
         entries[key] = Entry(editor: editor)
+    }
+
+    /// Forgets the editor for `key` — its setting is gone (a removed
+    /// holiday), so a quit must not save it and a later
+    /// `setRetained` for it does nothing.
+    func removeEditor(forKey key: String) {
+        entries[key] = nil
+    }
+
+    /// Holds `editor` strongly (`true`) or weakly again (`false`), if it is
+    /// still the one for `key`.
+    func setRetained(_ retained: Bool, editor: any PendingEditFlushing, key: String) {
+        guard let entry = entries[key], entry.editor === editor else { return }
+        entries[key]?.retained = retained ? editor : nil
     }
 
     var hasPendingEdits: Bool {

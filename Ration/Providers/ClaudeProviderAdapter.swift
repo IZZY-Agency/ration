@@ -458,6 +458,35 @@ enum ClaudeUsagePage {
             && url.host()?.lowercased() == exactHost
             && (url.port == nil || url.port == 443)
     }
+
+    /// claude.ai's sign-in route: a signed-out claude.ai page lands here.
+    private static let signInPath = "/login"
+
+    /// True once the web view has SETTLED on claude.ai's sign-in page: the
+    /// session is gone and the account needs Sign In. While a redirect is
+    /// still loading nothing is decided yet.
+    static func isSignInPage(url: URL?, isLoading: Bool) -> Bool {
+        guard !isLoading, isClaudeOrigin(url), let url else { return false }
+        return url.path == signInPath
+    }
+
+    enum SettledState: Equatable {
+        case ready
+        case signInRequired
+    }
+
+    /// What a settled page means for the readiness wait. Sign-in is decided
+    /// FIRST: `claude.ai/login` is also a claude.ai origin, so it would
+    /// otherwise count as ready.
+    static func settledState(url: URL?, isLoading: Bool) -> SettledState? {
+        if isSignInPage(url: url, isLoading: isLoading) {
+            return .signInRequired
+        }
+        if isReady(url: url, isLoading: isLoading) {
+            return .ready
+        }
+        return nil
+    }
 }
 
 @MainActor
@@ -465,6 +494,10 @@ private enum ClaudeWebViewPreparation {
     private static let usageURL = URL(string: "https://claude.ai/settings/usage")!
 
     static func prepare(_ webView: WKWebView) async throws {
+        // A view ALREADY resting on claude.ai/login may be stale (left there
+        // by an earlier poll), so it is not judged by its URL here: the usage
+        // fetch decides, and a gone session answers 401 → Sign In. Only a
+        // wait below that settles on the sign-in page is fresh evidence.
         if ClaudeUsagePage.isReady(url: webView.url, isLoading: webView.isLoading) {
             return
         }
@@ -477,11 +510,20 @@ private enum ClaudeWebViewPreparation {
         let deadline = clock.now.advanced(by: .seconds(30))
         while clock.now < deadline {
             try Task.checkCancellation()
-            if ClaudeUsagePage.isReady(
+            let state = ClaudeUsagePage.settledState(
                 url: webView.url,
                 isLoading: webView.isLoading
-            ) {
+            )
+            switch state {
+            case .ready:
                 return
+            case .signInRequired:
+                // A wait that settles on claude.ai/login means the session is
+                // gone: ask for Sign In now instead of running a fetch that
+                // can only answer 401.
+                throw ProviderError.authenticationRequired
+            case nil:
+                break
             }
             try await Task.sleep(for: .milliseconds(100))
         }

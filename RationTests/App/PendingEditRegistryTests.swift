@@ -77,6 +77,36 @@ final class PendingEditRegistryTests: XCTestCase {
         editor.release()
     }
 
+    func testARetainedEditorOutlivesItsOwnerUntilReleased() {
+        let registry = PendingEditRegistry()
+        var owner: EditorFake? = EditorFake(pending: true)
+        weak var editor = owner
+        registry.register(owner!, key: "a")
+
+        registry.setRetained(true, editor: owner!, key: "a")
+        owner = nil
+        XCTAssertNotNil(editor, "held by the registry")
+        XCTAssertTrue(registry.hasPendingEdits)
+
+        registry.setRetained(false, editor: editor!, key: "a")
+        XCTAssertNil(editor, "weak again once released")
+    }
+
+    func testRetainingAnEditorThatNoLongerOwnsTheKeyDoesNothing() {
+        let registry = PendingEditRegistry()
+        var stale: EditorFake? = EditorFake(pending: true)
+        weak var weakStale = stale
+        let current = EditorFake()
+        registry.register(stale!, key: "a")
+        registry.register(current, key: "a")
+
+        registry.setRetained(true, editor: stale!, key: "a")
+        stale = nil
+
+        XCTAssertNil(weakStale)
+        withExtendedLifetime(current) {}
+    }
+
     func testTheDefaultTimeoutIsTwoSeconds() {
         XCTAssertEqual(PendingEditRegistry.terminationTimeout, .seconds(2))
     }

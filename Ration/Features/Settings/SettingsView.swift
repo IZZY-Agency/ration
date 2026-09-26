@@ -22,6 +22,9 @@ struct SettingsView: View {
     /// The account banner's "Refresh now". nil refreshes through the model
     /// directly; `MenuBarController` passes its own refresh path.
     var onRefreshNow: (() -> Void)? = nil
+    /// General › Diagnostics › Test drop. nil hides the Diagnostics group —
+    /// only `MenuBarController` owns a drop to show.
+    var onShowTestDrop: (() -> Void)? = nil
 
     @State private var selection: SettingsSelection?
     /// The serial of the last `selectionRequest` applied, so each request
@@ -164,7 +167,7 @@ struct SettingsView: View {
                 },
                 onSetHolidayLabel: { id, label in
                     errorMessage = nil
-                    try await model.setHolidayLabel(id: id, label)
+                    try await SettingsEditors.holidayLabelSave(model)(id, label)
                 },
                 onSetHolidayStart: { id, start in
                     errorMessage = nil
@@ -211,7 +214,8 @@ struct SettingsView: View {
                     perform { try await model.setFeature(feature, enabled: enabled) }
                 },
                 onOpenSetupGuide: onOpenSetupGuide,
-                onAllowNotifications: { model.requestNotificationPermission() }
+                onAllowNotifications: { model.requestNotificationPermission() },
+                onShowTestDrop: onShowTestDrop
             )
         case .alerts:
             AlertsDetailView(
@@ -219,18 +223,9 @@ struct SettingsView: View {
                 providers: model.accounts.map(\.provider),
                 notificationPermission: model.notificationPermission,
                 onAllowNotifications: { model.requestNotificationPermission() },
-                onSetWarningPercent: { value, provider, window in
-                    try await model.setWarningPercent(value, provider: provider, window: window)
-                },
-                onSetCriticalPercent: { value, provider, window in
-                    try await model.setCriticalPercent(value, provider: provider, window: window)
-                },
-                onSetSpendWarningCents: { value in
-                    try await model.setSpendWarningCents(value)
-                },
-                onSetSpendCriticalCents: { value in
-                    try await model.setSpendCriticalCents(value)
-                },
+                pendingEdits: model.pendingEdits,
+                onSetThresholds: SettingsEditors.thresholdsSave(model),
+                onSetCursorSpend: SettingsEditors.cursorSpendSave(model),
                 onSetDropEnabled: { enabled, key in
                     try await model.setDropEnabled(enabled, forKey: key)
                 },
