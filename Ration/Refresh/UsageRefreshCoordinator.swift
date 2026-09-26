@@ -169,19 +169,43 @@ final class UsageRefreshCoordinator: ObservableObject {
                 throw ProviderError.integrationChanged
             }
             try await snapshotStore.save(snapshot)
+            // The save runs in the store's own queue and suspends this task;
+            // a cancel landing meanwhile has already dropped this account's
+            // state. The snapshot is on disk either way (the removal path
+            // deletes it after `cancel` returns), but no state, retry date or
+            // `onSnapshotSaved` (auto-start, history) may follow.
+            try Task.checkCancellation()
             retryDates.removeValue(forKey: account.id)
             states[account.id] = .current
             await onSnapshotSaved(account, snapshot)
         } catch is CancellationError {
             return
         } catch let error as ProviderError {
+            guard !Task.isCancelled else {
+                return discardAfterCancel(error, accountID: account.id)
+            }
             handle(error, accountID: account.id)
         } catch {
+            guard !Task.isCancelled else {
+                return discardAfterCancel(error, accountID: account.id)
+            }
             // Keep the real failure visible in the log even though it maps to
             // `.transport` for the badge — a bridge timeout, an invalid JS
             // response, and a store failure need different fixes.
             handle(.transport, accountID: account.id, underlying: error)
         }
+    }
+
+    /// `cancel(accountID:)` already dropped this account's state and retry
+    /// date, then waits for the task to exit. A hung fetch exits by THROWING
+    /// (the bridge timeout, up to `WebUsageClient.evaluationTimeout` later),
+    /// not with `CancellationError` — writing that failure back would leave a
+    /// ghost entry for a removed account, a wrong badge on a just-reauthed
+    /// one, or a retry date that silently skips the next refresh.
+    private func discardAfterCancel(_ error: any Error, accountID: UUID) {
+        Self.logger.info(
+            "refresh failure discarded after cancel account=\(accountID.uuidString, privacy: .public) error=\(String(describing: error), privacy: .public)"
+        )
     }
 
     /// The app's only always-on diagnostic surface: without this, a provider

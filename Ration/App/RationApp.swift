@@ -27,6 +27,15 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
     /// a refused quit clears its intent, a proceeding one launches the new
     /// instance from `applicationWillTerminate`.
     var relauncher: AppRelauncher = .shared
+    /// Sends a `.terminateLater` decision to AppKit. A seam so tests can run
+    /// the real deferred path without replying to the test host's `NSApp`.
+    var replyToTermination: @MainActor (NSApplication, Bool) -> Void = { sender, canTerminate in
+        sender.reply(toApplicationShouldTerminate: canTerminate)
+    }
+    /// The open `.terminateLater` decision's preparation (flushing Settings
+    /// edits, cancelling sign-ins, profile cleanup); exposed so tests can
+    /// await it.
+    private(set) var terminationPreparation: Task<Void, Never>?
     /// A relaunched instance holds its menu bar (status item, hot keys) until
     /// the previous instance has exited — see `PreviousInstanceWaiter`.
     private var isHeldForPreviousInstance = false
@@ -160,7 +169,15 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
             return .terminateNow
         }
 
-        Task { @MainActor in
+        // Runs on the main actor while AppKit waits for the reply: AppKit
+        // spins the main run loop in its modal-panel mode, and main-actor
+        // tasks and sleeps run there (probed on macOS 27.2). EXCEPT when
+        // `terminate()` itself was called from inside a main-queue block
+        // (`DispatchQueue.main.async`, a main-actor Task): the main queue does
+        // not drain re-entrantly, this Task never starts and the app hangs.
+        // So every quit must start from an event or a run-loop block — see
+        // `HotKeyCallbackContext.fire()`.
+        terminationPreparation = Task { @MainActor in
             let canTerminate = await model.prepareForTermination()
             // Replying `false` ABORTS the quit and the app keeps running, so
             // this decision stops counting — and if it was the last one
@@ -168,7 +185,7 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
             // Otherwise a first launch that finished loading mid-quit would
             // lose its wizard for the rest of the session.
             terminationDecisionResolved(canTerminate: canTerminate)
-            sender.reply(toApplicationShouldTerminate: canTerminate)
+            replyToTermination(sender, canTerminate)
         }
         return .terminateLater
     }
@@ -236,6 +253,9 @@ struct RationApp: App {
     private let isUITesting: Bool
 
     init() {
+        // Before anything can quit: a quit made while another is being
+        // decided joins it instead of skipping its saves and cleanup.
+        TerminationGate.install()
         AppFonts.register()
         let arguments = ProcessInfo.processInfo.arguments
         let isUITesting = arguments.contains("--ui-testing")

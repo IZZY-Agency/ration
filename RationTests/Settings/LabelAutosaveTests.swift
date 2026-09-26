@@ -554,6 +554,143 @@ final class LabelAutosaveTests: XCTestCase {
         XCTAssertEqual(renamer.calls, [])
     }
 
+    // MARK: quitting
+
+    func testAnEditInItsDebounceIsPendingForTermination() async {
+        let autosave = makeAutosave()
+        XCTAssertFalse(autosave.hasPendingEdit)
+
+        autosave.text = "Home"
+
+        XCTAssertTrue(autosave.hasPendingEdit)
+    }
+
+    func testTerminationFlushSavesAnEditStillInItsDebounce() async {
+        let autosave = makeAutosave()
+        autosave.focusChanged(true)
+        autosave.text = "Home"
+        await waitUntil { self.clock.sleeping == 1 }
+
+        // The debounce never fires: the quit came first.
+        await autosave.flushPendingEdit()
+
+        XCTAssertEqual(renamer.calls, ["Home"])
+        XCTAssertFalse(autosave.hasPendingEdit)
+    }
+
+    func testTerminationFlushWaitsForTheRunningSaveAndTheEditBehindIt() async {
+        renamer.holds = true
+        let autosave = makeAutosave()
+        autosave.text = "Home"
+        await waitUntil { self.clock.sleeping == 1 }
+        clock.fire()
+        await waitUntil { self.renamer.running == 1 }
+        autosave.text = "Home 2"
+        var returned = false
+
+        let flush = Task {
+            await autosave.flushPendingEdit()
+            returned = true
+        }
+        await drain()
+        XCTAssertFalse(returned, "a save is still running")
+
+        renamer.releaseAll()
+        await waitUntil { self.renamer.running == 1 && self.renamer.calls.count == 2 }
+        XCTAssertFalse(returned, "the newer edit is still being saved")
+        renamer.releaseAll()
+        await flush.value
+
+        XCTAssertEqual(renamer.calls, ["Home", "Home 2"])
+        XCTAssertFalse(autosave.hasPendingEdit)
+    }
+
+    func testTerminationFlushRetriesAFailedSave() async {
+        renamer.failures = [SaveFailed()]
+        let autosave = makeAutosave()
+        autosave.text = "Home"
+        autosave.flush()
+        await waitUntil { self.errors.count == 1 }
+        XCTAssertTrue(autosave.hasPendingEdit, "the failed edit is still the user's")
+
+        await autosave.flushPendingEdit()
+
+        XCTAssertEqual(renamer.calls, ["Home", "Home"])
+        XCTAssertFalse(autosave.hasPendingEdit)
+    }
+
+    func testAutosaveRegistersWithTheTerminationRegistry() async {
+        let registry = PendingEditRegistry()
+        let renamer = renamer!
+        let autosave = LabelAutosave.editor(
+            accountID: UUID(),
+            stored: "Work",
+            in: registry,
+            save: { try await renamer.save($0) },
+            onError: { _ in }
+        )
+        XCTAssertFalse(registry.hasPendingEdits)
+
+        autosave.text = "Home"
+        XCTAssertTrue(registry.hasPendingEdits)
+        _ = await registry.flushAll()
+
+        XCTAssertEqual(renamer.calls, ["Home"])
+        XCTAssertFalse(registry.hasPendingEdits)
+    }
+
+    /// Switch to another account while this one's save is held, come back,
+    /// type again, quit: the account gets the SAME editor back, so the older
+    /// text can never be saved after the newer one.
+    func testAReturningPaneGetsTheSameEditorAndTheNewerTextWins() async {
+        renamer.holds = true
+        let registry = PendingEditRegistry()
+        let renamer = renamer!
+        let id = UUID()
+        func pane() -> LabelAutosave {
+            LabelAutosave.editor(
+                accountID: id,
+                stored: "Work",
+                in: registry,
+                save: { try await renamer.save($0) },
+                onError: { _ in }
+            )
+        }
+        let oldPane = pane()
+        oldPane.text = "Home"
+        oldPane.focusChanged(false)  // onDisappear
+        await waitUntil { renamer.running == 1 }
+
+        let newPane = pane()
+        XCTAssertTrue(oldPane === newPane)
+        XCTAssertEqual(newPane.text, "Home")
+        newPane.text = "Home 2"
+
+        let quit = Task { await registry.flushAll() }
+        renamer.releaseAll()
+        await waitUntil { renamer.calls.count == 2 }
+        renamer.releaseAll()
+        _ = await quit.value
+
+        XCTAssertEqual(renamer.calls, ["Home", "Home 2"])
+        XCTAssertFalse(registry.hasPendingEdits)
+    }
+
+    func testEachAccountHasItsOwnEditor() {
+        let registry = PendingEditRegistry()
+        let renamer = renamer!
+        let first = LabelAutosave.editor(
+            accountID: UUID(), stored: "A", in: registry,
+            save: { try await renamer.save($0) }, onError: { _ in }
+        )
+        let second = LabelAutosave.editor(
+            accountID: UUID(), stored: "B", in: registry,
+            save: { try await renamer.save($0) }, onError: { _ in }
+        )
+
+        XCTAssertFalse(first === second)
+    }
+
     // MARK: helpers
 
     /// Lets already-scheduled main-actor work run; for asserting that

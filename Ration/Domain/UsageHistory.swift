@@ -14,6 +14,28 @@ struct UsageHourlyBucket: Codable, Equatable, Sendable {
     var consumed: Double     // Σ within-segment downward deltas this hour (burn)
     var minRemaining: Double // depletion low-water mark
     var sampleCount: Int
+    // Billing-cycle v2 fields. Optional so rollups written before v2 decode
+    // (nil = "not measured"); nil is omitted on encode. A v2 fold into a
+    // bucket turns nil into a value from that sample on.
+    /// Σ lengths of the sample-to-sample intervals inside this hour, excluding
+    /// (censoring) intervals longer than the gap limit or crossing a reset.
+    var observedSeconds: Double? = nil
+    /// ∫ used(t) dt over the same intervals (used = 1 − remaining, trapezoid rule).
+    var usedSeconds: Double? = nil
+    /// Window-instance boundaries at samples inside this hour: every detected
+    /// reset (`didReset`) and, for a fixed window only, a moved reset time
+    /// (see `UsageHourlyRollup.fold`).
+    var resetCount: Int? = nil
+    /// Boundary hours only (`resetCount > 0`), written from the first v2.1
+    /// boundary on. The low-water mark of this hour's samples BEFORE its
+    /// first boundary (nil when the boundary was the hour's first sample),
+    /// so the ending instance keeps its true peak.
+    var preBoundaryMinRemaining: Double? = nil
+    /// Boundary hours only: the low-water mark of this hour's samples from
+    /// its LAST boundary on — the new instance's start. Non-nil marks a
+    /// split boundary hour; nil on a boundary hour means an older bucket
+    /// whose low mixes both instances.
+    var postBoundaryMinRemaining: Double? = nil
 }
 
 /// Versioned wrapper so schema evolution and corruption are detectable.

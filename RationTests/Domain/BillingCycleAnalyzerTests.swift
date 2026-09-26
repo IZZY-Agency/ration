@@ -32,7 +32,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         let now = at(2026, 7, 3, 0)
         var buckets: [UsageHourlyBucket] = []
         for d in 1...2 { for h in 0..<24 { buckets.append(bucket(2026, 7, d, h, consumed: 0.05, minRemaining: 0.8)) } }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.consumedAllowances, 2.4, accuracy: 1e-9)
         XCTAssertEqual(s.observedHours, 48)
@@ -47,7 +47,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         let now = at(2026, 7, 2, 6)
         let day1 = (0..<6).map { bucket(2026, 7, 1, $0, consumed: 0.1, minRemaining: 0.4) }
         let day2 = (0..<6).map { bucket(2026, 7, 2, $0, consumed: 0.1, minRemaining: 0.4) }
-        let s = BillingCycleAnalyzer.summarize(buckets: day1 + day2, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: day1 + day2, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.consumedAllowances, 1.2, accuracy: 1e-9)
         XCTAssertEqual(s.daysUsed, 2)
@@ -62,7 +62,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         for h in 0..<24 { buckets.append(bucket(2026, 7, 1, h, consumed: h == 10 ? 0.5 : 0, minRemaining: h >= 10 ? 0.5 : 1.0)) }
         // Days 2 & 3: observed but idle (remaining stays 0.5 = rolling window not yet reset), zero burn.
         for d in 2...3 { for h in 0..<24 { buckets.append(bucket(2026, 7, d, h, consumed: 0, minRemaining: 0.5)) } }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.consumedAllowances, 0.5, accuracy: 1e-9) // burn total, not 3×
         XCTAssertEqual(s.daysUsed, 1)                              // only day 1 had burn
@@ -74,7 +74,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         // 72 elapsed hours, only 10 observed → coverage 0.14 → insufficient.
         let now = at(2026, 7, 4, 0)
         let buckets = (0..<10).map { bucket(2026, 7, 1, $0, consumed: 0.05, minRemaining: 0.9) }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.coverageFraction, 10.0 / 72.0, accuracy: 1e-9)
         XCTAssertFalse(s.isSufficient)
@@ -84,7 +84,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         // 11 elapsed hours, 11 observed → coverage 1.0 but observedHours < 12.
         let now = at(2026, 7, 1, 11)
         let buckets = (0..<11).map { bucket(2026, 7, 1, $0, consumed: 0.05, minRemaining: 0.9) }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.observedHours, 11)
         XCTAssertFalse(s.isSufficient)
@@ -95,7 +95,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         let now = at(2026, 7, 3, 0)
         var buckets: [UsageHourlyBucket] = []
         for d in 1...2 { for h in 0..<24 { buckets.append(bucket(2026, 7, d, h, consumed: 0, minRemaining: 1.0)) } }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.capacityUtilization, 0, accuracy: 1e-12)
         XCTAssertEqual(s.daysUsed, 0)
@@ -104,7 +104,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
 
     func testEmptyBucketsIsNotSufficient() {
         let now = at(2026, 7, 1, 20)
-        let s = BillingCycleAnalyzer.summarize(buckets: [], windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: [], windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.observedHours, 0)
         XCTAssertFalse(s.isSufficient)
@@ -116,7 +116,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         var buckets: [UsageHourlyBucket] = []
         for h in 0..<24 { buckets.append(bucket(2026, 7, 1, h, consumed: 0.04, minRemaining: h == 12 ? 0.04 : 0.6)) } // day1 hits cap
         for h in 0..<24 { buckets.append(bucket(2026, 7, 2, h, consumed: 0.02, minRemaining: 0.6)) }                 // day2 no cap
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.atCapDays, 1)
         XCTAssertEqual(s.daysUsed, 2)
@@ -126,7 +126,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         let now = at(2026, 7, 1, 15)
         let inCycle = (0..<15).map { bucket(2026, 7, 1, $0, consumed: 0.02, minRemaining: 0.9) }
         let before = [bucket(2026, 6, 30, 23, consumed: 9.0, minRemaining: 0.0)] // previous cycle
-        let s = BillingCycleAnalyzer.summarize(buckets: before + inCycle, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: before + inCycle, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.consumedAllowances, 15 * 0.02, accuracy: 1e-9) // 0.30, not 9.30
         XCTAssertEqual(s.observedHours, 15)
@@ -135,7 +135,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
     func testFiveHourWindowNormalizesByFiveHours() {
         let now = at(2026, 7, 1, 15)
         let buckets = (0..<15).map { bucket(2026, 7, 1, $0, consumed: 0.2, minRemaining: 0.5) }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .fiveHour,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .fiveHour, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         // util = 3.0 / (15/5) = 3.0 / 3 = 1.0
         XCTAssertEqual(s.consumedAllowances, 3.0, accuracy: 1e-9)
@@ -154,7 +154,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         let now = at(2026, 7, 1, 23)
         let earlyLocal = bucket(2026, 7, 1, 2, consumed: 0.1, minRemaining: 0.9, tzOffsetSeconds: -8 * 3600)   // local Jun 30 18:00
         let lateLocal = bucket(2026, 7, 1, 10, consumed: 0.1, minRemaining: 0.02, tzOffsetSeconds: -8 * 3600) // local Jul 1 02:00, at cap
-        let s = BillingCycleAnalyzer.summarize(buckets: [earlyLocal, lateLocal], windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: [earlyLocal, lateLocal], windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.daysUsed, 2, "the two buckets fall on different LOCAL civil days")
         XCTAssertEqual(s.atCapDays, 1, "only the later-local-day bucket hit the cap")
@@ -168,7 +168,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         var buckets: [UsageHourlyBucket] = []
         for h in 0..<24 { buckets.append(bucket(2026, 7, 1, h, consumed: 0.01, minRemaining: 0.9)) }
         for h in 0..<18 { buckets.append(bucket(2026, 7, 2, h, consumed: 0.01, minRemaining: 0.9)) }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.observedHours, 42)
         XCTAssertEqual(s.elapsedHours, 42)
@@ -181,7 +181,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         var buckets: [UsageHourlyBucket] = []
         for h in 0..<24 { buckets.append(bucket(2026, 7, 1, h, consumed: 0.01, minRemaining: 0.9)) }
         for h in 0..<17 { buckets.append(bucket(2026, 7, 2, h, consumed: 0.01, minRemaining: 0.9)) }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.observedHours, 41)
         XCTAssertEqual(s.elapsedHours, 41)
@@ -192,7 +192,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         // 12 observed hours = the flat floor for the 5h window: max(12, ceil(0.25×5)) = 12.
         let now = at(2026, 7, 1, 12)
         let buckets = (0..<12).map { bucket(2026, 7, 1, $0, consumed: 0.01, minRemaining: 0.9) }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .fiveHour,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .fiveHour, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.observedHours, 12)
         XCTAssertEqual(s.elapsedHours, 12)
@@ -202,7 +202,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
     func testFiveHourOneHourBelowGateIsInsufficient() {
         let now = at(2026, 7, 1, 11)
         let buckets = (0..<11).map { bucket(2026, 7, 1, $0, consumed: 0.01, minRemaining: 0.9) }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .fiveHour,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .fiveHour, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.observedHours, 11)
         XCTAssertFalse(s.isSufficient)
@@ -215,7 +215,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         var buckets: [UsageHourlyBucket] = []
         for h in 0..<24 { buckets.append(bucket(2026, 7, 1, h, consumed: 0.01, minRemaining: 0.9)) }
         for h in 0..<18 { buckets.append(bucket(2026, 7, 2, h, consumed: 0.01, minRemaining: 0.9)) }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.observedHours, 42)
         XCTAssertEqual(s.elapsedHours, 84)
@@ -229,7 +229,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         var buckets: [UsageHourlyBucket] = []
         for h in 0..<24 { buckets.append(bucket(2026, 7, 1, h, consumed: 0.01, minRemaining: 0.9)) }
         for h in 0..<18 { buckets.append(bucket(2026, 7, 2, h, consumed: 0.01, minRemaining: 0.9)) }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.observedHours, 42)
         XCTAssertEqual(s.elapsedHours, 85)
@@ -241,7 +241,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         // minRemaining exactly 0.05 (atCapRemaining) must count — the filter is `<=`.
         let now = at(2026, 7, 1, 5)
         let buckets = (0..<5).map { bucket(2026, 7, 1, $0, consumed: 0.01, minRemaining: $0 == 2 ? 0.05 : 0.9) }
-        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: buckets, windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.atCapDays, 1)
     }
@@ -252,7 +252,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         let now = at(2026, 7, 3, 0)
         let exactlyAtEpsilon = bucket(2026, 7, 1, 0, consumed: 1e-4, minRemaining: 1.0)
         let justAboveEpsilon = bucket(2026, 7, 2, 0, consumed: 1e-4 + 1e-9, minRemaining: 1.0)
-        let s = BillingCycleAnalyzer.summarize(buckets: [exactlyAtEpsilon, justAboveEpsilon], windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: [exactlyAtEpsilon, justAboveEpsilon], windowKind: .weekly, family: .rolling,
                                                cycle: cycle(now: now), calendar: utc())
         XCTAssertEqual(s.daysUsed, 1, "only the just-above-epsilon day counts as used")
     }
@@ -270,7 +270,7 @@ final class BillingCycleAnalyzerTests: XCTestCase {
         let builtCycle = customCycle(start: start, end: end, now: now)
         let inWindow = bucket(2026, 7, 5, 0, consumed: 0.3, minRemaining: 0.5)     // inside [start, end)
         let afterEnd = bucket(2026, 7, 9, 0, consumed: 99.0, minRemaining: 0.0)    // at/after end — must be excluded
-        let s = BillingCycleAnalyzer.summarize(buckets: [inWindow, afterEnd], windowKind: .weekly,
+        let s = BillingCycleAnalyzer.summarize(buckets: [inWindow, afterEnd], windowKind: .weekly, family: .rolling,
                                                cycle: builtCycle, calendar: utc())
         XCTAssertEqual(s.consumedAllowances, 0.3, accuracy: 1e-9)
         XCTAssertEqual(s.observedHours, 1)

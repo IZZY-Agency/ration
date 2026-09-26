@@ -48,6 +48,7 @@ struct AccountDetailView: View {
         now: Date = .now,
         onRename: @escaping @MainActor (String) async throws -> Void,
         onRenameError: @escaping @MainActor (Error?) -> Void,
+        pendingEdits: PendingEditRegistry? = nil,
         onReauthenticate: @escaping () -> Void,
         onRemove: @escaping () -> Void,
         onSetAutoStart: @escaping (Bool) -> Void,
@@ -70,8 +71,10 @@ struct AccountDetailView: View {
         // Created once per account: `SettingsView` gives this view `.id(id)`,
         // so the captured rename closure always targets this account.
         _labelAutosave = StateObject(
-            wrappedValue: LabelAutosave(
+            wrappedValue: LabelAutosave.editor(
+                accountID: presentation.account.id,
                 stored: presentation.account.label,
+                in: pendingEdits,
                 save: onRename,
                 onError: onRenameError
             )

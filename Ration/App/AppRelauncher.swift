@@ -23,6 +23,15 @@ import os
 // also drop the intent up front (`quitWithoutRelaunch()`), and so does a
 // log out, restart or shut down (`NSWorkspace.willPowerOffNotification`).
 //
+// That same AppKit behaviour would let a second Quit skip an open decision
+// altogether — quitting before a Settings edit is saved or a cleanup is
+// answered. So a quit made while a decision is open JOINS it instead:
+// `shouldForwardTermination()` (asked by `TerminationGate`, in front of
+// `NSApplication.terminate(_:)`, which every Quit — menu, ⌘Q, popover — ends in) drops the relaunch
+// intent and keeps the request from AppKit. Only a decision stuck for
+// `forcedQuitAfter` lets a repeated quit through, so a hung cleanup can
+// never make the app unquittable.
+//
 // The new instance then waits (at most 10 s) for the old process to exit
 // before it touches the stores, WebKit, the status item or the hot keys.
 
@@ -121,6 +130,10 @@ final class AppRelauncher: ObservableObject {
     /// treating the request as dropped.
     static let unansweredRequestDelay: TimeInterval = 1
 
+    /// A quit decision open this long is treated as stuck: a repeated quit
+    /// then goes through (see `shouldForwardTermination()`).
+    static let forcedQuitAfter: TimeInterval = 10
+
     /// Whether `applicationShouldTerminate` ran for the pending request.
     private var terminationWasAsked = false
     /// Whether the delegate let the relaunch's own request proceed
@@ -136,6 +149,8 @@ final class AppRelauncher: ObservableObject {
     /// While one is open a new `terminate()` would skip the veto (AppKit goes
     /// straight to `applicationWillTerminate`), so a relaunch is refused.
     private var openTerminationDecisions = 0
+    /// When the oldest open decision was asked about.
+    private var oldestOpenDecisionAt: Date?
     /// The pending request's fallback check; exposed so tests can await it.
     private(set) var unansweredRequestCheck: Task<Void, Never>?
 
@@ -174,6 +189,9 @@ final class AppRelauncher: ObservableObject {
     /// user's Quit, a logout, restart or shutdown — supersedes it: whichever
     /// decision then lets the app terminate, no new instance is launched.
     func terminationWasRequested() {
+        if openTerminationDecisions == 0 {
+            oldestOpenDecisionAt = clock.now()
+        }
         openTerminationDecisions += 1
         let isOwnRequest: Bool = isRequestingTermination
         isRequestingTermination = false
@@ -188,7 +206,7 @@ final class AppRelauncher: ObservableObject {
     /// From the delegate: the request it was asked about may proceed
     /// (`.terminateNow`, or a `.terminateLater` decision answered true).
     func terminationWasApproved() {
-        openTerminationDecisions = max(0, openTerminationDecisions - 1)
+        decisionClosed()
         guard status == .pending, terminationWasAsked else { return }
         ownTerminationWasApproved = true
     }
@@ -200,7 +218,31 @@ final class AppRelauncher: ObservableObject {
         if status == .pending {
             abandonPendingRelaunch()
         }
+        guard shouldForwardTermination() else { return }
         terminator.terminate()
+    }
+
+    /// Asked before any terminate request reaches AppKit
+    /// (`TerminationGate`). While a quit decision is open, a
+    /// new request joins it: it drops a pending relaunch and is kept from
+    /// AppKit, which would otherwise terminate at once without asking the
+    /// delegate — before the open decision's saves and cleanup are done.
+    /// That decision's answer then quits (or keeps) the app for both.
+    func shouldForwardTermination() -> Bool {
+        guard openTerminationDecisions > 0 else { return true }
+        if status == .pending {
+            abandonPendingRelaunch()
+        }
+        guard let oldestOpenDecisionAt else { return false }
+        let openFor: TimeInterval = clock.now().timeIntervalSince(oldestOpenDecisionAt)
+        return openFor >= Self.forcedQuitAfter
+    }
+
+    private func decisionClosed() {
+        openTerminationDecisions = max(0, openTerminationDecisions - 1)
+        if openTerminationDecisions == 0 {
+            oldestOpenDecisionAt = nil
+        }
     }
 
     /// Log out, restart or shut down: the app quits with the session, and no
@@ -239,7 +281,7 @@ final class AppRelauncher: ObservableObject {
     /// The termination veto refused (a `.terminateLater` answered false).
     /// An ordinary quit being refused is not a relaunch failure.
     func terminationWasCancelled() {
-        openTerminationDecisions = max(0, openTerminationDecisions - 1)
+        decisionClosed()
         guard status == .pending else { return }
         status = .refused
         terminationWasAsked = false

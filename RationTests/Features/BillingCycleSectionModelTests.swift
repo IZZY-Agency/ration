@@ -24,6 +24,43 @@ final class BillingCycleSectionModelTests: XCTestCase {
                       billingRenewalDay: renewalDay)
     }
 
+    // MARK: Render-time label
+
+    /// A rename in Settings changes no load key; the card reads the label
+    /// from the current accounts when it is drawn.
+    func testCardLabelFollowsARenameWithoutAReload() {
+        var record = account(renewalDay: 1, label: "Work")
+        let now = at(2026, 7, 10, 12)
+        let tracked = BillingCycleSectionModel.card(
+            account: record, weekly: [], fiveHour: [], now: now, calendar: utc(), locale: L10n.en)
+        let unset = BillingCycleSectionModel.card(
+            account: acct(.chatGPT, label: "Old"), weekly: [], fiveHour: [], now: now, calendar: utc(), locale: L10n.en)
+        record.label = "Client"
+        let renamed = tracked.relabeled(from: [record], locale: L10n.en)
+        guard case let .tracked(id, label, provider, cycle, summary, fable) = renamed,
+              case let .tracked(_, _, _, oldCycle, oldSummary, oldFable) = tracked else {
+            return XCTFail("still a tracked card")
+        }
+        XCTAssertEqual(id, record.id)
+        XCTAssertEqual(label, "Client")
+        XCTAssertEqual(provider, .claude)
+        XCTAssertEqual(cycle, oldCycle)
+        XCTAssertEqual(summary, oldSummary)
+        XCTAssertEqual(fable, oldFable)
+        XCTAssertEqual(BillingCycleCopy.cardText(renamed, locale: L10n.en).label, "Client")
+
+        record.isPaused = true
+        XCTAssertEqual(BillingCycleCopy.cardText(tracked.relabeled(from: [record], locale: L10n.en), locale: L10n.en).label,
+                       "Client — PAUSED")
+
+        guard case let .noRenewalDay(unsetID, _, _) = unset else { return XCTFail("no renewal day") }
+        let unsetAccount = AccountRecord(id: unsetID, provider: .chatGPT, label: "New", webProfileID: UUID(),
+                                         displayOrder: 0, createdAt: Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(unset.relabeled(from: [unsetAccount], locale: L10n.en),
+                       .noRenewalDay(id: unsetID, label: "New", provider: .chatGPT))
+        XCTAssertEqual(tracked.relabeled(from: [], locale: L10n.en), tracked, "a removed account keeps its label")
+    }
+
     // MARK: Cursor eligibility (v1 exclusion)
 
     /// Cursor reports cycle utilisation natively on its account card — its two
@@ -88,8 +125,9 @@ final class BillingCycleSectionModelTests: XCTestCase {
             .noRenewalDay(id: UUID(), label: "C", provider: .claude),
             .tracked(id: UUID(), label: "G", provider: .chatGPT, cycle: cycle,
                      summary: CycleUtilizationSummary(
-                        windowKind: .weekly, capacityUtilization: 0.5, consumedAllowances: 1,
-                        daysUsed: 1, atCapDays: 0, observedHours: 24, elapsedHours: 24),
+                        windowKind: .weekly, family: .rolling, capacityUtilization: 0.5, isLegacyLowerBound: true, consumedAllowances: 1,
+                        daysUsed: 1, atCapDays: 0, observedHours: 24, elapsedHours: 24,
+            observedSeconds: 24 * 3600, elapsedSeconds: 24 * 3600),
                      fable: nil),
         ]
         XCTAssertEqual(
@@ -140,6 +178,32 @@ final class BillingCycleSectionModelTests: XCTestCase {
         XCTAssertEqual(summary.windowKind, .fiveHour)
     }
 
+    // MARK: - Window family (v2)
+
+    /// The family comes from the account's provider: the same buckets read as
+    /// a rolling mean load for Claude and a mean of peaks for ChatGPT.
+    func testCardPassesTheProviderFamilyToTheAnalyzer() {
+        func v2(_ d: Int, _ fraction: Double) -> [UsageHourlyBucket] {
+            (0..<24).map { UsageHourlyBucket(hourStart: at(2026, 7, d, $0), tzOffsetSeconds: 0, consumed: 0,
+                                             minRemaining: 1 - fraction, sampleCount: 12,
+                                             observedSeconds: 3600, usedSeconds: fraction * 3600, resetCount: 0) }
+        }
+        let weekly = v2(1, 0.2) + v2(2, 0.6)
+        func summary(_ provider: Provider) -> CycleUtilizationSummary? {
+            let card = BillingCycleSectionModel.card(
+                account: acct(provider, renewalDay: 1), weekly: weekly, fiveHour: [],
+                now: at(2026, 7, 3, 0), calendar: utc())
+            guard case let .tracked(_, _, _, _, summary, _) = card else { return nil }
+            return summary
+        }
+        let claude = summary(.claude)
+        let chatGPT = summary(.chatGPT)
+        XCTAssertEqual(claude?.family, .rolling)
+        XCTAssertEqual(claude?.capacityUtilization ?? -1, 0.4, accuracy: 1e-9)
+        XCTAssertEqual(chatGPT?.family, .fixed)
+        XCTAssertEqual(chatGPT?.capacityUtilization ?? -1, 0.6, accuracy: 1e-9)
+    }
+
     // MARK: - selectWindow sufficiency (Change 2)
 
     func testSelectWindowPrefersSufficientFiveHourWhenWeeklyInsufficient() {
@@ -147,11 +211,13 @@ final class BillingCycleSectionModelTests: XCTestCase {
         // floor) → insufficient. 5h: coverage 0.75 and 15 observed hours (≥ the 12h
         // 5h floor) → sufficient. An insufficient weekly must not suppress it.
         let weekly = CycleUtilizationSummary(
-            windowKind: .weekly, capacityUtilization: 2.0, consumedAllowances: 1.0,
-            daysUsed: 3, atCapDays: 0, observedHours: 20, elapsedHours: 40)
+            windowKind: .weekly, family: .rolling, capacityUtilization: 2.0, isLegacyLowerBound: true, consumedAllowances: 1.0,
+            daysUsed: 3, atCapDays: 0, observedHours: 20, elapsedHours: 40,
+            observedSeconds: 20 * 3600, elapsedSeconds: 40 * 3600)
         let fiveHour = CycleUtilizationSummary(
-            windowKind: .fiveHour, capacityUtilization: 1.0, consumedAllowances: 0.5,
-            daysUsed: 2, atCapDays: 0, observedHours: 15, elapsedHours: 20)
+            windowKind: .fiveHour, family: .rolling, capacityUtilization: 1.0, isLegacyLowerBound: true, consumedAllowances: 0.5,
+            daysUsed: 2, atCapDays: 0, observedHours: 15, elapsedHours: 20,
+            observedSeconds: 15 * 3600, elapsedSeconds: 20 * 3600)
         XCTAssertFalse(weekly.isSufficient)
         XCTAssertTrue(fiveHour.isSufficient)
         let selected = BillingCycleSectionModel.selectWindow(weekly: weekly, fiveHour: fiveHour)
@@ -164,11 +230,13 @@ final class BillingCycleSectionModelTests: XCTestCase {
         // enough data yet"; selectWindow's job here is just to prefer the
         // better-covered summary so the displayed shortfall is the smaller one.
         let weekly = CycleUtilizationSummary(
-            windowKind: .weekly, capacityUtilization: 0.5, consumedAllowances: 0.1,
-            daysUsed: 1, atCapDays: 0, observedHours: 10, elapsedHours: 40)
+            windowKind: .weekly, family: .rolling, capacityUtilization: 0.5, isLegacyLowerBound: true, consumedAllowances: 0.1,
+            daysUsed: 1, atCapDays: 0, observedHours: 10, elapsedHours: 40,
+            observedSeconds: 10 * 3600, elapsedSeconds: 40 * 3600)
         let fiveHour = CycleUtilizationSummary(
-            windowKind: .fiveHour, capacityUtilization: 0.2, consumedAllowances: 0.05,
-            daysUsed: 1, atCapDays: 0, observedHours: 3, elapsedHours: 20)
+            windowKind: .fiveHour, family: .rolling, capacityUtilization: 0.2, isLegacyLowerBound: true, consumedAllowances: 0.05,
+            daysUsed: 1, atCapDays: 0, observedHours: 3, elapsedHours: 20,
+            observedSeconds: 3 * 3600, elapsedSeconds: 20 * 3600)
         XCTAssertFalse(weekly.isSufficient)
         XCTAssertFalse(fiveHour.isSufficient)
         let selected = BillingCycleSectionModel.selectWindow(weekly: weekly, fiveHour: fiveHour)

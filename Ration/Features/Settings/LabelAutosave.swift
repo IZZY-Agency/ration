@@ -31,8 +31,14 @@ import Foundation
 ///   report.
 ///
 /// Blank text is never saved; the store rejects it.
+///
+/// A quit saves an unsettled edit first: panes get the model from
+/// `editor(accountID:…)`, which keeps ONE model per account in the app's
+/// `PendingEditRegistry` (a pane reopened while a save is in flight
+/// continues with it), and `flushPendingEdit()` skips the debounce and waits
+/// for the save.
 @MainActor
-final class LabelAutosave: ObservableObject {
+final class LabelAutosave: ObservableObject, PendingEditFlushing {
     typealias Save = @MainActor (String) async throws -> Void
     typealias Sleep = @MainActor (Duration) async throws -> Void
 
@@ -44,7 +50,9 @@ final class LabelAutosave: ObservableObject {
     }
 
     private let save: Save
-    private let onError: @MainActor (Error?) -> Void
+    /// Replaced when a reopened pane takes this model over, so errors reach
+    /// the Settings window that is showing now.
+    private var onError: @MainActor (Error?) -> Void
     private let sleep: Sleep
     private let busyRetryLimit: Int
 
@@ -63,6 +71,8 @@ final class LabelAutosave: ObservableObject {
     /// A debounce or a busy-retry wait. While it runs, `pending` is not yet
     /// eligible to save.
     private var debounceTask: Task<Void, Never>?
+    /// The save currently running (`saving`'s task).
+    private var saveTask: Task<Void, Never>?
 
     init(
         stored: String,
@@ -79,8 +89,40 @@ final class LabelAutosave: ObservableObject {
         self.onError = onError
     }
 
+    /// The account's label model: the live one if a pane left it with work
+    /// in flight, otherwise a new one. Without a registry (previews, tests),
+    /// always a new one.
+    static func editor(
+        accountID: UUID,
+        stored: String,
+        in registry: PendingEditRegistry?,
+        save: @escaping Save,
+        onError: @escaping @MainActor (Error?) -> Void
+    ) -> LabelAutosave {
+        guard let registry else {
+            return LabelAutosave(stored: stored, save: save, onError: onError)
+        }
+        let editor = registry.editor(forKey: "label.\(accountID.uuidString)") {
+            LabelAutosave(stored: stored, save: save, onError: onError)
+        }
+        editor.onError = onError
+        return editor
+    }
+
     /// True when nothing of the user's is waiting, being saved, or failed.
     var isSettled: Bool { saving == nil && pending == nil && !failed }
+
+    var hasPendingEdit: Bool { !isSettled }
+
+    /// For a quit: saves the current text now (retrying a failed save), then
+    /// waits until no save is running and none is waiting its turn. A busy
+    /// account's retry wait counts as waiting; the caller bounds the total.
+    func flushPendingEdit() async {
+        flush()
+        while let task = saveTask ?? debounceTask {
+            await task.value
+        }
+    }
 
     /// What the store will hold once the running save, if any, lands.
     private var target: String { saving ?? stored }
@@ -142,7 +184,7 @@ final class LabelAutosave: ObservableObject {
         guard saving == nil, debounceTask == nil, let value = pending else { return }
         pending = nil
         saving = value
-        Task {
+        saveTask = Task {
             do {
                 try await save(value)
                 stored = value
@@ -163,6 +205,7 @@ final class LabelAutosave: ObservableObject {
                 onError(error)
             }
             saving = nil
+            saveTask = nil
             startNextSave()
             showStoredIfIdle()
         }

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Vision
 import XCTest
 @testable import Ration
 
@@ -281,10 +282,129 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         for (scheme, suffix) in Self.schemes {
             try write(await renderHosted(HistoryView(model: fixture.model), width: 680, height: 480, scheme, settle: 2.5),
                       dir, "history-patterns-\(suffix).png")
-            try write(await renderHosted(BillingCycleView(model: fixture.model).background(Theme.ink), width: 680, height: 700, scheme, settle: 2.5),
+            // Six cards, one per billing state (see `recordHistory`).
+            try write(await renderHosted(BillingCycleView(model: fixture.model).background(Theme.ink), width: 680, height: 1250, scheme, settle: 3),
                       dir, "history-billing-\(suffix).png")
         }
         fixture.removeFiles()
+    }
+
+    /// The Billing-cycle cards in both framings at the History window's
+    /// minimum width (680 pt): v2 rolling (weekly, 5h), v2 fixed with the
+    /// widest caption, a v2 Fable line, and the legacy 1.4.0 framing.
+    func testBillingCycleCards() async throws {
+        let dir = try directory
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let cycle = BillingCycle.current(renewalDay: 14, now: now, calendar: calendar)
+        func summary(
+            _ kind: UsageWindowKind, _ family: WindowFamily, _ value: Double, legacy: Bool = false
+        ) -> CycleUtilizationSummary {
+            CycleUtilizationSummary(
+                windowKind: kind, family: family, capacityUtilization: value, isLegacyLowerBound: legacy,
+                consumedAllowances: 1.46, daysUsed: 21, atCapDays: 11, observedHours: 312, elapsedHours: 330,
+                observedSeconds: 312.4 * 3600, elapsedSeconds: 330 * 3600
+            )
+        }
+        func card(_ label: String, _ provider: Provider, _ s: CycleUtilizationSummary, fable: FableSecondary? = nil) -> BillingCycleCard {
+            .tracked(id: UUID(), label: label, provider: provider, cycle: cycle, summary: s, fable: fable)
+        }
+        let cards: [BillingCycleCard] = [
+            card("Client", .claude, summary(.weekly, .rolling, 0.62),
+                 fable: FableSecondary(label: "Fable", summary: summary(.modelWeekly, .rolling, 0.31))),
+            card("Personal", .claude, summary(.fiveHour, .rolling, 0.47)),
+            card("20x", .chatGPT, summary(.weekly, .fixed, 0.88)),
+            card("5x", .chatGPT, summary(.fiveHour, .fixed, 0.35)),
+            card("Legacy", .claude, summary(.weekly, .rolling, 0.424, legacy: true),
+                 fable: FableSecondary(label: "Fable", summary: summary(.modelWeekly, .rolling, 0.2, legacy: true))),
+        ]
+        let list = VStack(alignment: .leading, spacing: 12) {
+            ForEach(cards) { BillingCycleCardView(card: $0) }
+        }
+        .padding(16)
+        .frame(width: 680, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Theme.ink)
+        for (scheme, suffix) in Self.schemes {
+            try write(await renderHosted(list, width: 680, height: 1000, scheme), dir, "history-billing-cards-\(suffix).png")
+        }
+    }
+
+    /// Not gated: the caption under each figure is actually
+    /// drawn. Each card state with a figure (v2 rolling, v2 fixed, legacy) is
+    /// rendered at the History window's minimum width and read back with
+    /// on-device text recognition; the caption (drawn uppercase) must be
+    /// found. The copy itself is pinned line by line in
+    /// `HistoryCopyLocalizationTests.testCardTextForEveryStateInEveryLanguage`
+    /// — the view draws exactly `BillingCycleCopy.cardText`. Runs in every
+    /// language suite, in the run's language.
+    func testBillingCycleCardCaptionsAreDrawn() async throws {
+        AppFonts.register(in: .main)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let cycle = BillingCycle.current(renewalDay: 14, now: now, calendar: calendar)
+        func summary(_ family: WindowFamily, _ value: Double, legacy: Bool = false,
+                     kind: UsageWindowKind = .weekly) -> CycleUtilizationSummary {
+            CycleUtilizationSummary(
+                windowKind: kind, family: family, capacityUtilization: value, isLegacyLowerBound: legacy,
+                consumedAllowances: 1.46, daysUsed: 21, atCapDays: 11, observedHours: 312, elapsedHours: 330,
+                observedSeconds: 312 * 3600, elapsedSeconds: 330 * 3600
+            )
+        }
+        let cards: [(String, BillingCycleCard)] = [
+            ("v2 rolling", .tracked(id: UUID(), label: "Client", provider: .claude, cycle: cycle,
+                                    summary: summary(.rolling, 0.62),
+                                    fable: FableSecondary(label: "Fable", summary: summary(.rolling, 0.31, kind: .modelWeekly)))),
+            ("v2 fixed", .tracked(id: UUID(), label: "20x", provider: .chatGPT, cycle: cycle,
+                                  summary: summary(.fixed, 0.88, kind: .fiveHour), fable: nil)),
+            ("legacy", .tracked(id: UUID(), label: "Legacy", provider: .claude, cycle: cycle,
+                                summary: summary(.rolling, 0.424, legacy: true), fable: nil)),
+        ]
+        for (name, card) in cards {
+            guard case let .figure(_, caption, _, _) = BillingCycleCopy.cardText(card).body else {
+                return XCTFail("\(name): expected a figure")
+            }
+            let lines = try recognizedLines(BillingCycleCardView(card: card), width: 680)
+            let wanted = Self.letters(caption)
+            XCTAssertFalse(wanted.isEmpty, name)
+            // Its own line: the v2 Fable line repeats the rolling caption.
+            XCTAssertTrue(lines.contains { Self.letters($0) == wanted },
+                          "\(name): caption “\(caption)” is not drawn; read: \(lines)")
+        }
+    }
+
+    /// Letters and digits only, uppercased, accents folded: text recognition
+    /// may read the spacing, punctuation and accents of tracked uppercase
+    /// text differently.
+    private static func letters(_ text: String) -> String {
+        let folded: String = text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).uppercased()
+        return String(folded.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init))
+    }
+
+    /// Renders `view` at 3× on the dark ink and returns the recognised lines.
+    private func recognizedLines(_ view: some View, width: CGFloat) throws -> [String] {
+        let content = view
+            .frame(width: width)
+            .padding(16)
+            .background(Theme.ink)
+            .environment(\.colorScheme, .dark)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 3
+        let image = try XCTUnwrap(renderer.cgImage)
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        switch AppLanguage.current {
+        case .english, .system: request.recognitionLanguages = ["en-US"]
+        case .french: request.recognitionLanguages = ["fr-FR"]
+        case .ukrainian: request.recognitionLanguages = ["uk-UA"]
+        }
+        try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+        var lines: [String] = []
+        for observation in request.results ?? [] {
+            if let best = observation.topCandidates(1).first { lines.append(best.string) }
+        }
+        return lines
     }
 
     // MARK: Onboarding, plan step, About, sign-in
@@ -465,15 +585,20 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             rootDirectory: directory.appending(path: "history", directoryHint: .isDirectory)
         )
         let seeded: [AccountPresentation] = seed ? sampleAccounts() : []
+        // With history, the billing cycle starts a few days back whatever the
+        // run date, so every card state below is reachable.
+        let renewalDay: Int = historyRenewalDay()
         for presentation in seeded {
-            try await accountStore.add(presentation.account)
+            var account = presentation.account
+            if history, account.provider != .cursor {
+                account.billingRenewalDay = renewalDay
+            }
+            try await accountStore.add(account)
             if let snapshot = presentation.snapshot {
                 try await snapshotStore.save(snapshot)
             }
-        }
-        if history {
-            for presentation in seeded where presentation.account.provider != .cursor {
-                recordHistory(presentation.account, into: historyStore)
+            if history, account.provider != .cursor {
+                recordHistory(account, into: historyStore)
             }
         }
         let model = AppModel(
@@ -497,22 +622,80 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         return ModelFixture(directory: directory, model: model)
     }
 
-    /// Hourly samples over five days: the 5-hour window burns and resets.
+    /// A renewal day at least four days back (and ≤ 28, so no month clamps
+    /// it): the cycle then has ≥ 96 elapsed hours on any run date.
+    private func historyRenewalDay() -> Int {
+        let calendar = Calendar.current
+        var back = 4
+        while true {
+            let day: Int = calendar.component(.day, from: now.addingTimeInterval(-Double(back) * 86_400))
+            if day <= 28 { return day }
+            back += 1
+        }
+    }
+
+    /// Real history shapes, one billing-card state per account (by label):
+    /// - Client, Work (Claude): polled every 10 min for the last 50 h — v2
+    ///   rolling figures ("average weekly load"; Client's Fable line too).
+    /// - Personal (Claude): hourly since the cycle start — too sparse for v2
+    ///   (every interval is over the gap limit), so the legacy "≥ N%".
+    /// - 20x (ChatGPT): hourly since the cycle start, the weekly meter
+    ///   refilling every 48 h — v2 fixed ("average peak per week").
+    /// - Claude (paused), 5x (ChatGPT): hourly for the last 24 h only —
+    ///   "Not enough data yet".
     private func recordHistory(_ account: AccountRecord, into store: UsageHistoryStore) {
-        let hours = 5 * 24
-        for hour in 0..<hours {
-            let at: Date = now.addingTimeInterval(TimeInterval(hour - hours) * 3600)
-            let cycle = Double(hour % 5)
-            let remaining: Double = 1.0 - cycle * 0.18
-            let weekRemaining: Double = 1.0 - Double(hour) / Double(hours) * 0.8
+        var calendar = Calendar.current
+        calendar.timeZone = .current
+        let cycleStart: Date = BillingCycle.current(
+            renewalDay: account.billingRenewalDay ?? 1, now: now, calendar: calendar
+        ).start
+        let sinceStart: TimeInterval = now.timeIntervalSince(cycleStart)
+        let span: TimeInterval
+        let step: TimeInterval
+        switch account.label {
+        case "Client", "Work":
+            span = 50 * 3600
+            step = 600
+        case "Personal", "20x":
+            span = sinceStart - 60
+            step = 3600
+        default:
+            span = 24 * 3600
+            step = 3600
+        }
+        let count = Int(span / step)
+        for index in 0...count {
+            let at: Date = now.addingTimeInterval(-span + Double(index) * step - 30)
+            let hours: Double = at.timeIntervalSince(cycleStart) / 3600
+            // 5-hour sawtooth, refilled every 5 h.
+            let fivePhase: Double = hours.truncatingRemainder(dividingBy: 5)
+            let fiveRemaining: Double = 1.0 - fivePhase * 0.17
+            let fiveResets: Date = at.addingTimeInterval((5 - fivePhase) * 3600)
+            let weekly: UsageWindow
+            if account.provider == .chatGPT {
+                // Fixed weekly meter: climbs to ~80% over 48 h, then refills.
+                let phase: Double = hours.truncatingRemainder(dividingBy: 48)
+                weekly = UsageWindow(kind: .weekly, remainingFraction: 1.0 - phase / 48 * 0.8,
+                                     resetsAt: at.addingTimeInterval((48 - phase) * 3600))
+            } else {
+                // Rolling weekly load swinging around 45%.
+                let load: Double = 0.45 + 0.15 * sin(hours / 9)
+                weekly = UsageWindow(kind: .weekly, remainingFraction: 1.0 - load,
+                                     resetsAt: at.addingTimeInterval(2 * 86_400))
+            }
+            let fable: UsageWindow? = account.label == "Client"
+                ? UsageWindow(kind: .modelWeekly, remainingFraction: 0.7 - 0.05 * sin(hours / 7),
+                              resetsAt: at.addingTimeInterval(2 * 86_400), label: "Fable")
+                : nil
             store.record(
                 account: account,
                 snapshot: UsageSnapshot(
                     accountID: account.id, fetchedAt: at,
                     fiveHour: account.provider == .claude
-                        ? UsageWindow(kind: .fiveHour, remainingFraction: remaining, resetsAt: at.addingTimeInterval((5 - cycle) * 3600))
+                        ? UsageWindow(kind: .fiveHour, remainingFraction: fiveRemaining, resetsAt: fiveResets)
                         : nil,
-                    weekly: UsageWindow(kind: .weekly, remainingFraction: weekRemaining, resetsAt: now.addingTimeInterval(2 * 86_400))
+                    weekly: weekly,
+                    modelWeekly: fable
                 )
             )
         }

@@ -52,10 +52,25 @@ struct HistoryFilePayload: Sendable {
 final class UsageHistoryStore: ObservableObject {
     @Published private(set) var rawSeries: [UUID: [UsageWindowKind: UsageWindowSeries]] = [:]
 
+    /// Moves when rollups change, so an open History window reloads.
+    /// Coalesced: at most one bump per `revisionThrottle` — a write after a
+    /// quiet interval bumps at once, and every write inside the interval
+    /// shares ONE trailing bump at its end. A poll records every account
+    /// back to back, so without this each account would reload the window.
+    @Published private(set) var historyRevision: Int = 0
+
+    /// One minute: the History window reloads at most once a minute.
+    nonisolated static let defaultRevisionThrottle: TimeInterval = 60
+
     private let rootDirectory: URL
     private let timeZone: TimeZone
     private let now: () -> Date
     private let writeObserver: ((URL) -> Void)?
+    /// Longest sample-to-sample interval the hourly rollup integrates as
+    /// observed time (2 × the poll interval, see `PollSchedule.rollupGapLimit`).
+    /// Read on every fold, so a cadence change (Low Power Mode) applies at
+    /// once. `AppModel` rewires it to the refresh coordinator's live mode.
+    var gapLimit: @MainActor () -> TimeInterval
     /// Test-only interleave seam: awaited once per `loadRollups` call, right
     /// after the FIRST off-main directory scan returns and before the decode
     /// and month-key re-check. Lets a test deterministically land `record()`
@@ -64,11 +79,28 @@ final class UsageHistoryStore: ObservableObject {
     private let afterRollupScan: (@MainActor () async -> Void)?
     private let writer = HistoryFileIO()
     private var persistTail = Task<Void, Never> {}
+    private let revisionThrottle: TimeInterval
+    /// Waits out the rest of the throttle interval (injected by tests).
+    private let revisionSleep: @Sendable (TimeInterval) async -> Void
+    private var lastRevisionBump: Date?
+    private var trailingRevisionBump: Task<Void, Never>?
 
     /// In-memory current-month rollup segment per account. Holds only
     /// the *active* capture-zone month; older months live on disk and are read
     /// back on demand by `loadRollups`.
     private var currentMonths: [UUID: RollupMonth] = [:]
+
+    /// Month segments before an account's current one, by month key, kept
+    /// in memory once touched: a sample-to-sample interval that crosses a
+    /// month boundary folds its earlier part into its own month's segment
+    /// (the store is its only writer, so each stays a superset of its file).
+    /// Keyed by month so windows of one account that last sampled in
+    /// different months never evict each other's changes. On a month roll
+    /// only the month being left is kept.
+    private var previousMonths: [UUID: [String: RollupMonth]] = [:]
+    /// Earlier month keys changed during the current `record`, per account;
+    /// each persists once alongside the current month.
+    private var earlierMonthDirty: [UUID: Set<String>] = [:]
 
     private struct RollupMonth {
         let key: String // "YYYY-MM" in the capture zone
@@ -131,9 +163,19 @@ final class UsageHistoryStore: ObservableObject {
         timeZone: TimeZone = .current,
         now: @escaping () -> Date = { .now },
         writeObserver: ((URL) -> Void)? = nil,
-        afterRollupScan: (@MainActor () async -> Void)? = nil
+        afterRollupScan: (@MainActor () async -> Void)? = nil,
+        gapLimit: @escaping @MainActor () -> TimeInterval = {
+            PollSchedule.rollupGapLimit(lowPowerMode: false)
+        },
+        revisionThrottle: TimeInterval = UsageHistoryStore.defaultRevisionThrottle,
+        revisionSleep: @escaping @Sendable (TimeInterval) async -> Void = { seconds in
+            _ = try? await Task.sleep(for: .seconds(seconds))
+        }
     ) {
         self.rootDirectory = rootDirectory
+        self.revisionThrottle = revisionThrottle
+        self.revisionSleep = revisionSleep
+        self.gapLimit = gapLimit
         self.timeZone = timeZone
         self.now = now
         self.writeObserver = writeObserver
@@ -223,9 +265,52 @@ final class UsageHistoryStore: ObservableObject {
         guard didAccept else { return }
 
         enqueueRawPersist(accountID: account.id)
+        let dirtyKeys: Set<String> = earlierMonthDirty.removeValue(forKey: account.id) ?? []
+        for key in dirtyKeys.sorted() {
+            if let earlier = previousMonths[account.id]?[key] {
+                enqueueRollupPersist(accountID: account.id, month: earlier)
+            }
+        }
         if let month = currentMonths[account.id] {
             enqueueRollupPersist(accountID: account.id, month: month)
+            noteRollupWrite()
         }
+    }
+
+    /// Bumps `historyRevision` now, or schedules the one trailing bump for
+    /// the end of the current throttle interval. Readers never miss a
+    /// write: `loadRollups` waits for pending persists and overlays the
+    /// in-memory month, so a reload started by the bump sees it.
+    private func noteRollupWrite() {
+        guard trailingRevisionBump == nil else { return } // already coalesced
+        let current: Date = now()
+        guard let last = lastRevisionBump else {
+            bumpRevision(at: current)
+            return
+        }
+        let elapsed: TimeInterval = current.timeIntervalSince(last)
+        if elapsed >= revisionThrottle {
+            bumpRevision(at: current)
+            return
+        }
+        // A wall clock stepped backwards gives a negative `elapsed`; never
+        // wait longer than one interval.
+        let delay: TimeInterval = min(revisionThrottle, max(0, revisionThrottle - elapsed))
+        let sleep = revisionSleep
+        trailingRevisionBump = Task { [weak self] in
+            await sleep(delay)
+            self?.fireTrailingRevisionBump()
+        }
+    }
+
+    private func fireTrailingRevisionBump() {
+        trailingRevisionBump = nil
+        bumpRevision(at: now())
+    }
+
+    private func bumpRevision(at date: Date) {
+        lastRevisionBump = date
+        historyRevision += 1
     }
 
     /// Ingests one window into the in-memory raw series and current-month
@@ -243,7 +328,13 @@ final class UsageHistoryStore: ObservableObject {
         // flip must not be lost just because the sample itself was rejected.
         rawSeries[account.id, default: [:]][kind] = series
         guard case let .accepted(previous, didReset) = outcome else { return false }
-        foldRollup(accountID: account.id, kind: kind, previous: previous, sample: sample, didReset: didReset)
+        // The provider decides the window family; a fixed (ChatGPT) window
+        // also takes a moved reset time as an instance boundary.
+        let isFixedWindow: Bool = WindowFamily(provider: account.provider) == .fixed
+        foldRollup(
+            accountID: account.id, kind: kind, previous: previous, sample: sample,
+            didReset: didReset, isFixedWindow: isFixedWindow
+        )
         return true
     }
 
@@ -272,17 +363,93 @@ final class UsageHistoryStore: ObservableObject {
     /// rollup. Persistence is enqueued ONCE by `record` after each window folds
     /// — all windows share the snapshot's month, so they land in the same
     /// `currentMonths[accountID]` segment.
-    private func foldRollup(accountID: UUID, kind: UsageWindowKind, previous: UsageHistorySample?, sample: UsageHistorySample, didReset: Bool) {
+    ///
+    /// An interval whose previous sample lies in an earlier month segment
+    /// folds its earlier part into THAT segment (`previousMonths`), so a
+    /// month boundary neither drops nor double-counts observed time.
+    private func foldRollup(
+        accountID: UUID,
+        kind: UsageWindowKind,
+        previous: UsageHistorySample?,
+        sample: UsageHistorySample,
+        didReset: Bool,
+        isFixedWindow: Bool
+    ) {
         let key = monthKey(for: sample.ts)
         if currentMonths[accountID]?.key != key {
-            // Roll to (or first-touch) the sample's month segment, loading it if on disk.
-            currentMonths[accountID] = loadMonth(accountID: accountID, key: key)
+            // Roll to (or first-touch) the sample's month segment, loading it
+            // if on disk. The month being left stays in memory as the earlier
+            // segment for the interval that crosses the boundary.
+            let leaving: RollupMonth? = currentMonths[accountID]
+            if let kept = previousMonths[accountID]?[key] {
+                currentMonths[accountID] = kept
+                previousMonths[accountID]?[key] = nil
+            } else {
+                currentMonths[accountID] = loadMonth(accountID: accountID, key: key)
+            }
+            // Keep only the month being left. Older segments are already on
+            // disk: `record` persists every changed one before it returns,
+            // and a roll happens on a record's first fold.
+            var kept: [String: RollupMonth] = [:]
+            if let leaving { kept[leaving.key] = leaving }
+            previousMonths[accountID] = kept
         }
         var month = currentMonths[accountID] ?? RollupMonth(key: key, fiveHour: [:], weekly: [:], modelWeekly: [:])
         var buckets = month.buckets(for: kind)
-        UsageHourlyRollup.fold(previous: previous, sample: sample, didReset: didReset, into: &buckets, timeZone: timeZone)
+
+        // Lend the earlier segment's hours from the previous sample's hour on,
+        // only when the fold can integrate the interval (a reset or an
+        // interval over the gap limit folds nothing, so the earlier month is
+        // not even read).
+        let limit: TimeInterval = gapLimit()
+        var earlier: RollupMonth?
+        var lentHours: [Date] = []
+        if let previous, !didReset, sample.ts.timeIntervalSince(previous.ts) <= limit {
+            let previousKey = monthKey(for: previous.ts)
+            if previousKey != key {
+                let segment = earlierSegment(accountID: accountID, key: previousKey)
+                let firstHour = UsageHourlyRollup.hourStart(for: previous.ts, timeZone: timeZone)
+                for (hour, bucket) in segment.buckets(for: kind) where hour >= firstHour && buckets[hour] == nil {
+                    buckets[hour] = bucket
+                    lentHours.append(hour)
+                }
+                earlier = segment
+            }
+        }
+
+        UsageHourlyRollup.fold(
+            previous: previous,
+            sample: sample,
+            didReset: didReset,
+            isFixedWindow: isFixedWindow,
+            gapLimit: limit,
+            into: &buckets,
+            timeZone: timeZone
+        )
+
+        if var earlier {
+            var earlierBuckets = earlier.buckets(for: kind)
+            var changed = false
+            for hour in lentHours {
+                let folded = buckets.removeValue(forKey: hour)
+                if folded != earlierBuckets[hour] { changed = true }
+                earlierBuckets[hour] = folded
+            }
+            earlier.set(earlierBuckets, for: kind)
+            previousMonths[accountID, default: [:]][earlier.key] = earlier
+            if changed { earlierMonthDirty[accountID, default: []].insert(earlier.key) }
+        }
         month.set(buckets, for: kind)
         currentMonths[accountID] = month
+    }
+
+    /// The account's in-memory earlier segment for `key`, loaded from disk
+    /// the first time (e.g. the app started in the new month).
+    private func earlierSegment(accountID: UUID, key: String) -> RollupMonth {
+        if let kept = previousMonths[accountID]?[key] { return kept }
+        let loaded = loadMonth(accountID: accountID, key: key)
+        previousMonths[accountID, default: [:]][key] = loaded
+        return loaded
     }
 
     private func enqueueRollupPersist(accountID: UUID, month: RollupMonth) {
@@ -345,12 +512,15 @@ final class UsageHistoryStore: ObservableObject {
         // and the next rollup persist rewrites the file wholesale (self-heal)
         // — while `loadMonth` already quarantines it on the record path
         // if the corruption survives until the next month-touch.
-        let liveMonthURL = currentMonths[accountID].map { rollupFileURL(accountID, key: $0.key) }
-        for url in decoded.corruptURLs where url != liveMonthURL {
+        let liveURLs = liveMonthURLs(accountID)
+        for url in decoded.corruptURLs where !liveURLs.contains(url) {
             quarantine(url)
         }
 
         var byHourStart = decoded.byHourStart
+        // No overlay is needed for the earlier segment (`previousMonths`): a
+        // fold only reaches it on the interval that rolls the current month,
+        // and a month change during the read already forces the re-read above.
         // Freshness overlay: a `record()` can land while the read above is
         // off-main. The in-memory current-month segment is a superset of its
         // file at all times (`loadMonth` seeds it FROM the file before the
@@ -399,8 +569,8 @@ final class UsageHistoryStore: ObservableObject {
             decoded = await Self.decodeRecentRollups(refreshed, kinds: kinds, since: since)
         }
 
-        let liveMonthURL = currentMonths[accountID].map { rollupFileURL(accountID, key: $0.key) }
-        for url in decoded.corruptURLs where url != liveMonthURL {
+        let liveURLs = liveMonthURLs(accountID)
+        for url in decoded.corruptURLs where !liveURLs.contains(url) {
             quarantine(url)
         }
 
@@ -518,6 +688,18 @@ final class UsageHistoryStore: ObservableObject {
         }
     }
 
+    /// The files `record()` rewrites for this account: its current month and
+    /// its in-memory earlier month. Never quarantined from a read, because a
+    /// valid rewrite may have landed after the read.
+    private func liveMonthURLs(_ accountID: UUID) -> [URL] {
+        var urls: [URL] = []
+        if let month = currentMonths[accountID] { urls.append(rollupFileURL(accountID, key: month.key)) }
+        for earlierKey in (previousMonths[accountID] ?? [:]).keys {
+            urls.append(rollupFileURL(accountID, key: earlierKey))
+        }
+        return urls
+    }
+
     private func rollupFileURL(_ accountID: UUID, key: String) -> URL {
         rootDirectory.appending(path: accountID.uuidString, directoryHint: .isDirectory).appending(path: "rollup-\(key).json")
     }
@@ -563,6 +745,8 @@ final class UsageHistoryStore: ObservableObject {
         await persistTail.value // barrier: let pending writes finish first
         rawSeries.removeValue(forKey: accountID)
         currentMonths.removeValue(forKey: accountID)
+        previousMonths.removeValue(forKey: accountID)
+        earlierMonthDirty.removeValue(forKey: accountID)
         try? FileManager.default.removeItem(at: rootDirectory.appending(path: accountID.uuidString, directoryHint: .isDirectory))
         removingAccountIDs.remove(accountID)
     }

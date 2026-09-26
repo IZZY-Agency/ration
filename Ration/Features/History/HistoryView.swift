@@ -12,6 +12,14 @@ import SwiftUI
 /// `HistoryOverlay`.
 struct HistoryView: View {
     @ObservedObject var model: AppModel
+    /// The store's throttled history revision, so open Patterns charts pick
+    /// up new rollups the way the Billing-cycle cards do.
+    @StateObject private var clock: HistoryRefreshClock
+
+    init(model: AppModel) {
+        self.model = model
+        _clock = StateObject(wrappedValue: HistoryRefreshClock(history: model.history))
+    }
 
     @State private var scope: HistoryScope = .all
     @State private var selectedKind: UsageWindowKind = .fiveHour
@@ -81,11 +89,23 @@ struct HistoryView: View {
 
     /// Identity for the loader: the scope, the window, and every account that
     /// owns that window — so adding, removing, pausing, or an account newly
-    /// gaining the window all reload the overlay.
-    private var loadKey: String {
-        HistoryOverlay.loadIdentity(
+    /// gaining the window all reload the overlay — plus the store's history
+    /// revision, so new rollups reload it too (at most once a minute).
+    /// Nil while Billing cycle is shown: the hidden Patterns charts do not
+    /// reload (their scan and heatmap run on the main actor); switching back
+    /// changes the key and loads them fresh.
+    private var loadKey: String? {
+        let identity: String = HistoryOverlay.loadIdentity(
             presentations: model.presentations, scope: effectiveScope, kind: effectiveKind
         )
+        return Self.patternsLoadKey(
+            identity: identity, historyRevision: clock.historyRevision, isPatternsActive: mode == .patterns
+        )
+    }
+
+    static func patternsLoadKey(identity: String, historyRevision: Int, isPatternsActive: Bool = true) -> String? {
+        guard isPatternsActive else { return nil }
+        return "\(historyRevision)|" + identity
     }
 
     var body: some View {
@@ -115,8 +135,11 @@ struct HistoryView: View {
         .background(Theme.ink)
         .frame(minWidth: 680, minHeight: 480)
         .task(id: loadKey) {
+            guard loadKey != nil else { return }
             await loadBuckets()
         }
+        .onAppear { clock.start() }
+        .onDisappear { clock.stop() }
     }
 
     private var header: some View {

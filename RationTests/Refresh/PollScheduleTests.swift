@@ -32,4 +32,9 @@ final class PollScheduleTests: XCTestCase {
             .seconds(PollSchedule.baseSeconds + PollSchedule.maxJitterSeconds)
         )
     }
+
+    func testRollupGapLimitIsTwiceTheLongestPollOfTheMode() {
+        XCTAssertEqual(PollSchedule.rollupGapLimit(lowPowerMode: false), 720)
+        XCTAssertEqual(PollSchedule.rollupGapLimit(lowPowerMode: true), 1920)
+    }
 }

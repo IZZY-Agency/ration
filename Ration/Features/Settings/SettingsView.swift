@@ -103,6 +103,7 @@ struct SettingsView: View {
                         try await model.renameAccount(id: id, label: label)
                     },
                     onRenameError: { errorMessage = $0?.localizedDescription },
+                    pendingEdits: model.pendingEdits,
                     onReauthenticate: { beginReauthentication(id) },
                     onRemove: { accountToRemove = presentation.account },
                     onSetAutoStart: { enabled in
@@ -135,6 +136,7 @@ struct SettingsView: View {
                 autoStartEnabledCount: features.warmUp
                     ? AutoStartPolicy.effectiveAutoStartCount(model.accounts)
                     : 0,
+                pendingEdits: model.pendingEdits,
                 // Awaited (not `perform`-and-forget) so the pane can tell a
                 // successful save from a failed one and keep the edit.
                 onSetQuietHours: { cells in

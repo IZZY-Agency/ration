@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import os
 import WebKit
 
 enum AccountRemovalError: LocalizedError {
@@ -60,15 +61,22 @@ private final class AccountSessionManager {
     private let adapterRegistry: ProviderAdapterRegistry
     private let messageSender: ClaudeMessageSender
     private var webViews: [UUID: WKWebView] = [:]
+    /// How long a torn-down view gets to finish its `about:blank` navigation
+    /// before it is judged abandoned (`watchTeardown`).
+    private let teardownGrace: @MainActor () async -> Void
 
     init(
         profileManager: any WebProfileManaging,
         adapterRegistry: ProviderAdapterRegistry,
-        messageSender: ClaudeMessageSender = ClaudeMessageSender()
+        messageSender: ClaudeMessageSender = ClaudeMessageSender(),
+        teardownGrace: @escaping @MainActor () async -> Void = {
+            try? await Task.sleep(for: .seconds(30))
+        }
     ) {
         self.profileManager = profileManager
         self.adapterRegistry = adapterRegistry
         self.messageSender = messageSender
+        self.teardownGrace = teardownGrace
     }
 
     /// Read-only discovery on the account's warm session (called right after a
@@ -167,10 +175,38 @@ private final class AccountSessionManager {
     /// defaults to never-protected so standalone/test use is unaffected.
     var isProfileProtected: @MainActor (UUID) -> Bool = { _ in false }
 
-    /// Profiles whose timeout recycle was deferred because the
-    /// profile was protected at the time. `completeDeferredRecycles()`
-    /// finishes them once protection ends.
-    private var pendingRecycleProfileIDs: Set<UUID> = []
+    /// Timeout recycles deferred because the profile was protected at the
+    /// time, keyed by profile, holding the EXACT view that timed out.
+    /// `completeDeferredRecycles()` finishes them once protection ends. The
+    /// view, not just the profile, is kept: by then the cache may have dropped
+    /// it (`removeProfile`) or hold a different, healthy view, and the teardown
+    /// belongs to the view that hosts the abandoned bridge call.
+    private var pendingRecycles: [UUID: WKWebView] = [:]
+
+    /// Views whose `about:blank` teardown had not finished after
+    /// `teardownGrace`: a persistently wedged WebContent process ignores even
+    /// that, and each such view is abandoned with its process. Nothing caps
+    /// this in-app, so it is counted and logged to make field accumulation
+    /// visible.
+    private(set) var abandonedWebViewCount = 0
+    private var teardownChecks: [UUID: Task<Void, Never>] = [:]
+
+    /// Every view already torn down, held weakly. Several paths can reach the
+    /// same wedged view (a deferred recycle at session close, then the late
+    /// timeout of a poll that was retrying on it); it is torn down, watched
+    /// and counted once. Weak so the registry never keeps a view alive, and
+    /// compared by `===` (not a bare `ObjectIdentifier`, which a new view can
+    /// reuse once the old one is gone).
+    private final class WeakView {
+        weak var view: WKWebView?
+        init(_ view: WKWebView) { self.view = view }
+    }
+    private var tornDownViews: [WeakView] = []
+
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "agency.izzy.ration",
+        category: "webview"
+    )
 
     /// Monotonic count of evaluations started through
     /// `recycleWebViewOnTimeout`, and the latest one per profile with the view
@@ -183,7 +219,7 @@ private final class AccountSessionManager {
     /// later call). Recycle it — UNLESS an open sign-in/reauth session is
     /// using this exact profile right now (`isProfileProtected`), in which
     /// case recycling would abort the user's visible auth navigation; defer
-    /// it instead (`pendingRecycleProfileIDs`, completed by
+    /// it instead (`pendingRecycles`, completed by
     /// `completeDeferredRecycles()` once the session closes) and let the
     /// next poll retry on the same view in the meantime. Cookies live in the
     /// WKWebsiteDataStore, not the view, so a recycle never re-prompts login.
@@ -229,23 +265,73 @@ private final class AccountSessionManager {
                 throw error
             }
             if isProfileProtected(profileID) {
-                pendingRecycleProfileIDs.insert(profileID)
+                deferRecycle(of: operatedView, profileID: profileID)
             } else {
                 if webViews[profileID] === operatedView {
                     webViews.removeValue(forKey: profileID)
                 }
-                tearDown(operatedView)
+                tearDown(operatedView, profileID: profileID)
             }
             throw error
         }
     }
 
-    /// Force-settle a dropped view's abandoned bridge call — see
-    /// `recycleWebViewOnTimeout`'s doc for why `about:blank`, not just
-    /// `stopLoading()`, is required.
-    private func tearDown(_ webView: WKWebView) {
-        webView.stopLoading()
-        webView.load(URLRequest(url: URL(string: "about:blank")!))
+    private func deferRecycle(of webView: WKWebView, profileID: UUID) {
+        // One entry per profile. A different view already waiting here is
+        // out of the cache (a protected profile's cached view is never
+        // evicted by a recycle), so no poll can reach it any more: tear it
+        // down now rather than overwrite, and so lose, the only reference
+        // that would.
+        if let displaced = pendingRecycles[profileID], displaced !== webView {
+            tearDown(displaced, profileID: profileID)
+        }
+        pendingRecycles[profileID] = webView
+    }
+
+    /// Force-settle a dropped view's abandoned bridge call (see
+    /// `WebViewTeardown` for why `about:blank`, not just `stopLoading()`),
+    /// then check later that the view acted on it.
+    private func tearDown(_ webView: WKWebView, profileID: UUID) {
+        tornDownViews.removeAll { $0.view == nil }
+        guard !tornDownViews.contains(where: { $0.view === webView }) else { return }
+        tornDownViews.append(WeakView(webView))
+        WebViewTeardown.begin(webView)
+        watchTeardown(of: webView, profileID: profileID)
+    }
+
+    /// After `teardownGrace`, a view that is gone was released (its abandoned
+    /// call settled) and one showing a finished `about:blank` was torn down.
+    /// Anything else ignored the teardown and is abandoned: counted and
+    /// logged. Holds the view weakly, so the check never keeps it alive.
+    private func watchTeardown(of webView: WKWebView, profileID: UUID) {
+        let checkID = UUID()
+        let grace = teardownGrace
+        teardownChecks[checkID] = Task { @MainActor [weak self, weak webView] in
+            await grace()
+            guard let self else { return }
+            self.teardownChecks.removeValue(forKey: checkID)
+            guard let webView, !WebViewTeardown.hasCompleted(webView) else { return }
+            self.abandonedWebViewCount += 1
+            Self.logger.error(
+                "web view ignored its about:blank teardown; abandoned profile=\(profileID.uuidString, privacy: .public) abandonedTotal=\(self.abandonedWebViewCount, privacy: .public)"
+            )
+        }
+    }
+
+    /// Drops `profileID`'s cached view. The suspect view, the one waiting on
+    /// a deferred recycle, gets the full teardown when `tearDownSuspect`;
+    /// otherwise it stays pending so `completeDeferredRecycles()` still
+    /// reaches it by identity. Any other dropped view only stops loading.
+    private func dropCachedView(profileID: UUID, tearDownSuspect: Bool) {
+        let cached = webViews.removeValue(forKey: profileID)
+        var tornDown: WKWebView?
+        if tearDownSuspect, let suspect = pendingRecycles.removeValue(forKey: profileID) {
+            tearDown(suspect, profileID: profileID)
+            tornDown = suspect
+        }
+        if let cached, cached !== tornDown {
+            cached.stopLoading()
+        }
     }
 
     /// Finishes every timeout recycle that was deferred because its
@@ -254,25 +340,40 @@ private final class AccountSessionManager {
     /// `signInSessions` — the tainted view otherwise stays cached with only
     /// `stopLoading()` ever applied to it (the idle release), which never
     /// settles the abandoned callback and leaks the view/WebContent process
-    /// indefinitely. Snapshots the pending set first since it mutates it.
+    /// indefinitely. Snapshots the pending entries first since it mutates them.
+    ///
+    /// Tears down the EXACT view that timed out, and evicts the cache entry
+    /// only while it still holds that view: a healthy view cached since then
+    /// is left alone.
+    ///
+    /// Known and accepted behavior: while the session was open,
+    /// polls kept retrying on the protected (still cached) view. If it has
+    /// recovered and a healthy poll is mid-evaluation on it right now, this
+    /// teardown invalidates that evaluation, so that one poll fails and the
+    /// next one runs on a fresh view.
     func completeDeferredRecycles() {
-        for profileID in Array(pendingRecycleProfileIDs) where !isProfileProtected(profileID) {
-            if let webView = webViews.removeValue(forKey: profileID) {
-                tearDown(webView)
+        for (profileID, webView) in Array(pendingRecycles) where !isProfileProtected(profileID) {
+            pendingRecycles.removeValue(forKey: profileID)
+            if webViews[profileID] === webView {
+                webViews.removeValue(forKey: profileID)
             }
-            pendingRecycleProfileIDs.remove(profileID)
+            tearDown(webView, profileID: profileID)
         }
     }
 
+    /// The profile is being deleted, which ends any sign-in on it, so a
+    /// suspect view is torn down now whether or not a session still protects
+    /// it: if the deletion fails, the session survives for cleanup to retry
+    /// and nothing else would complete its deferred recycle meanwhile.
     func removeProfile(profileID: UUID) async throws {
-        webViews.removeValue(forKey: profileID)?.stopLoading()
+        dropCachedView(profileID: profileID, tearDownSuspect: true)
         try await profileManager.removeProfile(profileID: profileID)
     }
 
     /// Drop this profile's cached WebView first: purging the store underneath a live
     /// view would have it re-fetch everything it just lost anyway.
     func purgeDiskCache(profileID: UUID) async {
-        webViews.removeValue(forKey: profileID)?.stopLoading()
+        dropCachedView(profileID: profileID, tearDownSuspect: !isProfileProtected(profileID))
         await profileManager.purgeDiskCache(profileID: profileID)
     }
 
@@ -287,17 +388,11 @@ private final class AccountSessionManager {
     /// the keys first since it mutates the dictionary.
     func releaseIdleWebViews(keeping busyProfileIDs: Set<UUID>) {
         for profileID in Array(webViews.keys) where !busyProfileIDs.contains(profileID) {
-            guard let webView = webViews.removeValue(forKey: profileID) else { continue }
             // A view still awaiting its deferred recycle carries an
             // abandoned bridge call — `stopLoading()` alone never settles
-            // it (see `recycleWebViewOnTimeout`'s doc), so it needs the same
-            // `about:blank` teardown `completeDeferredRecycles()` would have
-            // applied.
-            if pendingRecycleProfileIDs.remove(profileID) != nil {
-                tearDown(webView)
-            } else {
-                webView.stopLoading()
-            }
+            // it (see `WebViewTeardown`), so it needs the same `about:blank`
+            // teardown `completeDeferredRecycles()` would have applied.
+            dropCachedView(profileID: profileID, tearDownSuspect: !isProfileProtected(profileID))
         }
     }
 
@@ -326,6 +421,13 @@ private final class AccountSessionManager {
     /// against it.
     func replaceWebViewForTesting(profileID: UUID, with webView: WKWebView) {
         webViews[profileID] = webView
+    }
+
+    /// Test barrier: resolves once every issued teardown has been judged.
+    func flushTeardownChecks() async {
+        while let check = teardownChecks.values.first {
+            await check.value
+        }
     }
     #endif
 }
@@ -725,8 +827,12 @@ final class AppModel: ObservableObject {
     /// wizard, including a manually opened one.
     private(set) var isOnboardingOwed = false
 
+    /// Settings edits not on disk yet (label, quiet hours). A quit saves them
+    /// first — see `prepareForTermination()`.
+    let pendingEdits: PendingEditRegistry
+
     var requiresTerminationPreparation: Bool {
-        hasVolatileProfileCleanup || !signInSessions.isEmpty
+        hasVolatileProfileCleanup || !signInSessions.isEmpty || pendingEdits.hasPendingEdits
     }
 
     /// Accounts eligible for a usage refresh. Paused accounts are excluded
@@ -762,9 +868,14 @@ final class AppModel: ObservableObject {
         beforeAlertsHydrationCompletes: @escaping @MainActor () async -> Void = {},
         beforeAutoStartCommit: @escaping @MainActor () async -> Void = {},
         beforeProfileCleanupDeletion: @escaping @MainActor (UUID) async -> Void = { _ in },
-        systemPowerObserver: any SystemPowerObserving = SystemPowerObserver()
+        systemPowerObserver: any SystemPowerObserving = SystemPowerObserver(),
+        pendingEdits: PendingEditRegistry = PendingEditRegistry(),
+        teardownGrace: @escaping @MainActor () async -> Void = {
+            try? await Task.sleep(for: .seconds(30))
+        }
     ) {
         self.accountStore = accountStore
+        self.pendingEdits = pendingEdits
         self.snapshotStore = snapshotStore
         self.pendingProfileDeletionStore = pendingProfileDeletionStore
         self.historyStore = historyStore
@@ -781,9 +892,15 @@ final class AppModel: ObservableObject {
         let sessionManager = AccountSessionManager(
             profileManager: profileManager,
             adapterRegistry: adapterRegistry,
-            messageSender: messageSender
+            messageSender: messageSender,
+            teardownGrace: teardownGrace
         )
         self.sessionManager = sessionManager
+        // Rollup gap limit tracks the coordinator's cadence below: 2 × the
+        // longest poll of the current (Low Power or normal) mode.
+        historyStore.gapLimit = {
+            PollSchedule.rollupGapLimit(lowPowerMode: systemPowerObserver.isLowPowerModeEnabled)
+        }
         refreshCoordinator = UsageRefreshCoordinator(
             snapshotStore: snapshotStore,
             now: now,
@@ -2244,6 +2361,10 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Web views abandoned since launch because they ignored their
+    /// `about:blank` teardown. Diagnostic only: no UI reads it.
+    var abandonedWebViewCount: Int { sessionManager.abandonedWebViewCount }
+
     #if DEBUG
     /// Test-only: exposes the committed authoritative alert state for the
     /// given account, so tests can assert directly on the in-memory source
@@ -2275,6 +2396,11 @@ final class AppModel: ObservableObject {
     /// `alertsActiveForTesting()` staying `false`.
     func alertsHydratedForTesting() -> Bool {
         alertsHydrated
+    }
+
+    /// TEST barrier: resolves once every issued teardown has been judged.
+    func flushTeardownChecks() async {
+        await sessionManager.flushTeardownChecks()
     }
 
     /// Test-only: profile IDs whose WebView is currently cached, so a test
@@ -3253,6 +3379,19 @@ final class AppModel: ObservableObject {
     }
 
     func prepareForTermination() async -> Bool {
+        // First, and whatever the veto below decides: a Settings edit still in
+        // its debounce or being saved lands before the process can exit. At
+        // most `PendingEditRegistry.terminationTimeout`, so a stuck save never
+        // blocks quitting. Runs on the main actor, which AppKit keeps serving
+        // while a `.terminateLater` decision is open (probed; see
+        // `applicationShouldTerminate` for the one exception).
+        //
+        // The 2 s bound is INTENTIONAL, and a false result (timed out) does
+        // not hold the quit: Settings writes are local files and finish in
+        // milliseconds, so a save still running after 2 s is stuck, and a
+        // log out or restart must never hang on it. The edit can be lost
+        // only when its save has been stuck for more than 2 s.
+        await pendingEdits.flushAll()
         let sessionIDs = signInSessions.values.compactMap { session in
             // "Cleanup owns this session" must mean the SAME thing here as
             // everywhere else, so `isStuckCleanup` has the final say. Raw queue

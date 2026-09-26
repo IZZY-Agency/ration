@@ -204,8 +204,9 @@ final class HistoryCopyLocalizationTests: XCTestCase {
 
     private func summary(_ kind: UsageWindowKind = .weekly) -> CycleUtilizationSummary {
         CycleUtilizationSummary(
-            windowKind: kind, capacityUtilization: 0.424, consumedAllowances: 1.46,
-            daysUsed: 2, atCapDays: 1, observedHours: 40, elapsedHours: 58
+            windowKind: kind, family: .rolling, capacityUtilization: 0.424, isLegacyLowerBound: true, consumedAllowances: 1.46,
+            daysUsed: 2, atCapDays: 1, observedHours: 40, elapsedHours: 58,
+            observedSeconds: 40 * 3600, elapsedSeconds: 58 * 3600
         )
     }
 
@@ -301,8 +302,9 @@ final class HistoryCopyLocalizationTests: XCTestCase {
     /// The watched hours are capped at the elapsed hours, as in 1.3.0.
     func testDetailCapsWatchedHoursAtElapsed() {
         let over = CycleUtilizationSummary(
-            windowKind: .weekly, capacityUtilization: 1.0, consumedAllowances: 2.0,
-            daysUsed: 5, atCapDays: 0, observedHours: 70, elapsedHours: 60
+            windowKind: .weekly, family: .rolling, capacityUtilization: 1.0, isLegacyLowerBound: true, consumedAllowances: 2.0,
+            daysUsed: 5, atCapDays: 0, observedHours: 70, elapsedHours: 60,
+            observedSeconds: 70 * 3600, elapsedSeconds: 60 * 3600
         )
         XCTAssertEqual(
             BillingCycleCopy.detail(over, locale: L10n.en),
@@ -316,8 +318,9 @@ final class HistoryCopyLocalizationTests: XCTestCase {
     func testDetailDayCountsArePlurals() {
         func detail(_ used: Int, _ atCap: Int, _ locale: Locale) -> String {
             let s = CycleUtilizationSummary(
-                windowKind: .weekly, capacityUtilization: 0.1, consumedAllowances: 0.5,
-                daysUsed: used, atCapDays: atCap, observedHours: 10, elapsedHours: 10
+                windowKind: .weekly, family: .rolling, capacityUtilization: 0.1, isLegacyLowerBound: true, consumedAllowances: 0.5,
+                daysUsed: used, atCapDays: atCap, observedHours: 10, elapsedHours: 10,
+            observedSeconds: 10 * 3600, elapsedSeconds: 10 * 3600
             )
             return BillingCycleCopy.detail(s, locale: locale)
         }
@@ -335,6 +338,225 @@ final class HistoryCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(detail(1, 2, L10n.uk), ukPrefix + "використано 1 дн. · на ≥95%: 2 дн. · відстежено 10/10 год")
         XCTAssertEqual(detail(5, 11, L10n.uk), ukPrefix + "використано 5 дн. · на ≥95%: 11 дн. · відстежено 10/10 год")
         XCTAssertEqual(detail(21, 0, L10n.uk), ukPrefix + "використано 21 дн. · на ≥95%: 0 дн. · відстежено 10/10 год")
+    }
+
+    // MARK: Billing cycle v2 (average load / average peak)
+
+    private func v2(
+        _ kind: UsageWindowKind = .weekly, _ family: WindowFamily = .rolling, _ value: Double = 0.424,
+        daysUsed: Int = 2, atCapDays: Int = 1, observedSeconds: Double = 40 * 3600
+    ) -> CycleUtilizationSummary {
+        CycleUtilizationSummary(
+            windowKind: kind, family: family, capacityUtilization: value, isLegacyLowerBound: false,
+            consumedAllowances: 1.46, daysUsed: daysUsed, atCapDays: atCapDays,
+            observedHours: Int(observedSeconds / 3600), elapsedHours: 58,
+            observedSeconds: observedSeconds, elapsedSeconds: 58 * 3600
+        )
+    }
+
+    /// v2 is a plain "N%": no "≥", in every language.
+    func testV2HeadlineIsAPlainPercentInEveryLanguage() {
+        XCTAssertEqual(BillingCycleCopy.headline(v2(), locale: L10n.en), "42%")
+        XCTAssertEqual(BillingCycleCopy.headline(v2(), locale: L10n.fr), "42\(nnb)%")
+        XCTAssertEqual(BillingCycleCopy.headline(v2(), locale: L10n.uk), "42%")
+        XCTAssertEqual(BillingCycleCopy.headline(v2(.fiveHour, .fixed, 0.6), locale: L10n.en), "60%")
+    }
+
+    /// Over 100% is impossible by construction; the display clamps anyway.
+    func testV2HeadlineClampsToZeroThroughHundred() {
+        XCTAssertEqual(BillingCycleCopy.headline(v2(.weekly, .rolling, 1.3), locale: L10n.en), "100%")
+        XCTAssertEqual(BillingCycleCopy.headline(v2(.weekly, .fixed, -0.02), locale: L10n.en), "0%")
+        XCTAssertEqual(BillingCycleCopy.displayFraction(v2(.weekly, .rolling, 1.3)), 1)
+        XCTAssertEqual(BillingCycleCopy.displayFraction(v2(.weekly, .rolling, -0.2)), 0)
+        XCTAssertEqual(BillingCycleCopy.fableValue(label: "Fable", v2(.modelWeekly, .rolling, 1.7), locale: L10n.en),
+                       "Fable 100% this cycle · average weekly load")
+    }
+
+    /// The legacy fallback keeps its figure unclamped, as in 1.4.0.
+    func testLegacyDisplayIsNotClamped() {
+        let over = CycleUtilizationSummary(
+            windowKind: .weekly, family: .rolling, capacityUtilization: 1.3, isLegacyLowerBound: true,
+            consumedAllowances: 1, daysUsed: 1, atCapDays: 0, observedHours: 50, elapsedHours: 60,
+            observedSeconds: 50 * 3600, elapsedSeconds: 60 * 3600
+        )
+        XCTAssertEqual(BillingCycleCopy.headline(over, locale: L10n.en), "≥ 130%")
+        XCTAssertEqual(BillingCycleCopy.displayFraction(over), 1.3)
+    }
+
+    /// The caption names the family and the window; Fable (model-weekly)
+    /// follows its window kind.
+    func testV2CaptionsInEveryLanguage() {
+        let expected: [(UsageWindowKind, WindowFamily, String, String, String)] = [
+            (.weekly, .rolling, "average weekly load", "charge hebdomadaire moyenne", "середнє тижневе навантаження"),
+            (.modelWeekly, .rolling, "average weekly load", "charge hebdomadaire moyenne", "середнє тижневе навантаження"),
+            (.fiveHour, .rolling, "average 5-hour load", "charge moyenne sur 5\(nb)h", "середнє 5-годинне навантаження"),
+            (.weekly, .fixed, "average peak per week", "pic moyen par semaine", "середній пік за тиждень"),
+            (.modelWeekly, .fixed, "average peak per week", "pic moyen par semaine", "середній пік за тиждень"),
+            (.fiveHour, .fixed, "average peak per 5 hours", "pic moyen par période de 5\(nb)h", "середній пік за 5 годин"),
+        ]
+        for (kind, family, en, fr, uk) in expected {
+            let s = v2(kind, family)
+            XCTAssertEqual(BillingCycleCopy.caption(s, locale: L10n.en), en, "\(kind) \(family)")
+            XCTAssertEqual(BillingCycleCopy.caption(s, locale: L10n.fr), fr, "\(kind) \(family)")
+            XCTAssertEqual(BillingCycleCopy.caption(s, locale: L10n.uk), uk, "\(kind) \(family)")
+        }
+    }
+
+    /// The legacy fallback keeps the exact 1.4.0 caption.
+    func testLegacyCaptionIsTheObservedLowerBound() {
+        let s = summary()
+        XCTAssertEqual(BillingCycleCopy.caption(s, locale: L10n.en), "observed lower bound")
+        XCTAssertEqual(BillingCycleCopy.caption(s, locale: L10n.fr), "borne inférieure observée")
+        XCTAssertEqual(BillingCycleCopy.caption(s, locale: L10n.uk), "спостережена нижня межа")
+    }
+
+    /// The v2 detail keeps the days and "watched", and drops the net-burn
+    /// allowance multiple (a legacy figure with a different meaning).
+    func testV2DetailInEveryLanguage() {
+        XCTAssertEqual(BillingCycleCopy.detail(v2(), locale: L10n.en), "Used 2 days · At ≥95% 1 day · watched 40/58 hrs")
+        XCTAssertEqual(
+            BillingCycleCopy.detail(v2(), locale: L10n.fr),
+            "Utilisé 2\(nb)j · à ≥95\(nb)%\(nb): 1\(nb)j · suivi 40/58\(nb)h"
+        )
+        XCTAssertEqual(
+            BillingCycleCopy.detail(v2(), locale: L10n.uk),
+            "Використано 2 дн. · на ≥95%: 1 дн. · відстежено 40/58 год"
+        )
+        XCTAssertEqual(BillingCycleCopy.detail(v2(.fiveHour, .fixed), locale: L10n.en),
+                       "Used 2 days · At ≥95% 1 day · watched 40/58 hrs")
+    }
+
+    func testV2DetailDayCountsArePlurals() {
+        XCTAssertEqual(BillingCycleCopy.detail(v2(daysUsed: 1, atCapDays: 0), locale: L10n.en),
+                       "Used 1 day · At ≥95% 0 days · watched 40/58 hrs")
+        XCTAssertEqual(BillingCycleCopy.detail(v2(daysUsed: 21, atCapDays: 1), locale: L10n.en),
+                       "Used 21 days · At ≥95% 1 day · watched 40/58 hrs")
+        XCTAssertEqual(BillingCycleCopy.detail(v2(daysUsed: 1, atCapDays: 2), locale: L10n.fr),
+                       "Utilisé 1\(nb)j · à ≥95\(nb)%\(nb): 2\(nb)j · suivi 40/58\(nb)h")
+        XCTAssertEqual(BillingCycleCopy.detail(v2(daysUsed: 5, atCapDays: 21), locale: L10n.uk),
+                       "Використано 5 дн. · на ≥95%: 21 дн. · відстежено 40/58 год")
+    }
+
+    /// "watched" counts whole hours of observed seconds (a sleep-gapped hour
+    /// is partly watched), capped at the elapsed hours in the detail line.
+    func testWatchedHoursComeFromObservedSeconds() {
+        let partial = v2(observedSeconds: 41 * 3600 - 1)
+        XCTAssertEqual(BillingCycleCopy.watchedHours(partial), 40)
+        XCTAssertTrue(BillingCycleCopy.detail(partial, locale: L10n.en).hasSuffix("watched 40/58 hrs"))
+        XCTAssertEqual(BillingCycleCopy.watched(partial, cycle: cycle, locale: L10n.en), "watched 40 of 58 hrs · Day 3/30")
+        // `observedHours` disagrees on purpose: the seconds are the source.
+        let seconds = CycleUtilizationSummary(
+            windowKind: .weekly, family: .rolling, capacityUtilization: 0.3, isLegacyLowerBound: false,
+            consumedAllowances: 0, daysUsed: 1, atCapDays: 0, observedHours: 7, elapsedHours: 58,
+            observedSeconds: 30.5 * 3600, elapsedSeconds: 58 * 3600
+        )
+        XCTAssertEqual(BillingCycleCopy.watchedHours(seconds), 30)
+        let over = v2(observedSeconds: 70 * 3600)
+        XCTAssertTrue(BillingCycleCopy.detail(over, locale: L10n.en).hasSuffix("watched 58/58 hrs"))
+    }
+
+    func testV2FableLineInEveryLanguage() {
+        let fable = v2(.modelWeekly, .rolling, 0.424)
+        XCTAssertEqual(BillingCycleCopy.fableValue(label: "Fable", fable, locale: L10n.en),
+                       "Fable 42% this cycle · average weekly load")
+        XCTAssertEqual(BillingCycleCopy.fableValue(label: "Fable", fable, locale: L10n.fr),
+                       "Fable 42\(nb)% sur ce cycle · charge hebdomadaire moyenne")
+        XCTAssertEqual(BillingCycleCopy.fableValue(label: "Fable", fable, locale: L10n.uk),
+                       "Fable 42% у цьому циклі · середнє тижневе навантаження")
+    }
+
+    // MARK: Whole cards
+
+    /// Every line of each card state, in every language: v2 rolling (with a
+    /// v2 Fable line), v2 fixed, legacy (with a not-enough-data Fable line),
+    /// not enough data, and no renewal day. The card view draws exactly
+    /// `BillingCycleCopy.cardText`, so wrong or missing copy fails here.
+    func testCardTextForEveryStateInEveryLanguage() {
+        let utcZone = TimeZone(identifier: "UTC")!
+        func sufficient(_ family: WindowFamily, _ value: Double, legacy: Bool = false, kind: UsageWindowKind = .weekly) -> CycleUtilizationSummary {
+            CycleUtilizationSummary(
+                windowKind: kind, family: family, capacityUtilization: value, isLegacyLowerBound: legacy,
+                consumedAllowances: 1.46, daysUsed: 2, atCapDays: 1, observedHours: 50, elapsedHours: 58,
+                observedSeconds: 50 * 3600, elapsedSeconds: 58 * 3600
+            )
+        }
+        let id = UUID()
+        let rolling = BillingCycleCard.tracked(
+            id: id, label: "Work", provider: .claude, cycle: cycle, summary: sufficient(.rolling, 0.424),
+            fable: FableSecondary(label: "Fable", summary: sufficient(.rolling, 0.31, kind: .modelWeekly)))
+        let fixed = BillingCycleCard.tracked(
+            id: id, label: "Work", provider: .chatGPT, cycle: cycle, summary: sufficient(.fixed, 0.6), fable: nil)
+        let legacy = BillingCycleCard.tracked(
+            id: id, label: "Work", provider: .claude, cycle: cycle, summary: sufficient(.rolling, 0.424, legacy: true),
+            fable: FableSecondary(label: "Fable", summary: nil))
+        let insufficient = BillingCycleCard.tracked(
+            id: id, label: "Work", provider: .claude, cycle: cycle, summary: summary(), fable: nil)
+        let unset = BillingCycleCard.noRenewalDay(id: id, label: "Work", provider: .chatGPT)
+
+        struct Expected {
+            let locale: Locale
+            let subtitle, noCycle: String
+            let v2Headline, rollingCaption, v2Detail, fable: String
+            let fixedHeadline, fixedCaption: String
+            let legacyHeadline, legacyCaption, legacyDetail, fableInsufficient: String
+            let notEnough, watched: String
+        }
+        let expected: [Expected] = [
+            Expected(
+                locale: L10n.en, subtitle: "Cycle Sep 12 – Oct 11 · Day 3/30", noCycle: "No billing cycle set",
+                v2Headline: "42%", rollingCaption: "average weekly load",
+                v2Detail: "Used 2 days · At ≥95% 1 day · watched 50/58 hrs",
+                fable: "Fable 31% this cycle · average weekly load",
+                fixedHeadline: "60%", fixedCaption: "average peak per week",
+                legacyHeadline: "≥ 42%", legacyCaption: "observed lower bound",
+                legacyDetail: "≥ 1.5× weekly allowance · Used 2 days · At ≥95% 1 day · watched 50/58 hrs",
+                fableInsufficient: "Fable · not enough data yet this cycle",
+                notEnough: "Not enough data yet", watched: "watched 40 of 58 hrs · Day 3/30"
+            ),
+            Expected(
+                locale: L10n.fr, subtitle: "Cycle du 12 sept. au 11 oct. · jour 3/30", noCycle: "Aucun cycle de facturation défini",
+                v2Headline: "42\(nnb)%", rollingCaption: "charge hebdomadaire moyenne",
+                v2Detail: "Utilisé 2\(nb)j · à ≥95\(nb)%\(nb): 1\(nb)j · suivi 50/58\(nb)h",
+                fable: "Fable 31\(nb)% sur ce cycle · charge hebdomadaire moyenne",
+                fixedHeadline: "60\(nnb)%", fixedCaption: "pic moyen par semaine",
+                legacyHeadline: "≥ 42\(nnb)%", legacyCaption: "borne inférieure observée",
+                legacyDetail: "≥ 1,5× l’allocation hebdomadaire · utilisé 2\(nb)j · à ≥95\(nb)%\(nb): 1\(nb)j · suivi 50/58\(nb)h",
+                fableInsufficient: "Fable · pas encore assez de données sur ce cycle",
+                notEnough: "Pas encore assez de données", watched: "suivi 40\(nb)h sur 58 · jour 3/30"
+            ),
+            Expected(
+                locale: L10n.uk, subtitle: "Цикл 12 вер. – 11 жовт. · день 3/30", noCycle: "Платіжний цикл не задано",
+                v2Headline: "42%", rollingCaption: "середнє тижневе навантаження",
+                v2Detail: "Використано 2 дн. · на ≥95%: 1 дн. · відстежено 50/58 год",
+                fable: "Fable 31% у цьому циклі · середнє тижневе навантаження",
+                fixedHeadline: "60%", fixedCaption: "середній пік за тиждень",
+                legacyHeadline: "≥ 42%", legacyCaption: "спостережена нижня межа",
+                legacyDetail: "≥ 1,5× тижневого обсягу · використано 2 дн. · на ≥95%: 1 дн. · відстежено 50/58 год",
+                fableInsufficient: "Fable · у цьому циклі ще недостатньо даних",
+                notEnough: "Ще недостатньо даних", watched: "відстежено 40 з 58 год · день 3/30"
+            ),
+        ]
+        for e in expected {
+            func text(_ card: BillingCycleCard) -> BillingCycleCardText {
+                BillingCycleCopy.cardText(card, locale: e.locale, timeZone: utcZone)
+            }
+            let name = e.locale.identifier
+            XCTAssertEqual(text(rolling), BillingCycleCardText(
+                label: "Work", subtitle: e.subtitle,
+                body: .figure(headline: e.v2Headline, caption: e.rollingCaption, detail: e.v2Detail,
+                              fable: .init(text: e.fable, isInsufficient: false))), name)
+            XCTAssertEqual(text(fixed), BillingCycleCardText(
+                label: "Work", subtitle: e.subtitle,
+                body: .figure(headline: e.fixedHeadline, caption: e.fixedCaption, detail: e.v2Detail, fable: nil)), name)
+            XCTAssertEqual(text(legacy), BillingCycleCardText(
+                label: "Work", subtitle: e.subtitle,
+                body: .figure(headline: e.legacyHeadline, caption: e.legacyCaption, detail: e.legacyDetail,
+                              fable: .init(text: e.fableInsufficient, isInsufficient: true))), name)
+            XCTAssertEqual(text(insufficient), BillingCycleCardText(
+                label: "Work", subtitle: e.subtitle,
+                body: .insufficient(notEnoughData: e.notEnough, watched: e.watched)), name)
+            XCTAssertEqual(text(unset), BillingCycleCardText(label: "Work", subtitle: e.noCycle, body: .noRenewalDay), name)
+        }
     }
 
     // MARK: SwiftUI literal keys

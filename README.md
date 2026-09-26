@@ -42,8 +42,8 @@ shows, from your own signed-in session, on your Mac.
 - **History.** Daily burn for one account or all of them overlaid, an
   hour-of-day heatmap, and a burn-rate projection.
 - **Billing-cycle utilisation.** How much of the plan you used since your
-  renewal day, reported as a lower bound over the hours Ration actually
-  watched.
+  renewal day: the average weekly load for Claude, the average weekly peak for
+  ChatGPT, over the hours Ration actually watched.
 - **Several accounts per provider**, grouped, with pause and resume that keeps
   the sign-in, and optional sorting by soonest reset.
 - **Claude warm-up.** Start the 5-hour window the moment it resets, except

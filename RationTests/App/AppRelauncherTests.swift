@@ -360,34 +360,83 @@ final class AppRelauncherTests: XCTestCase {
         appKit.willTerminate = { [weak delegate] in
             delegate?.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
         }
+        // `TerminationGate`: every terminate request passes
+        // this gate before AppKit sees it.
+        appKit.gate = { [weak relauncher] in
+            relauncher?.shouldForwardTermination() ?? true
+        }
         return Lifecycle(relauncher: relauncher, delegate: delegate, appKit: appKit, powerOff: powerOff)
     }
 
-    /// Footer Quit / popover ⌘Q while the relaunch waits for a cleanup.
-    func testOrdinaryQuitDuringAPendingRelaunchLaunchesNothing() {
+    /// Footer Quit / popover ⌘Q while the relaunch waits for a cleanup: the
+    /// quit joins the open decision instead of reaching AppKit, which would
+    /// go straight to `applicationWillTerminate` and skip the cleanup.
+    func testOrdinaryQuitDuringAPendingRelaunchJoinsTheOpenDecision() {
         let life = makeLifecycle(deferred: true)
         life.relauncher.relaunch()
         XCTAssertTrue(life.appKit.isDecisionPending)
 
         life.relauncher.quitWithoutRelaunch()
 
-        XCTAssertTrue(life.appKit.didTerminate, "AppKit went straight to applicationWillTerminate")
-        XCTAssertEqual(life.appKit.shouldTerminateCalls, 1, "the delegate was not asked again")
+        XCTAssertFalse(life.appKit.didTerminate, "the cleanup is still awaited")
+        XCTAssertEqual(life.appKit.terminateCalls, 1, "AppKit never saw the second quit")
+        XCTAssertEqual(life.relauncher.status, .idle, "the relaunch intent is dropped")
+
+        life.appKit.reply(canTerminate: true)
+        XCTAssertTrue(life.appKit.didTerminate)
+        XCTAssertEqual(life.appKit.shouldTerminateCalls, 1)
         XCTAssertTrue(launcher.launches.isEmpty)
         XCTAssertNil(RelaunchHandoff(defaults: defaults).storedPID(now: clock.now()))
     }
 
-    /// The app menu's Quit (and a Dock or Apple Event quit) call
-    /// `NSApp.terminate` without clearing anything first: the relaunch's own
-    /// decision was never approved, so still no launch.
-    func testUnclearedQuitDuringAPendingRelaunchLaunchesNothing() {
+    /// The app menu's Quit (and ⌘Q while a Ration window is key) call
+    /// `NSApp.terminate` without clearing anything first. The `TerminationGate`
+    /// still holds it back and drops the
+    /// relaunch.
+    func testUnclearedQuitDuringAPendingRelaunchJoinsTheOpenDecision() {
         let life = makeLifecycle(deferred: true)
         life.relauncher.relaunch()
 
         life.appKit.terminate()
 
+        XCTAssertFalse(life.appKit.didTerminate)
+        XCTAssertEqual(life.appKit.forwardedTerminateCalls, 1)
+        XCTAssertEqual(life.relauncher.status, .idle)
+        life.appKit.reply(canTerminate: true)
         XCTAssertTrue(life.appKit.didTerminate)
-        XCTAssertEqual(life.appKit.shouldTerminateCalls, 1)
+        XCTAssertTrue(launcher.launches.isEmpty)
+    }
+
+    /// A refused decision refuses the joined quit too; the next quit asks
+    /// the delegate again.
+    func testAJoinedQuitIsRefusedWithTheDecision() {
+        let life = makeLifecycle(deferred: true)
+        life.relauncher.quitWithoutRelaunch()
+        life.relauncher.quitWithoutRelaunch()
+
+        life.appKit.reply(canTerminate: false)
+        XCTAssertFalse(life.appKit.didTerminate)
+
+        life.relauncher.quitWithoutRelaunch()
+        XCTAssertEqual(life.appKit.shouldTerminateCalls, 2)
+        life.appKit.reply(canTerminate: true)
+        XCTAssertTrue(life.appKit.didTerminate)
+    }
+
+    /// Escape hatch: a decision stuck for `forcedQuitAfter` seconds no longer
+    /// holds a repeated quit back, so a hung cleanup can't make the app
+    /// unquittable.
+    func testARepeatedQuitGoesThroughOnceTheDecisionIsStuck() {
+        let life = makeLifecycle(deferred: true)
+        life.relauncher.quitWithoutRelaunch()
+        clock.advance(by: AppRelauncher.forcedQuitAfter - 1)
+        life.relauncher.quitWithoutRelaunch()
+        XCTAssertFalse(life.appKit.didTerminate)
+
+        clock.advance(by: 1)
+        life.relauncher.quitWithoutRelaunch()
+
+        XCTAssertTrue(life.appKit.didTerminate)
         XCTAssertTrue(launcher.launches.isEmpty)
     }
 
@@ -397,6 +446,7 @@ final class AppRelauncherTests: XCTestCase {
 
         life.powerOff.post(name: NSWorkspace.willPowerOffNotification, object: nil)
         life.appKit.terminate()  // the system's quit
+        life.appKit.reply(canTerminate: true)
 
         XCTAssertTrue(life.appKit.didTerminate)
         XCTAssertTrue(launcher.launches.isEmpty)
@@ -436,6 +486,147 @@ final class AppRelauncherTests: XCTestCase {
 
         XCTAssertTrue(life.appKit.didTerminate)
         XCTAssertEqual(launcher.launches.count, 1)
+    }
+
+    // MARK: Quitting with a Settings edit still being saved
+
+    /// The delegate's REAL `.terminateLater` path: `applicationShouldTerminate`
+    /// defers because an edit is pending, its Task flushes the edit, then
+    /// replies — to this fake instead of the test host's `NSApp`.
+    private func makeFlushingLifecycle(model: AppModel) -> Lifecycle {
+        let defaults = defaults!
+        let clock = clock!
+        launcher.handoffReader = { RelaunchHandoff(defaults: defaults).storedPID(now: clock.now()) }
+        let appKit = AppKitTerminationFake()
+        let powerOff = NotificationCenter()
+        let relauncher = AppRelauncher(
+            launcher: launcher,
+            terminator: appKit,
+            clock: clock,
+            handoff: RelaunchHandoff(defaults: defaults),
+            bundleURL: bundleURL,
+            processID: ownPID,
+            powerOffNotifications: powerOff,
+            log: { [weak self] message in self?.logged.append(message) }
+        )
+        let delegate = RationApplicationDelegate()
+        delegate.relauncher = relauncher
+        delegate.model = model
+        appKit.shouldTerminate = { [weak delegate] in
+            let reply = delegate?.applicationShouldTerminate(NSApplication.shared)
+            return reply == .terminateNow ? .now : .later
+        }
+        // The delegate's Task resolves its own decision before replying.
+        appKit.resolveDecision = { _ in }
+        delegate.replyToTermination = { [weak appKit] _, canTerminate in
+            appKit?.reply(canTerminate: canTerminate)
+        }
+        appKit.willTerminate = { [weak delegate] in
+            delegate?.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+        }
+        // `TerminationGate`: every terminate request passes
+        // this gate before AppKit sees it.
+        appKit.gate = { [weak relauncher] in
+            relauncher?.shouldForwardTermination() ?? true
+        }
+        return Lifecycle(relauncher: relauncher, delegate: delegate, appKit: appKit, powerOff: powerOff)
+    }
+
+    /// The label field's model, recording when each save lands.
+    private func recordingLabelAutosave(
+        _ fixture: TerminationTestModel,
+        events: EventLog,
+        hold: StuckGate? = nil
+    ) -> LabelAutosave {
+        let model = fixture.model
+        let id = fixture.account.id
+        return LabelAutosave.editor(
+            accountID: id,
+            stored: fixture.account.label,
+            in: model.pendingEdits,
+            save: { label in
+                if let hold { await hold.wait() }
+                try await model.renameAccount(id: id, label: label)
+                events.append("saved \(label)")
+            },
+            onError: { _ in }
+        )
+    }
+
+    func testRelaunchWithAPendingSaveFlushesItThenLaunchesExactlyOnce() async throws {
+        let fixture = try await TerminationTestModel.make()
+        defer { fixture.removeFiles() }
+        let events = EventLog()
+        launcher.onLaunch = { events.append("launch") }
+        let life = makeFlushingLifecycle(model: fixture.model)
+        let autosave = recordingLabelAutosave(fixture, events: events)
+
+        autosave.text = "Personal"
+        life.relauncher.relaunch()
+
+        XCTAssertTrue(life.appKit.isDecisionPending, "the pending edit deferred the quit")
+        XCTAssertTrue(launcher.launches.isEmpty)
+        await life.delegate.terminationPreparation?.value
+
+        XCTAssertTrue(life.appKit.didTerminate)
+        XCTAssertEqual(life.appKit.shouldTerminateCalls, 1)
+        XCTAssertEqual(launcher.launches.count, 1)
+        XCTAssertEqual(launcher.launches.first?.arguments, ["--await-exit", "4242"])
+        XCTAssertEqual(events.entries, ["saved Personal", "launch"], "saved before the new instance starts")
+        let label = try await fixture.labelOnDisk()
+        XCTAssertEqual(label, "Personal")
+    }
+
+    func testOrdinaryQuitWithAPendingSaveFlushesItAndLaunchesNothing() async throws {
+        let fixture = try await TerminationTestModel.make()
+        defer { fixture.removeFiles() }
+        let events = EventLog()
+        let life = makeFlushingLifecycle(model: fixture.model)
+        let autosave = recordingLabelAutosave(fixture, events: events)
+
+        autosave.text = "Personal"
+        life.relauncher.quitWithoutRelaunch()
+        XCTAssertTrue(life.appKit.isDecisionPending)
+        await life.delegate.terminationPreparation?.value
+
+        XCTAssertTrue(life.appKit.didTerminate)
+        XCTAssertEqual(events.entries, ["saved Personal"])
+        XCTAssertTrue(launcher.launches.isEmpty)
+        let label = try await fixture.labelOnDisk()
+        XCTAssertEqual(label, "Personal")
+    }
+
+    /// Quit while a relaunch waits for its flush: the quit joins the open
+    /// decision. The save lands and the decision is answered BEFORE the app
+    /// terminates, and nothing launches.
+    func testOrdinaryQuitDuringARelaunchFlushWaitsForTheSaveAndLaunchesNothing() async throws {
+        let fixture = try await TerminationTestModel.make()
+        defer { fixture.removeFiles() }
+        let events = EventLog()
+        let gate = StuckGate()
+        launcher.onLaunch = { events.append("launch") }
+        let life = makeFlushingLifecycle(model: fixture.model)
+        life.appKit.willTerminate = { [weak delegate = life.delegate] in
+            events.append("willTerminate")
+            delegate?.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+        }
+        let autosave = recordingLabelAutosave(fixture, events: events, hold: gate)
+        autosave.text = "Personal"
+        life.relauncher.relaunch()
+        XCTAssertTrue(life.appKit.isDecisionPending)
+
+        life.relauncher.quitWithoutRelaunch()
+        XCTAssertFalse(life.appKit.didTerminate, "the save is still running")
+        XCTAssertEqual(life.relauncher.status, .idle)
+
+        gate.open()
+        await life.delegate.terminationPreparation?.value
+
+        XCTAssertTrue(life.appKit.didTerminate)
+        XCTAssertEqual(events.entries, ["saved Personal", "willTerminate"])
+        XCTAssertTrue(launcher.launches.isEmpty)
+        let label = try await fixture.labelOnDisk()
+        XCTAssertEqual(label, "Personal")
     }
 
     func testVetoedRelaunchLaunchesNothingAndExplainsWhy() {
@@ -607,13 +798,20 @@ private final class AppKitTerminationFake: AppTerminating {
     /// The delegate's own bookkeeping for a `.terminateLater` reply.
     var resolveDecision: (Bool) -> Void = { _ in }
     var willTerminate: () -> Void = {}
+    /// `TerminationGate`: false keeps the request
+    /// from AppKit.
+    var gate: () -> Bool = { true }
     private(set) var terminateCalls = 0
+    /// Requests that got past the gate to AppKit.
+    private(set) var forwardedTerminateCalls = 0
     private(set) var shouldTerminateCalls = 0
     private(set) var isDecisionPending = false
     private(set) var didTerminate = false
 
     func terminate() {
         terminateCalls += 1
+        guard gate() else { return }
+        forwardedTerminateCalls += 1
         guard !didTerminate else { return }
         guard !isDecisionPending else {
             // Not asked again: straight to applicationWillTerminate.
@@ -654,11 +852,38 @@ private final class LauncherSpy: NewInstanceLaunching {
     private(set) var handoffPIDAtLaunch: pid_t?
     /// Reads the handoff at the moment of the launch, as the new process would.
     var handoffReader: (() -> pid_t?)?
+    var onLaunch: (() -> Void)?
 
     func launchNewInstance(at url: URL, arguments: [String]) -> NewInstanceLaunchOutcome {
         launches.append(Launch(url: url, arguments: arguments))
         handoffPIDAtLaunch = handoffReader?()
+        onLaunch?()
         return outcome
+    }
+}
+
+@MainActor
+private final class EventLog {
+    private(set) var entries: [String] = []
+    func append(_ entry: String) { entries.append(entry) }
+}
+
+/// Holds a save until opened.
+@MainActor
+private final class StuckGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters.removeAll()
+        pending.forEach { $0.resume() }
     }
 }
 
@@ -679,6 +904,10 @@ private final class ClockFake: RelaunchClock {
     private(set) var sleeps: [TimeInterval] = []
 
     func now() -> Date { current }
+
+    func advance(by seconds: TimeInterval) {
+        current = current.addingTimeInterval(seconds)
+    }
 
     func sleep(seconds: TimeInterval) async {
         sleeps.append(seconds)

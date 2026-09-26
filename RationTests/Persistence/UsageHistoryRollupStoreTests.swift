@@ -107,6 +107,88 @@ final class UsageHistoryRollupStoreTests: XCTestCase {
         XCTAssertEqual(newModelWeekly.first?.consumed ?? 0, 0.2, accuracy: 1e-9)
     }
 
+    // MARK: v2 rollup fields (billing-cycle v2, spec §3)
+
+    func testV2FieldsPersistAndReload() async throws {
+        let dir = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let acc = account()
+        let store = UsageHistoryStore(rootDirectory: dir, timeZone: TimeZone(identifier: "UTC")!)
+        await store.load(activeAccountIDs: [acc.id])
+        store.record(account: acc, snapshot: snapshot(acc.id, 3600, five: 1.0))
+        store.record(account: acc, snapshot: snapshot(acc.id, 3900, five: 0.8))
+        await store.flush()
+
+        let reloaded = UsageHistoryStore(rootDirectory: dir, timeZone: TimeZone(identifier: "UTC")!)
+        await reloaded.load(activeAccountIDs: [acc.id])
+        let bucket = await reloaded.loadRollups(accountID: acc.id, kind: .fiveHour).first
+        XCTAssertEqual(bucket?.observedSeconds ?? -1, 300, accuracy: 1e-9)
+        XCTAssertEqual(bucket?.usedSeconds ?? -1, 300 * (0 + 0.2) / 2, accuracy: 1e-9)
+        XCTAssertEqual(bucket?.resetCount, 0)
+    }
+
+    func testStoreCensorsIntervalsLongerThanTheInjectedGapLimit() async throws {
+        let dir = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let acc = account()
+        var limit: TimeInterval = 200
+        let store = UsageHistoryStore(
+            rootDirectory: dir, timeZone: TimeZone(identifier: "UTC")!, gapLimit: { limit }
+        )
+        await store.load(activeAccountIDs: [acc.id])
+        store.record(account: acc, snapshot: snapshot(acc.id, 3600, five: 0.5))
+        store.record(account: acc, snapshot: snapshot(acc.id, 3900, five: 0.5)) // 300 s > 200: censored
+        var bucket = await store.loadRollups(accountID: acc.id, kind: .fiveHour).first
+        XCTAssertEqual(bucket?.observedSeconds, 0)
+
+        limit = 400 // the limit is read per fold, so a cadence change applies at once
+        store.record(account: acc, snapshot: snapshot(acc.id, 4200, five: 0.5))
+        bucket = await store.loadRollups(accountID: acc.id, kind: .fiveHour).first
+        XCTAssertEqual(bucket?.observedSeconds ?? -1, 300, accuracy: 1e-9)
+    }
+
+    func testStoreDefaultGapLimitIsTwiceTheLongestNormalPoll() async throws {
+        let dir = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let store = UsageHistoryStore(rootDirectory: dir)
+        XCTAssertEqual(store.gapLimit(), PollSchedule.rollupGapLimit(lowPowerMode: false))
+    }
+
+    /// Old rollup files have no v2 keys: they decode with nil v2 fields, and a
+    /// v2 sample folding into such a bucket starts the fields at that sample.
+    func testLegacyRollupBucketsDecodeWithNilV2FieldsAndStartOnNextFold() async throws {
+        let dir = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: dir) }
+        let acc = account()
+        let accountDir = dir.appending(path: acc.id.uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: accountDir, withIntermediateDirectories: true)
+        let json = """
+        {"version":1,"data":{"fiveHour":[\
+        {"hourStart":"1970-01-01T01:00:00Z","tzOffsetSeconds":0,"consumed":0.2,"minRemaining":0.8,"sampleCount":2}\
+        ],"weekly":[],"modelWeekly":[]}}
+        """
+        try Data(json.utf8).write(to: accountDir.appending(path: "rollup-1970-01.json"))
+
+        let store = UsageHistoryStore(rootDirectory: dir, timeZone: TimeZone(identifier: "UTC")!)
+        await store.load(activeAccountIDs: [acc.id])
+        let legacy = await store.loadRollups(accountID: acc.id, kind: .fiveHour).first
+        XCTAssertEqual(legacy?.consumed ?? -1, 0.2, accuracy: 1e-9)
+        XCTAssertNil(legacy?.observedSeconds)
+        XCTAssertNil(legacy?.usedSeconds)
+        XCTAssertNil(legacy?.resetCount)
+
+        // First v2 sample in the same hour: no previous raw sample, so nothing
+        // is observed yet, but the fields now exist; the second adds 300 s.
+        store.record(account: acc, snapshot: snapshot(acc.id, 3900, five: 0.8))
+        store.record(account: acc, snapshot: snapshot(acc.id, 4200, five: 0.7))
+        await store.flush()
+
+        let reloaded = UsageHistoryStore(rootDirectory: dir, timeZone: TimeZone(identifier: "UTC")!)
+        await reloaded.load(activeAccountIDs: [acc.id])
+        let bucket = await reloaded.loadRollups(accountID: acc.id, kind: .fiveHour).first
+        XCTAssertEqual(bucket?.consumed ?? -1, 0.3, accuracy: 1e-9, "legacy consumed keeps accumulating")
+        XCTAssertEqual(bucket?.sampleCount, 4)
+        XCTAssertEqual(bucket?.observedSeconds ?? -1, 300, accuracy: 1e-9)
+        XCTAssertEqual(bucket?.usedSeconds ?? -1, 300 * (0.2 + 0.3) / 2, accuracy: 1e-9)
+        XCTAssertEqual(bucket?.resetCount, 0)
+    }
+
     func testOnlyActiveMonthSegmentIsRewrittenOnIngest() async throws {
         let dir = try makeTemporaryDirectory(); defer { try? FileManager.default.removeItem(at: dir) }
         let acc = account()

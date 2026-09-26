@@ -82,13 +82,13 @@ final class GlobalHotKeyController {
 /// Retained bridge between Carbon's C event handler and the main-actor action.
 /// It is `Sendable` (immutable, main-actor-isolated closure) so it can be
 /// handed to Carbon as an opaque pointer and touched from the callback without
-/// a data race. `fire()` always hops onto the main queue before running the
-/// action, so it never depends on which thread Carbon uses for delivery.
+/// a data race. `fire()` always hops onto the main run loop before running
+/// the action, so it never depends on which thread Carbon uses for delivery.
 private final class HotKeyCallbackContext: Sendable {
     private let onFire: @MainActor () -> Void
     private let signature: OSType
     private let id: UInt32
-    /// This registration's token. A press is queued onto the main queue, so it
+    /// This registration's token. A press is queued onto the main run loop, so it
     /// can outlive `unregister()`; the token is revoked there and checked
     /// right before the action runs. One token per registration, so a
     /// re-registration (close → reopen) never revives a stale press.
@@ -122,15 +122,21 @@ private final class HotKeyCallbackContext: Sendable {
         return noErr
     }
 
+    /// A run-loop block, NOT a main-queue block: the popover's ⌘Q quits from
+    /// here, and while a `.terminateLater` decision is open AppKit spins the
+    /// run loop but cannot drain the main queue re-entrantly from inside a
+    /// main-queue block. The quit's preparation (a main-actor Task) would
+    /// then never run and the app would hang — probed on macOS 27.2.
     func fire() {
         let onFire = self.onFire
         let token = self.token
-        DispatchQueue.main.async {
+        RunLoop.main.perform(inModes: [.common]) {
             MainActor.assumeIsolated {
                 guard token.isLive else { return }
                 onFire()
             }
         }
+        CFRunLoopWakeUp(CFRunLoopGetMain())
     }
 }
 

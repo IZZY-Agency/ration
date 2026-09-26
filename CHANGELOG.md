@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.0
+
+- Billing-cycle utilisation is now an exact figure instead of a "≥" lower
+  bound. For Claude it is the cycle's average weekly load (the average of what
+  the weekly meter showed); for ChatGPT, whose windows restart at zero, it is
+  the average peak each week reached. Time the Mac was asleep no longer skews
+  it; it only lowers how much of the cycle was watched. Existing history keeps
+  the old "≥" figure until enough new data is recorded, then switches once.
+- The billing-cycle card now updates by itself: on new usage (at most once a
+  minute), at midnight, when a new cycle starts, after a time-zone change and
+  when the Mac wakes. Its calculation runs off the main thread.
+- Quitting right after editing an account label or the quiet-hours grid no
+  longer loses the change: Ration waits up to 2 seconds for the save. A second
+  Quit while one is in progress joins it instead of skipping the save.
+- ⌘Q in the popover no longer hangs while a sign-in or account cleanup is
+  running.
+- A refresh cancelled by removing or re-signing an account can no longer bring
+  back a ghost entry or a wrong status badge, and background web views are torn
+  down reliably.
+
 ## 1.4.0
 
 - Ration now speaks French and Ukrainian, as well as English. Every window,

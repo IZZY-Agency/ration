@@ -193,6 +193,168 @@ final class UsageRefreshCoordinatorTests: XCTestCase {
         await duplicate.value
     }
 
+    /// `cancel` drops the account's state and returns only
+    /// once the in-flight task exits. A hung fetch exits up to a bridge
+    /// timeout later, by THROWING — and that late failure must not write a
+    /// ghost `.unavailable` back for an account that was just removed.
+    @MainActor
+    func testTimedOutFetchAfterCancelLeavesNoGhostState() async throws {
+        let fixture = try await makeFixture()
+        let fetcher = GatedFirstFetch()
+        let coordinator = UsageRefreshCoordinator(
+            snapshotStore: fixture.store,
+            now: { fixture.now.date },
+            fetchUsage: { account in
+                try await fetcher.fetch(accountID: account.id, date: fixture.now.date)
+            }
+        )
+
+        let refresh = Task {
+            await coordinator.refresh(account: fixture.account, reason: .manual)
+        }
+        await fetcher.waitForFirstCall()
+        XCTAssertEqual(coordinator.states[fixture.account.id], .loading)
+
+        let cancellation = Task {
+            await coordinator.cancel(accountID: fixture.account.id)
+        }
+        await waitUntilCancelled(fixture.account.id, in: coordinator)
+        await fetcher.failFirst(with: WebUsageClientError.timedOut)
+        await cancellation.value
+        await refresh.value
+
+        XCTAssertNil(
+            coordinator.states[fixture.account.id],
+            "a fetch that times out after cancel must not re-insert state for a removed account"
+        )
+    }
+
+    /// Reauth shape: the account keeps its snapshot, so a
+    /// late failure would read as `.stale` — a wrong badge on an account whose
+    /// sign-in just succeeded.
+    @MainActor
+    func testFailureAfterCancelDoesNotShowStaleBadgeOnReauthedAccount() async throws {
+        let fixture = try await makeFixture()
+        try await fixture.store.save(
+            snapshot(accountID: fixture.account.id, fetchedAt: fixture.now.date)
+        )
+        let fetcher = GatedFirstFetch()
+        let coordinator = UsageRefreshCoordinator(
+            snapshotStore: fixture.store,
+            now: { fixture.now.date },
+            fetchUsage: { account in
+                try await fetcher.fetch(accountID: account.id, date: fixture.now.date)
+            }
+        )
+
+        let refresh = Task {
+            await coordinator.refresh(account: fixture.account, reason: .manual)
+        }
+        await fetcher.waitForFirstCall()
+        let cancellation = Task {
+            await coordinator.cancel(accountID: fixture.account.id)
+        }
+        await waitUntilCancelled(fixture.account.id, in: coordinator)
+        await fetcher.failFirst(with: ProviderError.offline)
+        await cancellation.value
+        await refresh.value
+
+        XCTAssertNil(coordinator.states[fixture.account.id])
+        XCTAssertEqual(coordinator.state(for: fixture.account.id), .current)
+    }
+
+    /// A rate limit reported after cancel must not come back
+    /// as a retry date either — it would silently skip the next refresh.
+    @MainActor
+    func testRateLimitAfterCancelDoesNotBlockTheNextRefresh() async throws {
+        let fixture = try await makeFixture()
+        let fetcher = GatedFirstFetch()
+        let coordinator = UsageRefreshCoordinator(
+            snapshotStore: fixture.store,
+            now: { fixture.now.date },
+            fetchUsage: { account in
+                try await fetcher.fetch(accountID: account.id, date: fixture.now.date)
+            }
+        )
+
+        let refresh = Task {
+            await coordinator.refresh(account: fixture.account, reason: .manual)
+        }
+        await fetcher.waitForFirstCall()
+        let cancellation = Task {
+            await coordinator.cancel(accountID: fixture.account.id)
+        }
+        await waitUntilCancelled(fixture.account.id, in: coordinator)
+        let retryAt = fixture.now.date.addingTimeInterval(600)
+        await fetcher.failFirst(with: ProviderError.rateLimited(retryAt: retryAt))
+        await cancellation.value
+        await refresh.value
+
+        await coordinator.refresh(account: fixture.account, reason: .manual)
+
+        let callCount = await fetcher.callCount
+        XCTAssertEqual(callCount, 2, "the refresh after cancel must fetch, not wait out a dead rate limit")
+        XCTAssertEqual(coordinator.state(for: fixture.account.id), .current)
+    }
+
+    /// The SUCCESS path has the same hole. The
+    /// save runs in the store's own serialized queue; if cancel lands while it
+    /// is suspended, the refresh must not write `.current` back nor run
+    /// `onSnapshotSaved` (auto-start, history) for a removed account.
+    @MainActor
+    func testCancelDuringSnapshotSaveLeavesNoStateAndSkipsTheCallback() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let saveGate = SaveGate()
+        let store = UsageSnapshotStore(
+            fileURL: directory.appending(path: "snapshots.json"),
+            saveSnapshots: { _ in await saveGate.pass() }
+        )
+        try await store.load()
+        let fixture = try await makeFixture()
+        let account = fixture.account
+        final class CallbackCounter { var count = 0 }
+        let callbacks = CallbackCounter()
+        let coordinator = UsageRefreshCoordinator(
+            snapshotStore: store,
+            now: { fixture.now.date },
+            fetchUsage: { account in
+                self.snapshot(accountID: account.id, fetchedAt: fixture.now.date)
+            }
+        )
+        coordinator.onSnapshotSaved = { _, _ in callbacks.count += 1 }
+
+        saveGate.arm()
+        let refresh = Task {
+            await coordinator.refresh(account: account, reason: .manual)
+        }
+        await saveGate.waitUntilHeld()
+        let cancellation = Task {
+            await coordinator.cancel(accountID: account.id)
+        }
+        await waitUntilCancelled(account.id, in: coordinator)
+        saveGate.release()
+        await cancellation.value
+        await refresh.value
+
+        XCTAssertNil(coordinator.states[account.id], "a save that completes after cancel must not write state back")
+        XCTAssertEqual(callbacks.count, 0, "onSnapshotSaved must not run for a cancelled refresh")
+    }
+
+    /// `cancel` drops the in-flight marker synchronously, before it awaits the
+    /// task — waiting on that (not on a yield) makes the ordering explicit.
+    @MainActor
+    private func waitUntilCancelled(
+        _ accountID: UUID,
+        in coordinator: UsageRefreshCoordinator
+    ) async {
+        while coordinator.inFlightAccountIDs.contains(accountID) {
+            await Task.yield()
+        }
+    }
+
     @MainActor
     func testBackgroundRefreshUsesInjectedPollInterval() async throws {
         let fixture = try await makeFixture()
@@ -354,5 +516,67 @@ private actor ControlledFetcher {
                 weekly: nil
             )
         )
+    }
+}
+
+/// The first fetch parks until the test fails it; every later fetch succeeds
+/// at once.
+private actor GatedFirstFetch {
+    private(set) var callCount = 0
+    private var first: CheckedContinuation<UsageSnapshot, any Error>?
+    private var started = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func fetch(accountID: UUID, date: Date) async throws -> UsageSnapshot {
+        callCount += 1
+        guard callCount == 1 else {
+            return UsageSnapshot(accountID: accountID, fetchedAt: date, fiveHour: nil, weekly: nil)
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            first = continuation
+            started = true
+            startWaiters.forEach { $0.resume() }
+            startWaiters.removeAll()
+        }
+    }
+
+    func waitForFirstCall() async {
+        guard !started else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func failFirst(with error: any Error) {
+        first?.resume(throwing: error)
+        first = nil
+    }
+}
+
+/// Holds the next armed snapshot save until released.
+@MainActor
+private final class SaveGate {
+    private var armed = false
+    private var held: CheckedContinuation<Void, Never>?
+    private var heldWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func arm() { armed = true }
+
+    func pass() async {
+        guard armed else { return }
+        armed = false
+        await withCheckedContinuation { continuation in
+            held = continuation
+            heldWaiters.forEach { $0.resume() }
+            heldWaiters.removeAll()
+        }
+    }
+
+    func waitUntilHeld() async {
+        guard held == nil else { return }
+        await withCheckedContinuation { heldWaiters.append($0) }
+    }
+
+    func release() {
+        held?.resume()
+        held = nil
     }
 }

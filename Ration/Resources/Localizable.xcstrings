@@ -6109,6 +6109,102 @@
         }
       }
     },
+    "billing.caption.fixedFiveHour" : {
+      "comment" : "History › Billing cycle card, shown uppercase under the percentage. ChatGPT 5-hour window: the highest usage each 5-hour window reached, averaged over the cycle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "average peak per 5 hours"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pic moyen par période de 5 h"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "середній пік за 5 годин"
+          }
+        }
+      }
+    },
+    "billing.caption.fixedWeekly" : {
+      "comment" : "History › Billing cycle card, shown uppercase under the percentage. ChatGPT weekly window: the highest usage each week reached, averaged over the weeks of the cycle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "average peak per week"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pic moyen par semaine"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "середній пік за тиждень"
+          }
+        }
+      }
+    },
+    "billing.caption.rollingFiveHour" : {
+      "comment" : "History › Billing cycle card, shown uppercase under the percentage. Claude 5-hour window: the time-averaged share of the 5-hour allowance in use over the cycle so far.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "average 5-hour load"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "charge moyenne sur 5 h"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "середнє 5-годинне навантаження"
+          }
+        }
+      }
+    },
+    "billing.caption.rollingWeekly" : {
+      "comment" : "History › Billing cycle card, shown uppercase under the percentage. Claude weekly window (and its model sub-limit): the time-averaged share of the weekly allowance in use over the cycle so far.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "average weekly load"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "charge hebdomadaire moyenne"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "середнє тижневе навантаження"
+          }
+        }
+      }
+    },
     "billing.detail" : {
       "comment" : "History › Billing cycle card detail, one line. %1$@ = the allowance text; daysUsed = days with usage; atCapDays = days at or above 95%; %4$lld/%5$lld = hours watched/elapsed. The day counts are plurals; an abbreviated unit that does not change with the count may repeat in every form. Abbreviate hours.",
       "extractionState" : "manual",
@@ -6295,6 +6391,192 @@
         }
       }
     },
+    "billing.detail.load" : {
+      "comment" : "History › Billing cycle card detail, one line, under an average-load or average-peak figure. daysUsed = days with usage; atCapDays = days at or above 95%; %3$lld/%4$lld = hours watched/elapsed. The day counts are plurals; an abbreviated unit that does not change with the count may repeat in every form. Abbreviate hours.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used %#@daysUsed@ · At ≥95%% %#@atCapDays@ · watched %3$lld/%4$lld hrs"
+          },
+          "substitutions" : {
+            "atCapDays" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg day"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg days"
+                    }
+                  }
+                }
+              }
+            },
+            "daysUsed" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg day"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg days"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisé %#@daysUsed@ · à ≥95 %% : %#@atCapDays@ · suivi %3$lld/%4$lld h"
+          },
+          "substitutions" : {
+            "atCapDays" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg j"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg j"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg j"
+                    }
+                  }
+                }
+              }
+            },
+            "daysUsed" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg j"
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg j"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg j"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Використано %#@daysUsed@ · на ≥95%%: %#@atCapDays@ · відстежено %3$lld/%4$lld год"
+          },
+          "substitutions" : {
+            "atCapDays" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "few" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg дн."
+                    }
+                  },
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg дн."
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg дн."
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg дн."
+                    }
+                  }
+                }
+              }
+            },
+            "daysUsed" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "few" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg дн."
+                    }
+                  },
+                  "many" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg дн."
+                    }
+                  },
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg дн."
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg дн."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "billing.fable.insufficient" : {
       "comment" : "History › Billing cycle card, Fable line before enough data. %@ = model limit name (Fable), never translated.",
       "extractionState" : "manual",
@@ -6315,6 +6597,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · у цьому циклі ще недостатньо даних"
+          }
+        }
+      }
+    },
+    "billing.fable.load" : {
+      "comment" : "History › Billing cycle card, Fable line. %1$@ = model limit name (Fable), never translated; %2$@ = percentage; %3$@ = what the percentage means (billing.caption.rollingWeekly, e.g. 'average weekly load').",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ this cycle · %3$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ sur ce cycle · %3$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ у цьому циклі · %3$@"
           }
         }
       }

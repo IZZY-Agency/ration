@@ -23,6 +23,17 @@ final class AppModelHistoryTests: XCTestCase {
         )
     }
 
+    /// The rollup gap limit follows the coordinator's cadence: 2 × the longest
+    /// poll of the current mode, re-read per fold so Low Power Mode applies live.
+    func testHistoryGapLimitFollowsLowPowerMode() throws {
+        let power = NoopSystemPowerObserver()
+        let fixture = try makeFixture(systemPowerObserver: power)
+        defer { fixture.removeFiles() }
+        XCTAssertEqual(fixture.model.history.gapLimit(), PollSchedule.rollupGapLimit(lowPowerMode: false))
+        power.isLowPowerModeEnabled = true
+        XCTAssertEqual(fixture.model.history.gapLimit(), PollSchedule.rollupGapLimit(lowPowerMode: true))
+    }
+
     func testRemovedAccountHistoryIsDeleted() async throws {
         let fixture = try makeFixture()
         defer { fixture.removeFiles() }
@@ -422,7 +433,8 @@ final class AppModelHistoryTests: XCTestCase {
     private func makeFixture(
         messageSender: ClaudeMessageSender = ClaudeMessageSender(),
         beforeAutoStartCommit: @escaping @MainActor () async -> Void = {},
-        saveAccounts: AccountStore.SaveAccounts? = nil
+        saveAccounts: AccountStore.SaveAccounts? = nil,
+        systemPowerObserver: NoopSystemPowerObserver = NoopSystemPowerObserver()
     ) throws -> Fixture {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: UUID().uuidString, directoryHint: .isDirectory)
@@ -465,7 +477,7 @@ final class AppModelHistoryTests: XCTestCase {
             messageSender: messageSender,
             now: { Date(timeIntervalSince1970: 1_000) },
             beforeAutoStartCommit: beforeAutoStartCommit,
-            systemPowerObserver: NoopSystemPowerObserver()
+            systemPowerObserver: systemPowerObserver
         )
         return Fixture(
             directory: directory,

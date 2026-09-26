@@ -603,6 +603,38 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(fixture.model.profileCleanupBanner, ProfileCleanupCopy.pending)
     }
 
+    /// A pending Settings edit is saved on the way out, and the
+    /// cleanup veto still refuses the quit exactly as before.
+    func testPendingEditIsSavedAndTheCleanupVetoStillRefuses() async throws {
+        let fixture = try makeFixture(
+            savePendingProfileIDs: { _ in throw TestFailure.expected }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        fixture.profileManager.removeError = TestFailure.expected
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+        XCTAssertTrue(fixture.model.hasVolatileProfileCleanup)
+        let model = fixture.model
+        let quietHours = QuietHoursAutosave.editor(
+            stored: model.settings.quietHours,
+            in: model.pendingEdits,
+            save: { cells in
+                try await model.setQuietHours(cells)
+            },
+            onError: { _ in }
+        )
+        quietHours.select([1, 2])
+        XCTAssertTrue(model.pendingEdits.hasPendingEdits)
+
+        let canTerminate = await model.prepareForTermination()
+
+        XCTAssertFalse(canTerminate, "the veto is unchanged")
+        XCTAssertEqual(model.profileCleanupBanner, ProfileCleanupCopy.blockingQuit)
+        XCTAssertEqual(model.settings.quietHours, [1, 2], "the edit was saved anyway")
+        XCTAssertFalse(model.pendingEdits.hasPendingEdits)
+    }
+
     /// A throwing load step AFTER the queue is read must not hide the retry
     /// control: the cleanup flags have to be published before `load()` can abort.
     func testCleanupStateIsPublishedEvenWhenLoadAbortsLater() async throws {
@@ -2013,7 +2045,13 @@ final class AppModelTests: XCTestCase {
                 return Self.scriptedSuccess(for: script)
             },
             sleep: { _ in
-                guard mode.hang else { return }
+                // Not hung (sign-in, the final refresh): the evaluator answers
+                // and must be the ONLY side that can resolve, so the timeout
+                // never does — no reliance on which Task runs first.
+                guard mode.hang else {
+                    await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+                    return
+                }
                 // Parks here (armed, not yet delivered) until the test
                 // explicitly releases it — after the cache swap below.
                 await timeoutGate.suspend()
@@ -2172,6 +2210,228 @@ final class AppModelTests: XCTestCase {
         )
     }
 
+    /// A new sign-in whose fetch timed out while its session
+    /// protected the profile carries a DEFERRED recycle. Cancelling it with the
+    /// deletion journal failing takes `cleanUpNewSignIn`'s enqueue-failure
+    /// branch, which drops the cached view in `removeProfile` BEFORE the
+    /// deferred recycle completes — the tainted view must still get its
+    /// `about:blank` teardown, exactly once.
+    func testCancelledNewSignInWithFailedJournalTearsDownItsTimedOutView() async throws {
+        let fixture = try makeFixture(
+            savePendingProfileIDs: { _ in throw TestFailure.expected }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        let view = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+
+        fixture.adapter.fetchError = WebUsageClientError.timedOut
+        do {
+            try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+            XCTFail("the sign-in fetch was scripted to time out")
+        } catch {}
+        XCTAssertEqual(view.aboutBlankLoadCount, 0, "the open session protects the view: the recycle is deferred")
+
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+
+        XCTAssertNil(fixture.model.signInSession(for: sessionID))
+        XCTAssertEqual(
+            view.aboutBlankLoadCount, 1,
+            "the deferred recycle must tear the tainted view down even though removeProfile dropped it first"
+        )
+    }
+
+    /// `removeProfile` itself: when the profile deletion
+    /// FAILS the session survives for cleanup to retry, so nothing completes
+    /// the deferred recycle — the profile is being deleted either way, so
+    /// `removeProfile` tears the suspect view down itself. The later
+    /// successful retry must not tear it down a second time.
+    func testRemoveProfileTearsDownASuspectViewWhileItsSessionSurvives() async throws {
+        let fixture = try makeFixture(
+            savePendingProfileIDs: { _ in throw TestFailure.expected }
+        )
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        let view = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+
+        fixture.adapter.fetchError = WebUsageClientError.timedOut
+        do {
+            try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+            XCTFail("the sign-in fetch was scripted to time out")
+        } catch {}
+
+        fixture.profileManager.removeError = TestFailure.expected
+        await fixture.model.cancelSignIn(sessionID: sessionID)
+
+        XCTAssertNotNil(fixture.model.signInSession(for: sessionID), "the session survives a failed deletion")
+        XCTAssertEqual(view.aboutBlankLoadCount, 1, "removeProfile must tear down the suspect view it drops")
+
+        fixture.profileManager.removeError = nil
+        await fixture.model.retryProfileCleanup()
+
+        XCTAssertNil(fixture.model.signInSession(for: sessionID))
+        XCTAssertEqual(view.aboutBlankLoadCount, 1, "a view is torn down once, not again on the retry")
+    }
+
+    /// Identity: the deferred recycle remembers the exact
+    /// tainted view. If the cache holds a DIFFERENT view by the time the
+    /// protecting session closes, the tainted one is torn down and the cached
+    /// one is left alone (still cached, never navigated away).
+    func testDeferredRecycleTearsDownTheTaintedViewNotTheCachedOne() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        let tainted = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+
+        let reauthSessionID = try fixture.model.beginReauthentication(accountID: account.id)
+        fixture.adapter.fetchError = WebUsageClientError.timedOut
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(tainted.aboutBlankLoadCount, 0, "protected: deferred, not torn down")
+
+        let fresh = RecordingWebView(frame: .zero)
+        fixture.model.replaceWebViewForTesting(profileID: account.webProfileID, with: fresh)
+
+        await fixture.model.cancelSignIn(sessionID: reauthSessionID)
+
+        XCTAssertEqual(tainted.aboutBlankLoadCount, 1, "the exact tainted view must be torn down")
+        XCTAssertEqual(fresh.aboutBlankLoadCount, 0, "a view that never timed out must not be torn down")
+
+        fixture.adapter.fetchError = nil
+        let madeBefore = fixture.profileManager.madeProfileIDs.count
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(
+            fixture.profileManager.madeProfileIDs.count, madeBefore,
+            "the healthy cached view must stay cached"
+        )
+    }
+
+    /// A teardown that the web view never acts on (a
+    /// persistently wedged WebContent process) abandons that view; each one is
+    /// counted so field accumulation is visible.
+    func testIgnoredTeardownCountsAnAbandonedWebView() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        XCTAssertEqual(fixture.model.abandonedWebViewCount, 0)
+
+        fixture.adapter.fetchError = WebUsageClientError.timedOut
+        await fixture.model.refreshAll(reason: .manual)
+        await fixture.model.flushTeardownChecks()
+        XCTAssertEqual(fixture.model.abandonedWebViewCount, 1)
+
+        // The recycle made a fresh view; it wedges too.
+        await fixture.model.refreshAll(reason: .manual)
+        await fixture.model.flushTeardownChecks()
+        XCTAssertEqual(fixture.model.abandonedWebViewCount, 2, "each abandoned view counts")
+    }
+
+    /// One wedged view reached by two teardown
+    /// paths — the deferred recycle when the reauth session closes, then the
+    /// late timeout of a poll that was retrying on it meanwhile — is torn down
+    /// once and counted once.
+    func testOverlappingTeardownsOfOneViewTearDownAndCountOnce() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let account = try XCTUnwrap(fixture.model.accounts.first)
+        let view = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+
+        // Protected timeout: deferred.
+        let reauthSessionID = try fixture.model.beginReauthentication(accountID: account.id)
+        fixture.adapter.fetchError = WebUsageClientError.timedOut
+        await fixture.model.refreshAll(reason: .manual)
+        XCTAssertEqual(view.aboutBlankLoadCount, 0)
+
+        // A retry poll on the same (still cached) view hangs...
+        let fetchGate = VerificationGate()
+        fixture.adapter.fetchGate = fetchGate
+        let retry = Task { await fixture.model.refreshAll(reason: .manual) }
+        await fetchGate.waitUntilStarted()
+
+        // ...the session closes (deferred teardown)...
+        await fixture.model.cancelSignIn(sessionID: reauthSessionID)
+        XCTAssertEqual(view.aboutBlankLoadCount, 1)
+
+        // ...then the retry's timeout lands on the same view.
+        fetchGate.resume()
+        await retry.value
+        await fixture.model.flushTeardownChecks()
+
+        XCTAssertEqual(view.aboutBlankLoadCount, 1, "one view is torn down once")
+        XCTAssertEqual(fixture.model.abandonedWebViewCount, 1, "one wedged view is counted once")
+    }
+
+    /// The other side: a teardown that finished is not an
+    /// abandoned view.
+    func testCompletedTeardownIsNotCountedAsAbandoned() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.removeFiles() }
+        fixture.profileManager.madeViewsReportLoadsFinished = true
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+        let view = try XCTUnwrap(fixture.profileManager.madeWebViews.first)
+
+        fixture.adapter.fetchError = WebUsageClientError.timedOut
+        await fixture.model.refreshAll(reason: .manual)
+        await fixture.model.flushTeardownChecks()
+
+        XCTAssertEqual(view.aboutBlankLoadCount, 1, "the recycle must have torn the view down")
+        XCTAssertEqual(fixture.model.abandonedWebViewCount, 0)
+    }
+
+    /// The check runs only after the grace period: a teardown still in
+    /// progress is not judged early.
+    func testTeardownIsJudgedOnlyAfterTheGracePeriod() async throws {
+        let grace = VerificationGate()
+        let fixture = try makeFixture(teardownGrace: { await grace.suspend() })
+        defer { fixture.removeFiles() }
+        try await fixture.model.load(startBackgroundRefresh: false)
+        let sessionID = try fixture.model.beginSignIn(provider: .claude)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
+
+        fixture.adapter.fetchError = WebUsageClientError.timedOut
+        await fixture.model.refreshAll(reason: .manual)
+        // Bounded rather than `waitUntilStarted()`: a check that skips the
+        // grace period must FAIL this test, not hang it.
+        for _ in 0..<1_000 where !grace.hasStarted {
+            await Task.yield()
+        }
+        XCTAssertTrue(grace.hasStarted, "the check must wait out the grace period")
+        XCTAssertEqual(fixture.model.abandonedWebViewCount, 0, "not judged before the grace period ends")
+
+        grace.resume()
+        await fixture.model.flushTeardownChecks()
+        XCTAssertEqual(fixture.model.abandonedWebViewCount, 1)
+    }
+
+    /// The predicate the check relies on, against a REAL `WKWebView`: after
+    /// an `about:blank` load finishes it reads as completed; before any load
+    /// it does not.
+    func testRealWebViewReadsAsTornDownOnceAboutBlankFinishes() async throws {
+        let webView = WKWebView(frame: .zero)
+        XCTAssertFalse(WebViewTeardown.hasCompleted(webView))
+        WebViewTeardown.begin(webView)
+        // Issued but not finished: WebKit already reports the requested URL,
+        // so only the finished load counts.
+        XCTAssertEqual(webView.url, WebViewTeardown.blankURL)
+        XCTAssertTrue(webView.isLoading)
+        XCTAssertFalse(WebViewTeardown.hasCompleted(webView))
+        let deadline = Date().addingTimeInterval(10)
+        while !WebViewTeardown.hasCompleted(webView), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(WebViewTeardown.hasCompleted(webView), "a healthy web view finishes about:blank")
+    }
+
     /// Keep-alive bound: the auto-start "keep-alive" send (a `postJSON`
     /// call driven from `handleAutoStart` -> `AccountSessionManager.sendKeepAlive`
     /// -> `ClaudeMessageSender.send` -> `createConversation`) hits the exact
@@ -2187,56 +2447,76 @@ final class AppModelTests: XCTestCase {
         let mode = EvaluatorMode()
         final class EvaluationCounter { var total = 0; var posts = 0 }
         let counter = EvaluationCounter()
-        let client = WebUsageClient(
-            evaluator: { script, arguments, _ in
-                counter.total += 1
-                // Distinctive substring of `WebUsageClient.postScript`'s actual
-                // source (`method: "POST",`) — the only one of the three
-                // scripts this test's Claude-only path can evaluate
-                // (postScript / fetchScript / resourcePathsScript) that
-                // contains it, so it uniquely identifies the keep-alive send.
-                if script.contains("method: \"POST\"") {
-                    counter.posts += 1
-                    if mode.hangPosts {
-                        await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
-                    }
-                    return ["status": 200, "retryAfter": NSNull(), "body": ""]
+        let respond: @MainActor (String, [String: Any]) async -> Any? = { script, arguments in
+            counter.total += 1
+            // Distinctive substring of `WebUsageClient.postScript`'s actual
+            // source (`method: "POST",`) — the only one of the three
+            // scripts this test's Claude-only path can evaluate
+            // (postScript / fetchScript / resourcePathsScript) that
+            // contains it, so it uniquely identifies the keep-alive send.
+            if script.contains("method: \"POST\"") {
+                counter.posts += 1
+                if mode.hangPosts {
+                    await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
                 }
-                if script.contains("getEntriesByType") {
-                    return Self.scriptedSuccess(for: script)
-                }
-                // `fetchScript` is shared by the usage read (`ClaudeProviderAdapter
-                // .fetchUsage`) AND the auto-start model-discovery read
-                // (`ClaudeMessageSender.discoverModel`) — same script body, so
-                // disambiguate by the `path` argument instead.
-                let path = arguments["path"] as? String ?? ""
-                if path.contains("chat_conversations") {
-                    return [
-                        "status": 200,
-                        "retryAfter": NSNull(),
-                        "body": #"[{"model":"claude-test-model","uuid":"abc"}]"#
-                    ]
-                }
-                // Usage envelope: a fresh, unused 5h window (remainingFraction 1,
-                // no scheduled reset) — the "not started" state that fires
-                // auto-start (mirrors how `scriptedSuccess` encodes windows,
-                // with utilization dropped to 0 instead of 5 so it actually
-                // arms `AutoStartPolicy.shouldAutoStart`'s `>= 0.99` check).
+                return ["status": 200, "retryAfter": NSNull(), "body": ""]
+            }
+            if script.contains("getEntriesByType") {
+                return Self.scriptedSuccess(for: script)
+            }
+            // `fetchScript` is shared by the usage read (`ClaudeProviderAdapter
+            // .fetchUsage`) AND the auto-start model-discovery read
+            // (`ClaudeMessageSender.discoverModel`) — same script body, so
+            // disambiguate by the `path` argument instead.
+            let path = arguments["path"] as? String ?? ""
+            if path.contains("chat_conversations") {
                 return [
                     "status": 200,
                     "retryAfter": NSNull(),
-                    "body": """
-                    {
-                      "five_hour": { "utilization": 0, "resets_at": null },
-                      "seven_day": { "utilization": 53, "resets_at": null }
-                    }
-                    """
+                    "body": #"[{"model":"claude-test-model","uuid":"abc"}]"#
                 ]
+            }
+            // Usage envelope: a fresh, unused 5h window (remainingFraction 1,
+            // no scheduled reset) — the "not started" state that fires
+            // auto-start (mirrors how `scriptedSuccess` encodes windows,
+            // with utilization dropped to 0 instead of 5 so it actually
+            // arms `AutoStartPolicy.shouldAutoStart`'s `>= 0.99` check).
+            return [
+                "status": 200,
+                "retryAfter": NSNull(),
+                "body": """
+                {
+                  "five_hour": { "utilization": 0, "resets_at": null },
+                  "seven_day": { "utilization": 53, "resets_at": null }
+                }
+                """
+            ]
+        }
+        // Two clients, as in production (`ClaudeMessageSender()` owns its
+        // own). The usage client (fetch + background plan read) never hangs
+        // here, so its timeout never resolves: the answer always wins.
+        let client = WebUsageClient(
+            evaluator: { script, arguments, _ in await respond(script, arguments) },
+            sleep: { _ in
+                await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in }
+            }
+        )
+        // The sender's races run one at a time (prepare, then the two POSTs),
+        // so the gate pairs each timeout with its own evaluation and resolves
+        // it only for the hung POST — the other sender reads can only be won
+        // by their answers, whatever order the race's two tasks run in.
+        let senderGate = ScriptAwareTimeoutGate()
+        let senderClient = WebUsageClient(
+            evaluator: { script, arguments, _ in
+                senderGate.evaluationStarted(
+                    hangs: mode.hangPosts && script.contains("method: \"POST\"")
+                )
+                return await respond(script, arguments)
             },
-            sleep: { _ in }
+            sleep: { _ in await senderGate.sleep() }
         )
         let claudeAdapter = ClaudeProviderAdapter(client: client, prepareWebView: { _ in })
-        let messageSender = ClaudeMessageSender(client: client)
+        let messageSender = ClaudeMessageSender(client: senderClient)
         let fixture = try makeFixture(adapters: [claudeAdapter], messageSender: messageSender)
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
@@ -2835,7 +3115,9 @@ final class AppModelTests: XCTestCase {
         directory: URL? = nil,
         // A movable clock, for the rate-bounded cache purge.
         now: (@MainActor () -> Date)? = nil,
-        saveSettings: AppSettings.SaveSettings? = nil
+        saveSettings: AppSettings.SaveSettings? = nil,
+        // No grace by default: a teardown is checked as soon as it is issued.
+        teardownGrace: @escaping @MainActor () async -> Void = {}
     ) throws -> Fixture {
         let directory = directory
             ?? FileManager.default.temporaryDirectory
@@ -2883,7 +3165,8 @@ final class AppModelTests: XCTestCase {
             now: now ?? { Date(timeIntervalSince1970: 1_000) },
             beforeSignInPersistence: beforeSignInPersistence,
             beforeProfileCleanupDeletion: beforeProfileCleanupDeletion,
-            systemPowerObserver: powerObserver
+            systemPowerObserver: powerObserver,
+            teardownGrace: teardownGrace
         )
         return Fixture(
             directory: directory,
@@ -2977,6 +3260,23 @@ private final class RecordingWebView: WKWebView {
         loadedRequests.append(request)
         return nil
     }
+
+    /// Off by default: the spy never navigates, so a teardown looks IGNORED
+    /// (still no `about:blank` URL) — the wedged-WebContent case. On, it
+    /// reports its last requested load as finished, like a healthy process.
+    var reportsLoadsFinished = false
+
+    override var url: URL? {
+        reportsLoadsFinished ? loadedRequests.last?.url : super.url
+    }
+
+    override var isLoading: Bool {
+        reportsLoadsFinished ? false : super.isLoading
+    }
+
+    var aboutBlankLoadCount: Int {
+        loadedRequests.filter { $0.url?.absoluteString == "about:blank" }.count
+    }
 }
 
 @MainActor
@@ -2991,6 +3291,9 @@ private final class WebProfileManagerSpy: WebProfileManaging {
     /// back for each `makeWebView` call, so a test can inspect what was
     /// later (not) loaded into a specific, already-cached view.
     private(set) var madeWebViews: [RecordingWebView] = []
+    /// Applied to every view made from now on: see
+    /// `RecordingWebView.reportsLoadsFinished`.
+    var madeViewsReportLoadsFinished = false
     var onRemoveProfile: ((UUID) -> Void)?
     var removeError: Error?
     private(set) var purgedProfileIDs: [UUID] = []
@@ -3007,6 +3310,7 @@ private final class WebProfileManagerSpy: WebProfileManaging {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: profileID)
         let webView = RecordingWebView(frame: .zero, configuration: configuration)
+        webView.reportsLoadsFinished = madeViewsReportLoadsFinished
         madeWebViews.append(webView)
         return webView
     }
@@ -3079,6 +3383,9 @@ private final class ProviderAdapterSpy: ProviderAdapter {
     private(set) var fetchCallCount = 0
     var verificationGate: VerificationGate?
     var fetchGate: VerificationGate?
+    /// Thrown by every `fetchUsage` while set — e.g. `WebUsageClientError
+    /// .timedOut`, which the session manager's recycle path acts on.
+    var fetchError: (any Error)?
 
     func verifySession(in webView: WKWebView) async throws {
         verifyCallCount += 1
@@ -3094,6 +3401,9 @@ private final class ProviderAdapterSpy: ProviderAdapter {
         fetchCallCount += 1
         if let fetchGate {
             await fetchGate.suspend()
+        }
+        if let fetchError {
+            throw fetchError
         }
         return UsageSnapshot(
             accountID: accountID,
@@ -3164,11 +3474,44 @@ private final class TimeoutSleepGate {
     }
 }
 
+/// Makes one `WebUsageClient`'s bridge race deterministic when only SOME of
+/// its evaluations hang. The n-th `sleep` (the timeout side of the n-th race)
+/// is paired with the n-th evaluation — valid because that client's races run
+/// one at a time — and resolves only if that evaluation hangs. A race whose
+/// evaluation answers can then only be won by the answer, in whichever order
+/// its two tasks happen to be scheduled.
+@MainActor
+private final class ScriptAwareTimeoutGate {
+    /// Per evaluation, in order: does it hang?
+    private var hangs: [Bool] = []
+    private var sleeps = 0
+    private var parked: [Int: CheckedContinuation<Void, Never>] = [:]
+
+    func evaluationStarted(hangs willHang: Bool) {
+        let index = hangs.count
+        hangs.append(willHang)
+        if willHang, let sleeper = parked.removeValue(forKey: index) {
+            sleeper.resume()
+        }
+    }
+
+    func sleep() async {
+        let index = sleeps
+        sleeps += 1
+        if index < hangs.count, hangs[index] { return }
+        // Undecided: wait for the evaluation's verdict. Answered: park for
+        // good — the answer has already won.
+        await withCheckedContinuation { parked[index] = $0 }
+    }
+}
+
 @MainActor
 private final class VerificationGate {
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var continuation: CheckedContinuation<Void, Never>?
     private var didStart = false
+
+    var hasStarted: Bool { didStart }
 
     func suspend() async {
         didStart = true

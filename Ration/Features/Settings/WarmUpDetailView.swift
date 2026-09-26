@@ -7,13 +7,11 @@ import SwiftUI
 /// quick edits would both start from the same stale value and the second would
 /// discard the first. Two different strategies avoid that:
 ///
-/// * The grid writes through a binding whose setter updates the local `draft`
-///   AND bumps `draftRevision` synchronously, then schedules a debounced save.
-///   The draft is only considered saved once the save carrying the CURRENT
-///   revision succeeds, so a failed or superseded save leaves it dirty (and
-///   retryable on disappear) rather than silently dropping edits. Because the
-///   revision advances in the same setter call as the value, no save can slip
-///   in and mark a newer draft clean.
+/// * The grid writes through `QuietHoursAutosave`, which owns the draft and a
+///   revision that advance together and saves after a debounce. The draft is
+///   only considered saved once the save carrying the CURRENT revision
+///   succeeds, so a failed or superseded save leaves it dirty (and retryable
+///   on disappear, or on quit) rather than silently dropping edits.
 /// * Holidays use atomic, FIELD-SPECIFIC id-addressed deltas on `AppSettings`
 ///   (label / start / end), which compose inside the serialized mutation.
 ///   Labels commit on blur so per-keystroke writes never race; clamping lives
@@ -30,14 +28,47 @@ struct WarmUpDetailView: View {
     let onError: (Error) -> Void
     var calendar: Calendar = .autoupdatingCurrent
 
-    @State private var draft: Set<Int> = []
-    @State private var draftRevision = 0
-    @State private var savedRevision = 0
-    @State private var saveTask: Task<Void, Never>?
+    /// One per app while it has work (see `QuietHoursAutosave.editor`), so
+    /// the save closure it keeps is the first one passed in. `SettingsView`'s
+    /// closure only reaches the model, which never changes.
+    @StateObject private var quietHours: QuietHoursAutosave
 
-    private static let debounce: Duration = .milliseconds(400)
-
-    private var isDirty: Bool { draftRevision != savedRevision }
+    init(
+        settings: AppSettings,
+        autoStartEnabledCount: Int,
+        pendingEdits: PendingEditRegistry? = nil,
+        onSetQuietHours: @escaping ([Int]) async throws -> Void,
+        onAddHoliday: @escaping (HolidayRange) async throws -> Void,
+        onSetHolidayLabel: @escaping (UUID, String) async throws -> Void,
+        onSetHolidayStart: @escaping (UUID, LocalDate) async throws -> Void,
+        onSetHolidayEnd: @escaping (UUID, LocalDate) async throws -> Void,
+        onRemoveHoliday: @escaping (UUID) async throws -> Void,
+        onError: @escaping (Error) -> Void,
+        calendar: Calendar = .autoupdatingCurrent
+    ) {
+        _settings = ObservedObject(wrappedValue: settings)
+        self.autoStartEnabledCount = autoStartEnabledCount
+        self.onSetQuietHours = onSetQuietHours
+        self.onAddHoliday = onAddHoliday
+        self.onSetHolidayLabel = onSetHolidayLabel
+        self.onSetHolidayStart = onSetHolidayStart
+        self.onSetHolidayEnd = onSetHolidayEnd
+        self.onRemoveHoliday = onRemoveHoliday
+        self.onError = onError
+        self.calendar = calendar
+        _quietHours = StateObject(
+            wrappedValue: QuietHoursAutosave.editor(
+                stored: settings.quietHours,
+                in: pendingEdits,
+                save: { cells in
+                    try await onSetQuietHours(cells)
+                },
+                onError: { error in
+                    onError(error)
+                }
+            )
+        )
+    }
 
     /// What the schedule currently governs. Quiet hours stopped being
     /// warm-up-only in 0.28.0, so "no auto-start account" no longer means "no
@@ -50,18 +81,15 @@ struct WarmUpDetailView: View {
         )
     }
 
-    /// The grid writes through this: value + revision advance atomically, so a
-    /// concurrent save can never observe a bumped revision without the matching
-    /// value (or vice-versa). Programmatic store→draft sync (`syncDraftIfClean`)
-    /// deliberately bypasses this, so opening the pane never schedules a save.
+    /// The grid writes through this. Programmatic store→draft sync
+    /// (`storeDidChange`) bypasses it, so opening the pane never schedules a
+    /// save.
     private var gridSelection: Binding<Set<Int>> {
-        Binding(
-            get: { draft },
+        let quietHours = quietHours
+        return Binding(
+            get: { quietHours.draft },
             set: { newValue in
-                guard newValue != draft else { return }
-                draft = newValue
-                draftRevision += 1
-                scheduleSave()
+                quietHours.select(newValue)
             }
         )
     }
@@ -110,49 +138,13 @@ struct WarmUpDetailView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Theme.ink)
-        .task { syncDraftIfClean() }
-        .onChange(of: settings.quietHours) { _, _ in syncDraftIfClean() }
-        .onDisappear { flush() }
-    }
-
-    private func scheduleSave() {
-        saveTask?.cancel()
-        saveTask = Task {
-            try? await Task.sleep(for: Self.debounce)
-            guard !Task.isCancelled else { return }
-            await save(revision: draftRevision, value: draft)
+        .task { quietHours.storeDidChange(settings.quietHours) }
+        .onChange(of: settings.quietHours) { _, newValue in
+            quietHours.storeDidChange(newValue)
         }
-    }
-
-    /// Persists `value` and marks the draft clean ONLY if `revision` is still
-    /// the newest — a slow save that lands after a newer edit must not declare
-    /// the newer edit saved.
-    private func save(revision: Int, value: Set<Int>) async {
-        do {
-            try await onSetQuietHours(Array(value))
-            if revision == draftRevision {
-                savedRevision = revision
-            }
-        } catch {
-            onError(error)
-        }
-    }
-
-    /// Adopt the store's value as the baseline, but only while the user has no
-    /// unsaved edit — never clobber a dirty draft. Bypasses `gridSelection`, so
-    /// it neither bumps the revision nor schedules a (redundant) save.
-    private func syncDraftIfClean() {
-        guard !isDirty else { return }
-        draft = Set(settings.quietHours)
-    }
-
-    /// Last chance to persist a pending edit when the pane goes away.
-    private func flush() {
-        saveTask?.cancel()
-        guard isDirty else { return }
-        let revision = draftRevision
-        let value = draft
-        Task { await save(revision: revision, value: value) }
+        // Starts the save; a quit that outruns it is covered by the
+        // `PendingEditRegistry` the model registered with.
+        .onDisappear { quietHours.flush() }
     }
 
     private func perform(_ operation: @escaping @MainActor () async throws -> Void) {
