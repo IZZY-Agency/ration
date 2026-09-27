@@ -847,7 +847,7 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         _ presentations: [AccountPresentation], layout: PopoverLayout, advice: [SwitchAdvice] = [],
         focus: FocusModel? = nil, dropShowing: Bool = false, problem: NotificationAccess.Problem? = nil,
         showsFreshnessHelp: Bool = false, layoutProbe: PopoverLayoutProbe? = nil
-    ) -> some View {
+    ) -> MenuBarView {
         MenuBarView(
             presentations: AccountVisibility.visible(presentations),
             isRefreshing: false,
@@ -1004,6 +1004,158 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
                 )
             )
         }
+    }
+
+    // MARK: API spend
+
+    /// The API spend surfaces: drop rows (lower-bound over-budget
+    /// and a warning), the popover's API group, the org pane, the add and
+    /// replace sheets, and the Alerts pane's API budgets row.
+    func testAPISpend() async throws {
+        let dir = try directory
+        let api = try await makeAPISpendModel()
+        defer { api.remove() }
+        let model = api.model
+        let nextMonth = UTCMonth(containing: now).nextStart
+
+        let drop = AttentionDropModelObject()
+        drop.rows = [
+            AttentionRow(owner: .apiOrg(api.anthropicID), accountLabel: "Agency API", source: .api(.anthropic),
+                         subject: .apiBudget, tier: .critical, usedPercent: 112, spentCents: 67_218,
+                         thresholdPercent: 90, thresholdCents: nil, resetsAt: nextMonth, resetCount: nil,
+                         resetCreditIDs: [], budgetCents: 60_000, isLowerBound: true),
+            AttentionRow(owner: .apiOrg(api.openAIID), accountLabel: "Personal", source: .api(.openAI),
+                         subject: .apiBudget, tier: .warning, usedPercent: 81, spentCents: 8_137,
+                         thresholdPercent: 75, thresholdCents: nil, resetsAt: nextMonth, resetCount: nil,
+                         resetCreditIDs: [], budgetCents: 10_000, isLowerBound: false),
+        ]
+        drop.now = now
+
+        let fixture = try await makeModel()
+        defer { fixture.removeFiles() }
+        let accounts = fixture.model.presentations
+        func split(_ selection: SettingsSelection, _ detail: some View) -> some View {
+            NavigationSplitView {
+                SettingsSidebar(
+                    presentations: accounts, activeUsage: [:], selection: .constant(selection),
+                    canReorder: true, onMove: { _, _ in }, onAddAccount: {}, apiSpend: model
+                )
+                .navigationSplitViewColumnWidth(
+                    min: SettingsSidebar.minColumnWidth,
+                    ideal: SettingsSidebar.idealColumnWidth,
+                    max: SettingsSidebar.maxColumnWidth
+                )
+            } detail: {
+                detail
+            }
+            .tint(Theme.gold)
+            .background(Theme.ink)
+        }
+        let alerts = AlertsDetailView(
+            settings: fixture.model.settings, providers: [.claude], notificationPermission: .denied,
+            onSetThresholds: { _, _, _, _ in .default }, onSetCursorSpend: { _, _ in .off },
+            onSetDropEnabled: { _, _ in }, onSetNotificationEnabled: { _, _ in },
+            onSetResetLeadDays: { _, _ in }, onError: { _ in }, apiSpend: model
+        )
+        // A single saved order: an API account first, subscriptions mixed across providers, the other API account last.
+        let orderedAccounts = sampleAccounts()
+        let accountsForOrder = AccountVisibility.visible(orderedAccounts)
+        var mixed: [SidebarAccountOrder.Item] = [.api(api.anthropicID)]
+        mixed += accountsForOrder.reversed().map { .subscription($0.account.id) }
+        mixed.append(.api(api.openAIID))
+        model.setSidebarOrder(mixed)
+        let width = SettingsView.minimumWindowWidth
+        for (scheme, suffix) in Self.schemes {
+            try write(await renderHosted(popover(orderedAccounts, layout: .standard).withAPISpend(model), width: 540, height: 1700, scheme),
+                      dir, "popover-api-ordered-\(suffix).png")
+            try write(render(AttentionDropView(model: drop).frame(width: AttentionDropPanel.width), scheme),
+                      dir, "drop-api-\(suffix).png")
+            let group = APISpendGroupView(model: model, now: now).frame(width: 540).background(Theme.ink)
+            try write(await renderHosted(group, width: 540, height: 420, scheme), dir, "popover-api-\(suffix).png")
+            try write(await renderHosted(split(.apiOrg(api.anthropicID), APIOrgDetailView(model: model, orgID: api.anthropicID)),
+                                         width: width, height: 1000, scheme), dir, "settings-api-anthropic-\(suffix).png")
+            try write(await renderHosted(split(.apiOrg(api.openAIID), APIOrgDetailView(model: model, orgID: api.openAIID)),
+                                         width: width, height: 1000, scheme), dir, "settings-api-openai-\(suffix).png")
+            try write(await renderHosted(split(.alerts, alerts), width: width, height: 900, scheme), dir, "settings-alerts-api-\(suffix).png")
+            try write(await renderHosted(AddAPIOrgSheet(model: model, onDone: {}), width: 480, height: 420, scheme),
+                      dir, "settings-api-add-\(suffix).png")
+            try write(await renderHosted(ReplaceAPIKeySheet(model: model, orgID: api.anthropicID, onDone: {}), width: 440, height: 260, scheme),
+                      dir, "settings-api-replace-\(suffix).png")
+        }
+    }
+
+    private struct APISpendFixture {
+        let model: APISpendModel
+        let anthropicID: UUID
+        let openAIID: UUID
+        let directory: URL
+        func remove() { try? FileManager.default.removeItem(at: directory) }
+    }
+
+    /// Two orgs: Anthropic over budget with Priority usage (lower bounds, a
+    /// per-model table, other charges), OpenAI under budget with line items.
+    private func makeAPISpendModel() async throws -> APISpendFixture {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "api-l10n-\(UUID())", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(#"{"usageAlertsEnabled":true}"#.utf8).write(to: dir.appending(path: "app-settings.json"))
+        let settings = AppSettings(fileURL: dir.appending(path: "app-settings.json"))
+        try await settings.load()
+        let anthropicID = UUID(), openAIID = UUID()
+        var state = APISpendState()
+        state.orgs = [
+            APIOrgRecord(id: anthropicID, vendor: .anthropic, vendorOrgID: "org-a", label: "Agency API",
+                         monthlyBudgetCents: 60_000, isPaused: false, displayOrder: 0, createdAt: now),
+            APIOrgRecord(id: openAIID, vendor: .openAI, vendorOrgID: "org-o", label: "Personal",
+                         monthlyBudgetCents: 10_000, isPaused: false, displayOrder: 1, createdAt: now),
+        ]
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(state).write(to: dir.appending(path: "api-spend.json"))
+        let keys = InMemoryAPIKeyStore()
+        keys.seed("sk-ant-admin01-SENTINELSENTINEL", for: anthropicID)
+        keys.seed("sk-admin-SENTINELSENTINEL", for: openAIID)
+        let fixedNow = now
+        let model = APISpendModel(
+            dependencies: .init(
+                clients: [.anthropic: FakeSpendClient(vendor: .anthropic), .openAI: FakeSpendClient(vendor: .openAI)],
+                keyStore: keys,
+                persistence: APISpendPersistence(stateURL: dir.appending(path: "api-spend.json"),
+                                                 snapshotsURL: dir.appending(path: "api-spend-snapshots.json")),
+                now: { fixedNow }, sleep: { _ in try await Task.sleep(for: .seconds(3_600)) },
+                lowPowerMode: { false }, jitter: { 0 }, autoPoll: false
+            ),
+            settings: settings
+        )
+        await model.start()
+        let month = UTCMonth(containing: now)
+        let today = UTCDay.start(of: now)
+        func days(_ cents: [Int]) -> [DayCost] {
+            cents.enumerated().compactMap { index, value in
+                let day = month.start.addingTimeInterval(Double(index) * 86_400)
+                return day <= today ? DayCost(dayStart: day, cents: Decimal(value)) : nil
+            }
+        }
+        let anthropicDays = days([1_820, 2_410, 3_050, 2_200, 900, 400, 3_300, 2_950, 3_100, 2_870, 2_640, 1_100, 600,
+                                  3_420, 3_080, 2_990, 2_760, 2_540, 980, 520, 3_610, 3_200, 2_840, 2_690, 2_470, 1_050, 1_328])
+        let modelTokens = ModelTokens(model: "claude-opus-4-1", input: 4_812_000, cacheWrite: 1_203_000, cacheRead: 38_400_000, output: 912_000)
+        model.injectSnapshotForTesting(anthropicID, APISpendSnapshot(
+            cost: APICostReport(month: month, fetchedAt: now, refreshStartedAt: now, days: anthropicDays,
+                                byModel: [ModelCost(model: "claude-opus-4-1", cents: 51_020), ModelCost(model: "claude-sonnet-4-5", cents: 14_860)],
+                                otherCharges: [DescriptionCost(description: "web_search", cents: 1_338)], byLineItem: []),
+            tokens: APITokenReport(month: month, fetchedAt: now, refreshStartedAt: now, byModel: [modelTokens],
+                                   hasPriorityTierUsage: true),
+            priorityPresentMonth: month
+        ))
+        model.injectSnapshotForTesting(openAIID, APISpendSnapshot(
+            cost: APICostReport(month: month, fetchedAt: now, refreshStartedAt: now,
+                                days: days([310, 280, 350, 290, 120, 90, 330, 300, 340, 310, 290, 140, 80, 360, 320, 300,
+                                            290, 280, 110, 70, 380, 330, 300, 290, 270, 120, 377]),
+                                byModel: [], otherCharges: [],
+                                byLineItem: [LineItemCost(lineItem: "gpt-5, input", cents: 5_230), LineItemCost(lineItem: "gpt-5, output", cents: 2_907)]),
+            tokens: nil,
+            priorityPresentMonth: nil
+        ))
+        return APISpendFixture(model: model, anthropicID: anthropicID, openAIID: openAIID, directory: dir)
     }
 
     // MARK: Rendering

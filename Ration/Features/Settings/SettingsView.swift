@@ -25,6 +25,11 @@ struct SettingsView: View {
     /// General › Diagnostics › Test drop. nil hides the Diagnostics group —
     /// only `MenuBarController` owns a drop to show.
     var onShowTestDrop: (() -> Void)? = nil
+    /// API spend's orgs, detail pane and budget alerts. nil — snapshots,
+    /// tests — shows none of them.
+    var apiSpend: APISpendModel? = nil
+    /// Opens with the Add API Account sheet up (tests).
+    var startsAddingAPIAccount = false
 
     @State private var selection: SettingsSelection?
     /// The serial of the last `selectionRequest` applied, so each request
@@ -36,6 +41,7 @@ struct SettingsView: View {
     /// sidebar's IN USE pills and the account pane at once.
     @State private var features: FeatureSwitches = .allOn
     @State private var errorMessage: String?
+    @State private var addingAPIAccount = false
 
     /// Computed from the non-paused subset only: a paused account can have
     /// recent history for up to the lookback window, and must not be able to
@@ -61,7 +67,10 @@ struct SettingsView: View {
                 selection: $selection,
                 canReorder: !model.settings.sortByWeeklyReset,
                 onMove: move,
-                onAddAccount: onAddAccount
+                onAddAccount: onAddAccount,
+                apiSpend: apiSpend,
+                onAddAPIAccount: { addingAPIAccount = true },
+                onMoveMerged: moveMerged
             )
             .navigationSplitViewColumnWidth(
                 min: SettingsSidebar.minColumnWidth,
@@ -71,16 +80,33 @@ struct SettingsView: View {
         } detail: {
             detail
                 .overlay(alignment: .bottom) { errorBanner }
+                .overlay(alignment: .top) {
+                    if let apiSpend { APIPendingKeyBanner(model: apiSpend) }
+                }
         }
         .tint(Theme.gold)
         .background(Theme.ink)
         .frame(minWidth: Self.minimumWindowWidth, minHeight: 470)
-        .task { ensureSelection() }
+        .task {
+            ensureSelection()
+            if startsAddingAPIAccount { addingAPIAccount = true }
+        }
         .onReceive(requestedSelections) { request in
             applySelectionRequest(request)
         }
         .onReceive(model.settings.featuresPublisher) { features = $0 }
+        // Anchored here, outside the sidebar List: a sheet inside the List is
+        // torn down and rebuilt on every row change (the add inserts one).
+        .sheet(isPresented: $addingAPIAccount) {
+            if let apiSpend {
+                AddAPIOrgSheet(model: apiSpend) { addingAPIAccount = false }
+            }
+        }
         .onChange(of: model.accounts.map(\.id)) { _, _ in ensureSelection() }
+        .onReceive(apiOrgIDs) { ids in
+            // `$state` fires on willSet: use the published IDs, not a re-read.
+            selection = SettingsSelection.normalized(selection, accounts: model.accounts, apiOrgIDs: ids)
+        }
         .alert(
             "Remove account?",
             isPresented: Binding(
@@ -104,6 +130,11 @@ struct SettingsView: View {
     @ViewBuilder
     private var detail: some View {
         switch selection {
+        case let .apiOrg(id):
+            if let apiSpend {
+                APIOrgDetailView(model: apiSpend, orgID: id)
+                    .id(id)
+            }
         case let .account(id):
             if let presentation = model.presentations.first(where: { $0.account.id == id }) {
                 AccountDetailView(
@@ -235,7 +266,8 @@ struct SettingsView: View {
                 onSetResetLeadDays: { days, provider in
                     try await model.setResetExpiryLeadDays(days, provider: provider)
                 },
-                onError: { errorMessage = $0.localizedDescription }
+                onError: { errorMessage = $0.localizedDescription },
+                apiSpend: apiSpend
             )
         case nil:
             placeholder
@@ -276,7 +308,16 @@ struct SettingsView: View {
     }
 
     private func ensureSelection() {
-        selection = SettingsSelection.normalized(selection, accounts: model.accounts)
+        selection = SettingsSelection.normalized(selection, accounts: model.accounts, apiOrgIDs: currentAPIOrgIDs)
+    }
+
+    private var currentAPIOrgIDs: [UUID] { apiSpend?.state.orgs.map(\.id) ?? [] }
+
+    /// Re-normalizes when an org is added or removed (a removed org's pane
+    /// falls back like a removed account's).
+    private var apiOrgIDs: AnyPublisher<[UUID], Never> {
+        guard let apiSpend else { return Empty<[UUID], Never>().eraseToAnyPublisher() }
+        return apiSpend.$state.map { $0.orgs.map(\.id) }.removeDuplicates().eraseToAnyPublisher()
     }
 
     /// Every request `selectionRequest` publishes; nothing without one.
@@ -291,7 +332,8 @@ struct SettingsView: View {
         let resolved = SettingsSelectionRequest.resolve(
             request,
             appliedSerial: appliedRequestSerial,
-            accounts: model.accounts
+            accounts: model.accounts,
+            apiOrgIDs: currentAPIOrgIDs
         )
         guard let resolved else { return }
         appliedRequestSerial = resolved.serial
@@ -305,6 +347,16 @@ struct SettingsView: View {
         }
         Task {
             await model.refreshAll(reason: .manual)
+        }
+    }
+
+    /// A drag in the one subscription + API list: the interleaving (and the
+    /// API accounts' order) saves with the API state; a changed subscription
+    /// order goes to the account store, which owns it.
+    private func moveMerged(before: [SidebarAccountOrder.Item], after: [SidebarAccountOrder.Item]) {
+        apiSpend?.setSidebarOrder(after)
+        if let move = SidebarAccountOrder.subscriptionMove(before: before, after: after) {
+            perform { try await model.moveAccount(id: move.id, to: move.index) }
         }
     }
 

@@ -79,9 +79,10 @@ enum StatusItemFactory {
         let title = NSMutableAttributedString()
         for (index, gauge) in gauges.enumerated() {
             let attachment = NSTextAttachment()
-            attachment.image = ringImage(
+            attachment.image = gaugeImage(
                 fraction: gauge.fraction,
-                color: gauge.provider.markAccentNS,
+                color: gauge.source.accentNS,
+                shape: gauge.source.gaugeShape,
                 inUse: gauge.inUse,
                 appearance: appearance
             )
@@ -116,6 +117,39 @@ enum StatusItemFactory {
         inUse: Bool = false,
         appearance: NSAppearance
     ) -> NSImage {
+        gaugeImage(fraction: fraction, color: color, shape: .ring, inUse: inUse, appearance: appearance)
+    }
+
+    /// A rounded square traced CLOCKWISE from 12 o'clock, so a dash of
+    /// `fraction × perimeter` fills like the ring does (API budget gauges).
+    static func roundedSquarePath(in rect: NSRect, radius r: CGFloat) -> NSBezierPath {
+        let path = NSBezierPath()
+        let (minX, minY, maxX, maxY, midX) = (rect.minX, rect.minY, rect.maxX, rect.maxY, rect.midX)
+        path.move(to: NSPoint(x: midX, y: maxY))
+        path.line(to: NSPoint(x: maxX - r, y: maxY))
+        path.appendArc(withCenter: NSPoint(x: maxX - r, y: maxY - r), radius: r, startAngle: 90, endAngle: 0, clockwise: true)
+        path.line(to: NSPoint(x: maxX, y: minY + r))
+        path.appendArc(withCenter: NSPoint(x: maxX - r, y: minY + r), radius: r, startAngle: 0, endAngle: -90, clockwise: true)
+        path.line(to: NSPoint(x: minX + r, y: minY))
+        path.appendArc(withCenter: NSPoint(x: minX + r, y: minY + r), radius: r, startAngle: -90, endAngle: -180, clockwise: true)
+        path.line(to: NSPoint(x: minX, y: maxY - r))
+        path.appendArc(withCenter: NSPoint(x: minX + r, y: maxY - r), radius: r, startAngle: 180, endAngle: 90, clockwise: true)
+        path.close()
+        return path
+    }
+
+    /// The menu-bar gauge in either shape: the subscription ring, or the API
+    /// budget's rounded square (same stroke, track and fill direction).
+    static func gaugeImage(
+        fraction: Double,
+        color: NSColor,
+        shape: GaugeShape,
+        inUse: Bool = false,
+        appearance: NSAppearance
+    ) -> NSImage {
+        if shape == .roundedSquare {
+            return roundedSquareImage(fraction: fraction, color: color, appearance: appearance)
+        }
         let side = ringPointSize
         let stroke: CGFloat = 2.5
         let clamped = min(max(fraction, 0), 1)
@@ -165,6 +199,32 @@ enum StatusItemFactory {
         }
     }
 
+    private static func roundedSquareImage(fraction: Double, color: NSColor, appearance: NSAppearance) -> NSImage {
+        let side = ringPointSize
+        let stroke: CGFloat = 2.5
+        let radius: CGFloat = 3.2
+        let clamped = min(max(fraction, 0), 1)
+        return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            appearance.performAsCurrentDrawingAppearance {
+                let inset = rect.insetBy(dx: stroke / 2, dy: stroke / 2)
+                let track = roundedSquarePath(in: inset, radius: radius)
+                track.lineWidth = stroke
+                color.withAlphaComponent(0.28).setStroke()
+                track.stroke()
+                if clamped > 0 {
+                    let fill = roundedSquarePath(in: inset, radius: radius)
+                    let perimeter = 2 * (inset.width + inset.height) - (8 - 2 * .pi) * radius
+                    fill.setLineDash([perimeter * clamped, perimeter], count: 2, phase: 0)
+                    fill.lineWidth = stroke
+                    fill.lineCapStyle = .round
+                    color.setStroke()
+                    fill.stroke()
+                }
+            }
+            return true
+        }
+    }
+
     static func toolTip(
         for gauges: [MenuBarGauge],
         displaysRemaining: Bool,
@@ -184,14 +244,26 @@ enum StatusItemFactory {
         displaysRemaining: Bool,
         locale: Locale
     ) -> String {
+        if let budget = gauge.budget {
+            let name = "\(gauge.source.displayName) \(gauge.label)"
+            let resource: LocalizedStringResource
+            if displaysRemaining {
+                let left = APIMoney.wholePercent(100 - budget.exactPercent, budget.isLowerBound ? .up : .plain)
+                resource = budget.isLowerBound ? .statusItemTooltipBudgetLeftUpperBound(name, left) : .statusItemTooltipBudgetLeft(name, left)
+            } else {
+                let used = APIMoney.wholePercent(budget.exactPercent, budget.isLowerBound ? .down : .plain)
+                resource = budget.isLowerBound ? .statusItemTooltipBudgetUsedLowerBound(name, used) : .statusItemTooltipBudgetUsed(name, used)
+            }
+            return resource.string(in: locale)
+        }
         let percent = Int((gauge.fraction * 100).rounded())
         // "Claude AI …", but never "ChatGPT ChatGPT …" when the label
         // already is the provider name (case-insensitively — a label
         // typed "chatgpt" must not repeat either).
-        let name: String = gauge.label.caseInsensitiveCompare(gauge.provider.displayName) == .orderedSame
+        let name: String = gauge.label.caseInsensitiveCompare(gauge.source.displayName) == .orderedSame
             ? gauge.label
-            : "\(gauge.provider.displayName) \(gauge.label)"
-        let window: String = windowLabel(gauge.windowKind, locale: locale)
+            : "\(gauge.source.displayName) \(gauge.label)"
+        let window: String = gauge.windowKind.map { windowLabel($0, locale: locale) } ?? ""
         let resource: LocalizedStringResource = displaysRemaining
             ? .statusItemTooltipLeft(name, window, percent)
             : .statusItemTooltipUsed(name, window, percent)

@@ -6,6 +6,9 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
     private var didFinishLaunching = false
     weak var model: AppModel?
     weak var launchAtLogin: LaunchAtLoginController?
+    /// API spend: threaded to the menu bar; stopped on quit.
+    weak var apiSpend: APISpendModel?
+    private var appRefresh: AppRefresh?
     private var hotKeyRegistrar: (any GlobalHotKeyRegistering)?
     /// Dock + ⌘-Tab presence while any Ration window is open — see `DockPresence`.
     private let dockPresence = DockPresenceController()
@@ -48,10 +51,14 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
     func configure(
         model: AppModel,
         launchAtLogin: LaunchAtLoginController,
-        hotKeyRegistrar: any GlobalHotKeyRegistering = CarbonHotKeyRegistrar()
+        hotKeyRegistrar: any GlobalHotKeyRegistering = CarbonHotKeyRegistrar(),
+        apiSpend: APISpendModel? = nil,
+        appRefresh: AppRefresh? = nil
     ) {
         self.model = model
         self.launchAtLogin = launchAtLogin
+        self.apiSpend = apiSpend
+        self.appRefresh = appRefresh
         self.hotKeyRegistrar = hotKeyRegistrar
         startMenuBarIfReady()
     }
@@ -213,6 +220,7 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         menuBarController?.stop()
         menuBarController = nil
+        apiSpend?.stop()
         model?.stop()
         // Last: the quit is certainly proceeding, and this instance has let go
         // of its status item and timers before the new one starts.
@@ -234,7 +242,10 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
             model: model,
             launchAtLogin: launchAtLogin,
             appearance: appearance,
-            hotKeyRegistrar: hotKeyRegistrar ?? CarbonHotKeyRegistrar()
+            hotKeyRegistrar: hotKeyRegistrar ?? CarbonHotKeyRegistrar(),
+            refreshAll: appRefresh?.refreshAll,
+            apiSpend: apiSpend,
+            appRefresh: appRefresh
         )
         menuBarController = controller
         controller.start()
@@ -250,6 +261,7 @@ struct RationApp: App {
     private var appDelegate
     @StateObject private var model: AppModel
     @StateObject private var launchAtLogin: LaunchAtLoginController
+    @StateObject private var apiSpend: APISpendModel
     private let isUITesting: Bool
 
     init() {
@@ -281,6 +293,30 @@ struct RationApp: App {
             model.errorMessage = startupError
         }
         let launchAtLogin = LaunchAtLoginController()
+        // API spend: its own stack beside AppModel.
+        let apiBase = probeRuntime.isEnabled
+            ? captureStateDirectory
+            : FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appending(path: "Ration", directoryHint: .isDirectory)
+        let apiHTTP = APISpendHTTP()
+        let apiSpend = APISpendModel(
+            dependencies: .init(
+                clients: [.anthropic: AnthropicSpendClient(http: apiHTTP, now: { .now }),
+                          .openAI: OpenAISpendClient(http: apiHTTP, now: { .now })],
+                keyStore: KeychainAPIKeyStore(),
+                persistence: APISpendPersistence(stateURL: apiBase.appending(path: "api-spend.json"),
+                                                 snapshotsURL: apiBase.appending(path: "api-spend-snapshots.json"))
+            ),
+            settings: model.settings
+        )
+        apiSpend.bridge = model
+        // A quit saves pending API edits too (held weakly; the delegate keeps apiSpend alive).
+        model.pendingEdits.register(apiSpend, key: APISpendModel.pendingEditKey)
+        let appRefresh = AppRefresh.combining(
+            all: [{ await model.refreshAll() }, { await apiSpend.refreshAll() }],
+            whenOpened: [{ await model.refreshWhenOpened() }, { await apiSpend.refreshWhenOpened() }]
+        )
+        _apiSpend = StateObject(wrappedValue: apiSpend)
         self.isUITesting = isUITesting
         _model = StateObject(wrappedValue: model)
         _launchAtLogin = StateObject(wrappedValue: launchAtLogin)
@@ -299,7 +335,9 @@ struct RationApp: App {
         }
         delegate.configure(
             model: model,
-            launchAtLogin: launchAtLogin
+            launchAtLogin: launchAtLogin,
+            apiSpend: apiSpend,
+            appRefresh: appRefresh
         )
 
         if !isUITesting {
@@ -308,7 +346,14 @@ struct RationApp: App {
                     _ = await PreviousInstanceWaiter.live().waitForExit(of: awaitedPID)
                     delegate.releaseStartup()
                 }
+                // Never in the unit-test host: it is unsandboxed, reads another
+                // state directory, and shares the user's Keychain and network
+                // identity (its API-spend start could delete the installed
+                // app's Admin keys). Tests build their own models.
+                guard !RuntimeEnvironment.isHostingUnitTests else { return }
                 await model.start()
+                // After AppModel's start (its alert gate reads `alertsReady`).
+                await apiSpend.start()
                 // Only now can the wizard's predicate be answered: `start()`
                 // is what loads `AppSettings`.
                 delegate.presentOnboardingIfNeeded()
@@ -355,7 +400,8 @@ struct RationApp: App {
                 launchAtLogin: launchAtLogin,
                 appearance: appDelegate.appearance,
                 onOpenSetupGuide: openSetupGuide,
-                onShowTestDrop: showTestDrop
+                onShowTestDrop: showTestDrop,
+                apiSpend: apiSpend
             )
         }
         .defaultSize(width: SettingsView.minimumWindowWidth, height: 564)
@@ -443,6 +489,9 @@ struct MenuBarContent: View {
     /// Opens Settings on one pane — the header's STALE click, on the account
     /// to fix. nil (the SwiftUI scene) falls back to plain `onSettings`.
     var onSettingsSelecting: ((SettingsSelection) -> Void)?
+    /// API spend: its cards in the popover, and the shared refresh.
+    var apiSpend: APISpendModel? = nil
+    var appRefresh: AppRefresh? = nil
 
     var body: some View {
         MenuBarView(
@@ -459,12 +508,16 @@ struct MenuBarContent: View {
             showsResetCredits: settings.featureResetsEnabled,
             pausedCount: model.accounts.count - model.visibleAccounts.count,
             onOpen: {
-                Task {
-                    await model.refreshWhenOpened()
+                if let appRefresh {
+                    appRefresh.refreshWhenOpened()
+                } else {
+                    Task {
+                        await model.refreshWhenOpened()
+                    }
                 }
             },
             onAddAccount: onAddAccount,
-            onRefresh: onRefresh ?? {
+            onRefresh: onRefresh ?? appRefresh?.refreshAll ?? {
                 Task {
                     await model.refreshAll()
                 }
@@ -536,6 +589,7 @@ struct MenuBarContent: View {
                 performFreshnessAction(target)
             }
         )
+        .withAPISpend(apiSpend)
         .tint(Theme.gold)
     }
 
@@ -679,6 +733,7 @@ struct SettingsWindowContent: View {
     let onOpenSetupGuide: () -> Void
     /// Required, not optional: the scene must never drop Diagnostics.
     let onShowTestDrop: () -> Void
+    var apiSpend: APISpendModel? = nil
 
     var body: some View {
         settingsView
@@ -702,7 +757,8 @@ struct SettingsWindowContent: View {
                 openWindow(id: "sign-in", value: sessionID)
             },
             onOpenSetupGuide: onOpenSetupGuide,
-            onShowTestDrop: onShowTestDrop
+            onShowTestDrop: onShowTestDrop,
+            apiSpend: apiSpend
         )
     }
 }

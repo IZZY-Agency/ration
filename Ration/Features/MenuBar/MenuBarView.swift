@@ -79,6 +79,9 @@ struct MenuBarView: View {
     /// instant instead of the live clock, so a snapshot's fixture and its
     /// render agree on "now". Nil — the app — is the live clock.
     var pinnedNow: Date? = nil
+    /// API spend: its cards join the list (after the provider groups, or in
+    /// the saved Settings order once the user has dragged it).
+    var apiSpend: APISpendModel? = nil
     /// A click on the header's STALE / OFFLINE word: open Settings on the
     /// account to fix, or refresh everything.
     var onFreshnessAction: (FreshnessHelp.Target) -> Void = { _ in }
@@ -644,12 +647,8 @@ struct MenuBarView: View {
     @State private var cardBottoms: [UUID: CGFloat] = [:]
 
     /// The height to pin the list to, or nil to let it size to its content.
-    private var cappedListHeight: CGFloat? {
-        let ordered = AccountGrouping.grouped(
-            presentations,
-            orderingPinByProvider: orderingPinByProvider
-        ).flatMap(\.presentations)
-
+    /// `ordered`: the cards the four-card cap counts, top to bottom.
+    private func cappedListHeight(_ ordered: [UUID]) -> CGFloat? {
         // Four or fewer: show them ALL, in full. No cap — a constant here is
         // what clipped the fourth card mid-sparkline before.
         guard ordered.count > AccountListMetrics.maxVisibleCards else { return nil }
@@ -657,10 +656,21 @@ struct MenuBarView: View {
         let lastVisible = ordered[AccountListMetrics.maxVisibleCards - 1]
         // Until it has reported, hold the old fixed cap rather than guessing —
         // a half-measured list would visibly jump.
-        guard let bottom = cardBottoms[lastVisible.id] else {
+        guard let bottom = cardBottoms[lastVisible] else {
             return AccountListMetrics.maxListHeight
         }
         return bottom
+    }
+
+    /// Observes the API model when there is one, so a Settings drag, a new
+    /// API account or a fresh report redraws the list.
+    @ViewBuilder
+    private var accountList: some View {
+        if let apiSpend {
+            APISpendReader(model: apiSpend) { cardList(api: $0) }
+        } else {
+            cardList(api: nil)
+        }
     }
 
     /// Eager `VStack`, not `LazyVStack`.
@@ -670,50 +680,37 @@ struct MenuBarView: View {
     /// only what is on screen, so the fourth card might never report where it
     /// ends and the popover would sit at its fallback height until the user
     /// scrolled. Eager layout makes every card measure itself every pass.
-    private var accountList: some View {
-        ScrollView {
+    ///
+    /// Sections come from `PopoverRuns`: provider-grouped with API last until
+    /// the user drags the Settings list, then that exact order.
+    private func cardList(api: APISpendModel?) -> some View {
+        let now = pinnedNow ?? .now
+        let apiPresentations = api?.presentations(now: now) ?? []
+        let order = api?.savedAccountOrder(subscriptions: presentations.map(\.account.id))
+        let runs = PopoverRuns.make(order: order, presentations: presentations,
+                                    apiIDs: apiPresentations.map(\.id), orderingPinByProvider: orderingPinByProvider)
+        // Before a saved order, API cards sit below the cap as they always did.
+        let capped = order == nil ? runs.flatMap { $0.subscriptions.map(\.id) } : PopoverRuns.cardIDs(runs)
+        return ScrollView {
             VStack(spacing: 0) {
-                ForEach(
-                    AccountGrouping.grouped(
-                        presentations,
-                        orderingPinByProvider: orderingPinByProvider
-                    )
-                ) { group in
-                    sectionHeader(group.provider)
-
-                    ForEach(Array(group.presentations.enumerated()), id: \.element.id) { index, presentation in
-                        AccountCardView(
-                            presentation: presentation,
-                            onReauthenticate: { onReauthenticate(presentation.id) },
-                            samples: { kind in samples(presentation.id, kind) },
-                            projection: { kind in projection(presentation.id, kind) },
-                            activeUsage: activeAccounts[presentation.id],
-                            showsResetCredits: showsResetCredits,
-                            now: pinnedNow ?? .now,
-                            resetLeadDays: resetLeadDaysByProvider[presentation.account.provider] ?? 1,
-                            cursorHistory: cursorHistory(presentation.id),
-                            onProblem: onFreshnessAction,
-                            onProblemHover: { event in
-                                badgeHoverChanged(presentation.id, event: event)
+                ForEach(runs) { run in
+                    switch run.kind {
+                    case .provider(let provider):
+                        sectionHeader(provider)
+                        ForEach(Array(run.subscriptions.enumerated()), id: \.element.id) { index, presentation in
+                            accountCard(presentation)
+                            if index < run.subscriptions.count - 1 { cardDivider }
+                        }
+                    case .api:
+                        if let api {
+                            APISpendSectionHeader()
+                            ForEach(Array(run.apiIDs.enumerated()), id: \.element) { index, id in
+                                if let presentation = apiPresentations.first(where: { $0.id == id }) {
+                                    APISpendCardView(presentation: presentation, thresholds: api.state.thresholds, now: now)
+                                        .background(bottomReporter(id))
+                                }
+                                if index < run.apiIDs.count - 1 { cardDivider }
                             }
-                        )
-                        .background(
-                            GeometryReader { proxy in
-                                Color.clear.preference(
-                                    key: AccountCardBottomKey.self,
-                                    value: [
-                                        presentation.id: proxy
-                                            .frame(in: .named(AccountListMetrics.coordinateSpace))
-                                            .maxY
-                                    ]
-                                )
-                            }
-                        )
-
-                        if index < group.presentations.count - 1 {
-                            Divider()
-                                .overlay(Theme.line)
-                                .padding(.horizontal, AccountListMetrics.cardInset)
                         }
                     }
                 }
@@ -722,7 +719,7 @@ struct MenuBarView: View {
             .coordinateSpace(name: AccountListMetrics.coordinateSpace)
         }
         .onPreferenceChange(AccountCardBottomKey.self) { bottoms in
-            // REPLACE, never merge. The stack is eager (see `accountList`), so
+            // REPLACE, never merge. The stack is eager (see `cardList`), so
             // every card reports on every layout pass and this dictionary is a
             // complete picture. Merging kept entries for accounts that had been
             // removed, and — worse — kept a stale position for an account whose
@@ -730,7 +727,42 @@ struct MenuBarView: View {
             // popover from where the fourth card USED to end.
             if cardBottoms != bottoms { cardBottoms = bottoms }
         }
-        .modifier(AccountListSizing(cappedHeight: cappedListHeight))
+        .modifier(AccountListSizing(cappedHeight: cappedListHeight(capped)))
+    }
+
+    private func accountCard(_ presentation: AccountPresentation) -> some View {
+        AccountCardView(
+            presentation: presentation,
+            onReauthenticate: { onReauthenticate(presentation.id) },
+            samples: { kind in samples(presentation.id, kind) },
+            projection: { kind in projection(presentation.id, kind) },
+            activeUsage: activeAccounts[presentation.id],
+            showsResetCredits: showsResetCredits,
+            now: pinnedNow ?? .now,
+            resetLeadDays: resetLeadDaysByProvider[presentation.account.provider] ?? 1,
+            cursorHistory: cursorHistory(presentation.id),
+            onProblem: onFreshnessAction,
+            onProblemHover: { event in
+                badgeHoverChanged(presentation.id, event: event)
+            }
+        )
+        .background(bottomReporter(presentation.id))
+    }
+
+    /// Where a card ends, for the four-card cap.
+    private func bottomReporter(_ id: UUID) -> some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: AccountCardBottomKey.self,
+                value: [id: proxy.frame(in: .named(AccountListMetrics.coordinateSpace)).maxY]
+            )
+        }
+    }
+
+    private var cardDivider: some View {
+        Divider()
+            .overlay(Theme.line)
+            .padding(.horizontal, AccountListMetrics.cardInset)
     }
 
     @ViewBuilder
@@ -1067,4 +1099,21 @@ final class PopoverLayoutProbe {
     var popover: CGRect = .zero
     var headerRow: CGRect = .zero
     var freshnessHelp: CGRect = .zero
+}
+
+extension MenuBarView {
+    /// Order-independent setter for the API spend group (the memberwise init is long).
+    func withAPISpend(_ model: APISpendModel?) -> MenuBarView {
+        var copy = self
+        copy.apiSpend = model
+        return copy
+    }
+}
+
+/// Re-renders its content whenever the API model publishes.
+private struct APISpendReader<Content: View>: View {
+    @ObservedObject var model: APISpendModel
+    @ViewBuilder let content: (APISpendModel) -> Content
+
+    var body: some View { content(model) }
 }

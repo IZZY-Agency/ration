@@ -73,6 +73,9 @@ struct AlertsDetailView: View {
     let onSetNotificationEnabled: (Bool, String) async throws -> Void
     let onSetResetLeadDays: (Int, Provider) async throws -> Void
     let onError: (Error) -> Void
+    /// API spend: one global warning/critical pair for every
+    /// organization with a budget. nil — previews, snapshots — hides it.
+    var apiSpend: APISpendModel? = nil
 
     private var rowsByProvider: [(Provider, [AlertsGridRow])] {
         let rows = AlertsGridModel.rows(for: providers)
@@ -164,11 +167,96 @@ struct AlertsDetailView: View {
                     onError: onError
                 )
             }
+
+            if let apiSpend {
+                APIBudgetsAlertsSection(
+                    model: apiSpend,
+                    channels: settings.data.channels(forKey: AppSettingsData.apiBudgetsKey),
+                    notifyBlockedNote: notifyBlockedNote,
+                    onSetDropEnabled: onSetDropEnabled,
+                    onSetNotificationEnabled: onSetNotificationEnabled,
+                    onError: onError
+                )
+            }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(Theme.ink)
         .disabled(!settings.usageAlertsEnabled)
+    }
+}
+
+/// Alerts › API budgets: percent of each org's monthly budget.
+/// Lives here to share `ChannelToggles`; hidden until an org exists.
+private struct APIBudgetsAlertsSection: View {
+    @ObservedObject var model: APISpendModel
+    let channels: AlertChannels
+    let notifyBlockedNote: String?
+    let onSetDropEnabled: (Bool, String) async throws -> Void
+    let onSetNotificationEnabled: (Bool, String) async throws -> Void
+    let onError: (Error) -> Void
+    @State private var warningText = ""
+    @State private var criticalText = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        if !model.state.orgs.isEmpty {
+            Section {
+                LabeledContent {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("Warn").font(Theme.mono(12)).foregroundStyle(Theme.creamDim)
+                        field($warningText, identifier: "alertWarningField.\(AppSettingsData.apiBudgetsKey)")
+                        Text(verbatim: "%").font(Theme.mono(12)).foregroundStyle(Theme.creamDim)
+                        Text("Crit").font(Theme.mono(12)).foregroundStyle(Theme.creamDim).padding(.leading, 8)
+                        field($criticalText, identifier: "alertCriticalField.\(AppSettingsData.apiBudgetsKey)")
+                        Text(verbatim: "%").font(Theme.mono(12)).foregroundStyle(Theme.creamDim)
+                        ChannelToggles(
+                            channels: channels,
+                            notifyBlockedNote: notifyBlockedNote,
+                            key: AppSettingsData.apiBudgetsKey,
+                            onSetDropEnabled: onSetDropEnabled,
+                            onSetNotificationEnabled: onSetNotificationEnabled,
+                            onError: onError
+                        )
+                    }
+                } label: {
+                    Text(LocalizedStringResource.apiSpendAlertsRow)
+                }
+            } footer: {
+                Text(LocalizedStringResource.apiSpendAlertsNote)
+                    .font(Theme.mono(11))
+                    .foregroundStyle(Theme.creamFaint)
+            }
+            .task { show(model.state.thresholds) }
+            .onChange(of: model.state.thresholds) { _, pair in if !focused { show(pair) } }
+            .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+            .onDisappear { commit() }
+        }
+    }
+
+    private func field(_ text: Binding<String>, identifier: String) -> some View {
+        TextField("", text: text)
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(.trailing)
+            .frame(width: 44)
+            .focused($focused)
+            .onSubmit { commit() }
+            .accessibilityIdentifier(identifier)
+    }
+
+    private func show(_ pair: ThresholdPair) {
+        warningText = String(pair.warningPercent)
+        criticalText = String(pair.criticalPercent)
+    }
+
+    /// Canonicalised by `ThresholdPair.init`; the fields then show what was
+    /// stored, never an unsaved value. Unreadable text reverts.
+    private func commit() {
+        let stored = model.state.thresholds
+        let warning = Int(warningText.trimmingCharacters(in: .whitespaces)) ?? stored.warningPercent
+        let critical = Int(criticalText.trimmingCharacters(in: .whitespaces)) ?? stored.criticalPercent
+        model.setThresholds(ThresholdPair(warningPercent: warning, criticalPercent: critical))
+        show(model.state.thresholds)
     }
 }
 

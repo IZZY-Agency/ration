@@ -113,6 +113,9 @@ struct AppSettingsData: Codable, Equatable, Sendable {
 
     static let cursorSpendKey = "cursor.spend"
 
+    /// Delivery-channel cell for API org budget alerts (Settings → Alerts → API budgets).
+    static let apiBudgetsKey = "api.budgets"
+
     /// Delivery-channel cell for a provider's reset-credit alerts (the
     /// Settings → Alerts "Resets" row). Mirrors `thresholdKey`'s pattern.
     static func resetCreditsKey(provider: Provider) -> String {

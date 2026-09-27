@@ -26,6 +26,9 @@ extension NSPopover: PopoverPresenting {}
 @MainActor
 final class MenuBarController: NSObject {
     private let model: AppModel
+    /// API spend: its gauges and drop rows join the subscription ones.
+    private let apiSpend: APISpendModel?
+    private let appRefresh: AppRefresh?
     private let launchAtLogin: LaunchAtLoginController
     private let appearance: AppearanceController
     /// The single appearance listener registered in `start()`, removed in
@@ -135,6 +138,8 @@ final class MenuBarController: NSObject {
         now: @escaping () -> Date = { .now },
         makePopoverHotKeyRegistrar: @escaping () -> any GlobalHotKeyRegistering = { CarbonHotKeyRegistrar() },
         refreshAll: (() -> Void)? = nil,
+        apiSpend: APISpendModel? = nil,
+        appRefresh: AppRefresh? = nil,
         // An ordinary Quit: it drops a pending relaunch first.
         terminateApp: @escaping () -> Void = { AppRelauncher.shared.quitWithoutRelaunch() },
         statusItemIsAnchored: (() -> Bool)? = nil,
@@ -149,6 +154,8 @@ final class MenuBarController: NSObject {
         self.fallbackPin = fallbackPin
         self.now = now
         self.makePopoverHotKeyRegistrar = makePopoverHotKeyRegistrar
+        self.apiSpend = apiSpend
+        self.appRefresh = appRefresh
         self.refreshAction = refreshAll ?? { [model] in
             Task { await model.refreshAll() }
         }
@@ -324,6 +331,11 @@ final class MenuBarController: NSObject {
             .sink { [weak self] _ in self?.updateGauges() }
             .store(in: &inUseCancellables)
 
+        apiSpend?.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateGauges() }
+            .store(in: &inUseCancellables)
+
         let timer = Timer.scheduledTimer(
             withTimeInterval: Self.inUseTickInterval,
             repeats: true
@@ -379,7 +391,7 @@ final class MenuBarController: NSObject {
     /// It only mutates the observable model — the hosting view and its SwiftUI
     /// tree are created once and never replaced.
     func refreshAttentionDrop() {
-        let rows = attentionTestRows ?? model.attentionRows(now: now())
+        let rows = attentionTestRows ?? (model.attentionRows(now: now()) + (apiSpend?.attentionRows(now: now()) ?? []))
         guard !rows.isEmpty else {
             closeAttentionPanel()
             return
@@ -482,7 +494,10 @@ final class MenuBarController: NSObject {
             showPopoverFromDrop()
             return
         }
-        model.dismissAttentionRows([row])
+        switch row.owner {
+        case .account: model.dismissAttentionRows([row])
+        case .apiOrg(let id): apiSpend?.dismissBudgetRow(orgID: id, tier: row.tier)
+        }
         refreshAttentionDrop()
         showPopoverFromDrop()
     }
@@ -798,7 +813,7 @@ final class MenuBarController: NSObject {
                     ($0, model.settings.menuBarWindow(for: $0))
                 }
             )
-            gauges = MenuBarGaugeState.gauges(
+            let accountGauges = MenuBarGaugeState.accountGauges(
                 accounts: accounts,
                 // In-use detection off → no green center dots; the rings
                 // themselves stay (they are `showInUseInMenuBar`'s).
@@ -810,6 +825,14 @@ final class MenuBarController: NSObject {
                 displaysRemaining: displaysRemaining,
                 now: at
             )
+            let apiGauges = apiSpend?.orgGauges(displaysRemaining: displaysRemaining, now: at) ?? []
+            // The Settings list's order once dragged; before, provider-grouped with API last.
+            if let order = apiSpend?.savedAccountOrder(subscriptions: model.presentations.map(\.account.id)) {
+                gauges = SidebarAccountOrder.ordered(accountGauges + apiGauges, by: order)
+            } else {
+                gauges = Provider.allCases.flatMap { provider in accountGauges.map(\.value).filter { $0.provider == provider } }
+                    + apiGauges.map(\.value)
+            }
         } else {
             gauges = []
         }
@@ -1064,7 +1087,8 @@ final class MenuBarController: NSObject {
                 onRefreshNow: { [weak self] in
                     self?.refreshAction()
                 },
-                onShowTestDrop: SettingsTestDrop.action { [weak self] in self }
+                onShowTestDrop: SettingsTestDrop.action { [weak self] in self },
+                apiSpend: apiSpend
             )
         )
         settingsWindowController = controller
@@ -1283,7 +1307,9 @@ final class MenuBarController: NSObject {
             },
             onSettingsSelecting: { [weak self] selection in
                 self?.showSettings(selecting: selection)
-            }
+            },
+            apiSpend: apiSpend,
+            appRefresh: appRefresh
         )
     }
 

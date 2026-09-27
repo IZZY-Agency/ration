@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.8.0
+
+- API accounts: add an Anthropic or OpenAI organization with its Admin key to
+  see the month's API spend next to your subscriptions. Each has a card with the
+  month-to-date total (UTC month), daily bars and, if you set a monthly budget,
+  a meter and a rounded-square gauge in the menu bar. Settings shows spend by
+  day, tokens by model and, for OpenAI, cost by line item. Admin keys are kept
+  in your login Keychain and sent only to the vendor that issued them.
+- Budget alerts: API budgets have their own warning and critical thresholds in
+  Settings › Alerts. Crossing one notifies you and adds a row to the attention
+  drop, once per tier each month.
+- Anthropic reports whole days only, so an Anthropic card's figures run
+  through yesterday and say so.
+- Settings: subscription and API accounts share one Accounts list, with Add
+  Subscription Account and Add API Account under it. While Sort by weekly reset
+  is off, drag accounts into any order; the popover and the menu bar then
+  follow it.
+
 ## 1.7.0
 
 - Cursor spend history: the Cursor card shows six small bars for recent billing

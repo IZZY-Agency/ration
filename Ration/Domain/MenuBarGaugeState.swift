@@ -5,11 +5,29 @@ import Foundation
 /// remaining), which usage window produced the value, and whether the account
 /// is in the bright IN USE phase (drawn as a center dot).
 struct MenuBarGauge: Equatable {
-    let provider: Provider
+    /// Subscription provider or API vendor: colour, name and shape.
+    let source: DisplaySource
     let label: String
     let fraction: Double
-    let windowKind: UsageWindowKind
+    /// nil for API budget gauges (no rate window).
+    let windowKind: UsageWindowKind?
     let inUse: Bool
+    /// API budget gauges only: the unrounded percent spent and whether it is a lower bound.
+    var budget: BudgetGaugeFacts? = nil
+
+    var provider: Provider? { if case .subscription(let provider) = source { provider } else { nil } }
+}
+
+extension MenuBarGauge {
+    init(provider: Provider, label: String, fraction: Double, windowKind: UsageWindowKind, inUse: Bool) {
+        self.init(source: .subscription(provider), label: label, fraction: fraction, windowKind: windowKind, inUse: inUse, budget: nil)
+    }
+}
+
+struct BudgetGaugeFacts: Equatable, Sendable {
+    /// Unrounded percent of budget spent.
+    let exactPercent: Decimal
+    let isLowerBound: Bool
 }
 
 /// The menu bar shows a usage ring for EVERY visible account that reports a
@@ -48,11 +66,25 @@ enum MenuBarGaugeState {
         displaysRemaining: Bool,
         now: Date
     ) -> [MenuBarGauge] {
-        var byProvider: [Provider: [MenuBarGauge]] = [:]
-        for account in accounts {
+        let entries = accountGauges(accounts: accounts, activeUsage: activeUsage, snapshots: snapshots,
+                                    windowKind: windowKind, displaysRemaining: displaysRemaining, now: now)
+        return Provider.allCases.flatMap { provider in entries.map(\.value).filter { $0.provider == provider } }
+    }
+
+    /// One gauge per account that has one, in `accounts` order, with its
+    /// account — so a saved Settings order can place it (`SidebarAccountOrder.ordered`).
+    static func accountGauges(
+        accounts: [AccountRecord],
+        activeUsage: [UUID: ActiveUsage],
+        snapshots: (UUID) -> UsageSnapshot?,
+        windowKind: (Provider) -> UsageWindowKind,
+        displaysRemaining: Bool,
+        now: Date
+    ) -> [(id: UUID, value: MenuBarGauge)] {
+        accounts.compactMap { account in
             guard let snapshot = snapshots(account.id),
                   let window = window(in: snapshot, preferring: windowKind(account.provider))
-            else { continue }
+            else { return nil }
 
             let inUse = if case .inUse = InUsePhase.classify(activeUsage[account.id], now: now) {
                 true
@@ -60,7 +92,7 @@ enum MenuBarGaugeState {
                 false
             }
             let remaining = min(max(window.remainingFraction, 0), 1)
-            byProvider[account.provider, default: []].append(MenuBarGauge(
+            return (account.id, MenuBarGauge(
                 provider: account.provider,
                 label: account.label,
                 fraction: displaysRemaining ? remaining : 1 - remaining,
@@ -68,6 +100,5 @@ enum MenuBarGaugeState {
                 inUse: inUse
             ))
         }
-        return Provider.allCases.flatMap { byProvider[$0] ?? [] }
     }
 }

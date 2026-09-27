@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The Settings sidebar: reorderable accounts, a pinned General item, and an
-/// always-visible Add Account button.
+/// The Settings sidebar: reorderable subscription and API accounts with
+/// their two Add buttons, then General, Warm-up and Alerts.
 struct SettingsSidebar: View {
     let presentations: [AccountPresentation]
     let activeUsage: [UUID: ActiveUsage]
@@ -9,6 +9,12 @@ struct SettingsSidebar: View {
     let canReorder: Bool
     let onMove: (IndexSet, Int) -> Void
     let onAddAccount: () -> Void
+    /// API spend's "API orgs" section. nil — snapshots — hides it.
+    var apiSpend: APISpendModel? = nil
+    /// Add API Account — `SettingsView` presents the sheet (never the List).
+    var onAddAPIAccount: () -> Void = {}
+    /// A drag in the one subscription + API list: the list before and after.
+    var onMoveMerged: (_ before: [SidebarAccountOrder.Item], _ after: [SidebarAccountOrder.Item]) -> Void = { _, _ in }
     @Environment(\.colorScheme) private var colorScheme
 
     /// One non-account sidebar row.
@@ -82,7 +88,17 @@ struct SettingsSidebar: View {
     var body: some View {
         List(selection: $selection) {
             Section(SettingsSectionTitle.accounts) {
-                accountsList
+                if let apiSpend {
+                    MergedAccountRows(model: apiSpend, presentations: presentations, canReorder: canReorder, onMove: onMoveMerged) {
+                        accountRow($0)
+                    }
+                } else {
+                    accountsList
+                }
+                addButton(.settingsSidebarAddSubscriptionAccount, identifier: "addSubscriptionAccountButton", action: onAddAccount)
+                if apiSpend != nil {
+                    addButton(.apiSpendSettingsAdd, identifier: "addAPIAccountButton", action: onAddAPIAccount)
+                }
             }
 
             ForEach(Array(Self.fixedGroups.enumerated()), id: \.offset) { _, group in
@@ -95,14 +111,24 @@ struct SettingsSidebar: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            Button(action: onAddAccount) {
-                Label("Add Account", systemImage: "plus")
-                    .frame(maxWidth: .infinity)
+    }
+
+    /// An Add row under the accounts: not selectable (no tag), gold like the
+    /// old pinned Add Account button.
+    private func addButton(_ title: LocalizedStringResource, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label {
+                Text(title)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "plus")
             }
-            .buttonStyle(.borderless)
-            .padding(10)
+            .foregroundStyle(Theme.gold)
         }
+        .buttonStyle(.borderless)
+        .listItemTint(Theme.gold)
+        .accessibilityIdentifier(identifier)
     }
 
     /// Reorder is only offered when manual ordering is in effect; while
@@ -156,5 +182,36 @@ struct SettingsSidebar: View {
                 .frame(width: 6, height: 6)
                 .accessibilityHidden(true)
         }
+    }
+}
+
+/// Subscription and API accounts as ONE list, draggable
+/// while manual ordering is in effect (Sort by weekly reset off).
+private struct MergedAccountRows<Row: View>: View {
+    @ObservedObject var model: APISpendModel
+    let presentations: [AccountPresentation]
+    let canReorder: Bool
+    let onMove: (_ before: [SidebarAccountOrder.Item], _ after: [SidebarAccountOrder.Item]) -> Void
+    @ViewBuilder let subscriptionRow: (AccountPresentation) -> Row
+
+    var body: some View {
+        let items = SidebarAccountOrder.merged(
+            subscriptions: presentations.map(\.account.id),
+            apis: model.state.orgs.sorted { $0.displayOrder < $1.displayOrder }.map(\.id),
+            saved: model.state.sidebarOrder
+        )
+        ForEach(items, id: \.self) { item in
+            switch item {
+            case .subscription(let id):
+                if let presentation = presentations.first(where: { $0.account.id == id }) {
+                    subscriptionRow(presentation).tag(SettingsSelection.account(id))
+                }
+            case .api(let id):
+                if let org = model.org(id) {
+                    APIAccountSidebarRow(org: org).tag(SettingsSelection.apiOrg(id))
+                }
+            }
+        }
+        .onMove(perform: canReorder ? { onMove(items, SidebarAccountOrder.moved(items, from: $0, to: $1)) } : nil)
     }
 }

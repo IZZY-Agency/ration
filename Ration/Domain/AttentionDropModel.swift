@@ -7,22 +7,30 @@ import Foundation
 /// panel renders straight from the row and never re-derives a number that
 /// might have moved underneath it.
 struct AttentionRow: Equatable, Identifiable, Sendable {
+    /// Who the row is about: a subscription account or an API org.
+    /// Consumers dispatch on it explicitly; an org UUID is never an account.
+    enum Owner: Hashable, Sendable {
+        case account(UUID)
+        case apiOrg(UUID)
+    }
+
     enum Subject: Equatable, Hashable, Sendable {
         case window(UsageWindowKind)
         case cursorSpend
         case resetCredit(id: String, kind: ResetCreditRowKind)
+        case apiBudget
     }
 
     /// Identity deliberately EXCLUDES the tier: a warning escalating to
     /// critical must update its row in place, not add a second one beside it.
     struct ID: Hashable, Sendable {
-        let accountID: UUID
+        let owner: Owner
         let subject: Subject
     }
 
-    let accountID: UUID
+    let owner: Owner
     let accountLabel: String
-    let provider: Provider
+    let source: DisplaySource
     let subject: Subject
     let tier: AlertTier
 
@@ -45,9 +53,29 @@ struct AttentionRow: Equatable, Identifiable, Sendable {
     /// soonest-expiring member; dismissing the row must act on every id
     /// here. `[]` for a non-reset row.
     let resetCreditIDs: [String]
+    /// API budget rows only.
+    var budgetCents: Int? = nil
+    /// API Priority Tier `.present`: figures are floored lower bounds.
+    var isLowerBound: Bool = false
 
-    var id: ID { ID(accountID: accountID, subject: subject) }
+    var id: ID { ID(owner: owner, subject: subject) }
     var isResetCredit: Bool { if case .resetCredit = subject { true } else { false } }
+    /// The subscription account, for account-only callers; nil for API rows.
+    var accountID: UUID? { if case .account(let id) = owner { id } else { nil } }
+    var provider: Provider? { if case .subscription(let provider) = source { provider } else { nil } }
+}
+
+extension AttentionRow {
+    /// The pre-API-spend subscription initializer, kept so existing call sites
+    /// and tests compile unchanged.
+    init(accountID: UUID, accountLabel: String, provider: Provider, subject: Subject, tier: AlertTier,
+         usedPercent: Int?, spentCents: Int?, thresholdPercent: Int?, thresholdCents: Int?,
+         resetsAt: Date?, resetCount: Int?, resetCreditIDs: [String]) {
+        self.init(owner: .account(accountID), accountLabel: accountLabel, source: .subscription(provider),
+                  subject: subject, tier: tier, usedPercent: usedPercent, spentCents: spentCents,
+                  thresholdPercent: thresholdPercent, thresholdCents: thresholdCents, resetsAt: resetsAt,
+                  resetCount: resetCount, resetCreditIDs: resetCreditIDs, budgetCents: nil, isLowerBound: false)
+    }
 }
 
 /// Which side of a reset row's lifecycle a `.resetCredit` subject shows: newly

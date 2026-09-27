@@ -4923,6 +4923,78 @@
         }
       }
     },
+    "alert.budget.body" : {
+      "comment" : "Notification body. %1$@ = spent this month, %2$@ = monthly budget, %3$@ = the report's time (e.g. \"14:05\").",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of %2$@ spent this month, as of %3$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ dépensés sur %2$@ ce mois-ci, à %3$@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Витрачено %1$@ з %2$@ цього місяця, станом на %3$@."
+          }
+        }
+      }
+    },
+    "alert.budget.body.lowerBound" : {
+      "comment" : "Same, when Priority Tier spend is excluded (a lower bound). Priority Tier is a brand term.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At least %1$@ of %2$@ spent this month, as of %3$@. Priority Tier is not included."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Au moins %1$@ dépensés sur %2$@ ce mois-ci, à %3$@. Le Priority Tier n’est pas inclus."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Витрачено щонайменше %1$@ з %2$@ цього місяця, станом на %3$@. Priority Tier не враховано."
+          }
+        }
+      }
+    },
+    "alert.budget.title" : {
+      "comment" : "Notification title: an API org reached its budget alert. %1$@ = org label, %2$@ = threshold percent (e.g. \"75 %\").",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@ of the API budget reached"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : %2$@ du budget API atteints"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: досягнуто %2$@ бюджету API"
+          }
+        }
+      }
+    },
     "alert.rateLimited.body" : {
       "comment" : "Notification body: the provider (Claude, ChatGPT, Cursor) is rate-limiting usage checks. %@ = account label.",
       "extractionState" : "manual",
@@ -5015,6 +5087,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@: увійдіть знову"
+          }
+        }
+      }
+    },
+    "alert.redacted.budget" : {
+      "comment" : "Privacy-mode notification body: must not name the org or give any number.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An API budget passed an alert threshold."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un budget d’API a franchi un seuil d’alerte."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бюджет API перейшов поріг сповіщення."
           }
         }
       }
@@ -6341,6 +6437,1278 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Надсилати системне сповіщення, коли цей поріг перетнуто"
+          }
+        }
+      }
+    },
+    "apiSpend.alerts.note" : {
+      "comment" : "Settings › Alerts note under API budgets.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Percent of each organization’s monthly budget. Organizations without a budget have no alerts."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pourcentage du budget mensuel de chaque organisation. Les organisations sans budget n’ont pas d’alertes."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відсоток місячного бюджету кожної організації. Організації без бюджету не мають сповіщень."
+          }
+        }
+      }
+    },
+    "apiSpend.alerts.row" : {
+      "comment" : "Settings › Alerts section title for API org budget alerts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API budgets"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Budgets API"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Бюджети API"
+          }
+        }
+      }
+    },
+    "apiSpend.budget.outOfRange" : {
+      "comment" : "Budget field: amount outside the allowed range.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter an amount between $0.01 and $10,000,000."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saisissez un montant entre 0,01 $ et 10 000 000 $."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введіть суму від 0,01 $ до 10 000 000 $."
+          }
+        }
+      }
+    },
+    "apiSpend.budget.unreadable" : {
+      "comment" : "Budget field: the text isn't an amount.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter an amount like 600 or 600.50."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saisissez un montant comme 600 ou 600,50."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введіть суму, наприклад 600 або 600,50."
+          }
+        }
+      }
+    },
+    "apiSpend.card.asOf" : {
+      "comment" : "API org card header: when the figures were fetched. %@ = time (e.g. \"14:05\").",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "as of %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "à %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "станом на %@"
+          }
+        }
+      }
+    },
+    "apiSpend.card.budgetCaption" : {
+      "comment" : "API org card caption with a budget. %1$@ = percent of budget (e.g. \"78 %\", may start with ≥), %2$@ = today's spend, %3$@ = reset text (\"resets in 3d 6h\").",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of budget · today %2$@ · %3$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ du budget · aujourd’hui %2$@ · %3$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ бюджету · сьогодні %2$@ · %3$@"
+          }
+        }
+      }
+    },
+    "apiSpend.card.budgetCaptionNoReportYet" : {
+      "comment" : "API org card caption with a budget on the first UTC day of a month, before the vendor has reported any cost for it (Anthropic reports whole days). %1$@ = percent of budget, %2$@ = reset text (\"resets in 30d 15h\").",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of budget · no costs reported yet · %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ du budget · aucun coût encore communiqué · %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ бюджету · витрати ще не надійшли · %2$@"
+          }
+        }
+      }
+    },
+    "apiSpend.card.budgetCaptionThroughYesterday" : {
+      "comment" : "API org card caption with a budget when the vendor has not reported today yet (Anthropic reports whole days). %1$@ = percent of budget (e.g. \"78 %\", may start with ≥), %2$@ = reset text (\"resets in 3d 6h\").",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of budget · through yesterday · %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ du budget · jusqu’à hier · %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ бюджету · станом на вчора · %2$@"
+          }
+        }
+      }
+    },
+    "apiSpend.card.newMonth" : {
+      "comment" : "API org card caption when the last report is from the previous UTC month.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New month — refreshing"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveau mois — actualisation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новий місяць — оновлення"
+          }
+        }
+      }
+    },
+    "apiSpend.card.noBudgetCaption" : {
+      "comment" : "API org card caption without a budget. %1$@ = today's spend, %2$@ = reset text.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "this month · today %1$@ · %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ce mois-ci · aujourd’hui %1$@ · %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "цього місяця · сьогодні %1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "apiSpend.card.noBudgetCaptionNoReportYet" : {
+      "comment" : "API org card caption without a budget on the first UTC day of a month, before the vendor has reported any cost for it. %1$@ = reset text.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "this month · no costs reported yet · %1$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ce mois-ci · aucun coût encore communiqué · %1$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "цього місяця · витрати ще не надійшли · %1$@"
+          }
+        }
+      }
+    },
+    "apiSpend.card.noBudgetCaptionThroughYesterday" : {
+      "comment" : "API org card caption without a budget when the vendor has not reported today yet (Anthropic reports whole days). %1$@ = reset text.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "this month · through yesterday · %1$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ce mois-ci · jusqu’à hier · %1$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "цього місяця · станом на вчора · %1$@"
+          }
+        }
+      }
+    },
+    "apiSpend.card.priorityNotChecked" : {
+      "comment" : "Caption suffix: Priority Tier usage could not be checked yet (brand term).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Priority Tier not checked"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Priority Tier non vérifié"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Priority Tier не перевірено"
+          }
+        }
+      }
+    },
+    "apiSpend.card.priorityNotIncluded" : {
+      "comment" : "Caption suffix: the org used Priority Tier, whose cost the API does not report (brand term).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Priority Tier not included"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Priority Tier non inclus"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Priority Tier не враховано"
+          }
+        }
+      }
+    },
+    "apiSpend.error.duplicate" : {
+      "comment" : "Add sheet: this organization is already added. %@ = its label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This organization is already added as “%@”."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette organisation est déjà ajoutée sous le nom « %@ »."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цю організацію вже додано як «%@»."
+          }
+        }
+      }
+    },
+    "apiSpend.error.identityMismatch" : {
+      "comment" : "Replace sheet: the new key belongs to another organization.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This key belongs to a different organization."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette clé appartient à une autre organisation."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей ключ належить іншій організації."
+          }
+        }
+      }
+    },
+    "apiSpend.error.invalidKey" : {
+      "comment" : "Add / Replace sheet: the pasted text is not an Admin key.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That doesn’t look like an Admin key."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cela ne ressemble pas à une clé administrateur."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це не схоже на ключ адміністратора."
+          }
+        }
+      }
+    },
+    "apiSpend.error.regularKey" : {
+      "comment" : "Add sheet: a regular API key was pasted. %@ = where to create an Admin key (brand: Claude Console / OpenAI Platform).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is a regular API key. Usage needs an Admin key — create one in %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il s’agit d’une clé API ordinaire. L’utilisation nécessite une clé administrateur — créez-en une dans %@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це звичайний ключ API. Для даних про використання потрібен ключ адміністратора — створіть його в %@."
+          }
+        }
+      }
+    },
+    "apiSpend.error.saveFailed" : {
+      "comment" : "Add / Replace sheet: saving failed; nothing changed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t save. Try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement impossible. Réessayez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося зберегти. Спробуйте ще раз."
+          }
+        }
+      }
+    },
+    "apiSpend.error.secondOpenAI" : {
+      "comment" : "Add sheet: without an OpenAI organization id only one OpenAI org is allowed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only one OpenAI organization is supported for now."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une seule organisation OpenAI est prise en charge pour l’instant."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Наразі підтримується лише одна організація OpenAI."
+          }
+        }
+      }
+    },
+    "apiSpend.group.title" : {
+      "comment" : "Popover section header for API organizations (a technical term, same in all languages).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.add" : {
+      "comment" : "Settings sidebar row that opens the Add API organization sheet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add API Account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un compte API"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Додати обліковий запис API"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.addButton" : {
+      "comment" : "Add sheet: confirm button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Додати"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.addTitle" : {
+      "comment" : "Title of the Add API organization sheet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add API Account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un compte API"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Додати обліковий запис API"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.budget" : {
+      "comment" : "Monthly budget field label (US dollars, UTC calendar month).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monthly budget (USD, UTC month)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Budget mensuel (USD, mois UTC)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Місячний бюджет (USD, місяць UTC)"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.budgetPlaceholder" : {
+      "comment" : "Placeholder for the budget field: empty means no budget.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "none"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aucun"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "немає"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.byDay" : {
+      "comment" : "Detail chart title. %@ = month name (e.g. \"September\").",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, by day"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, par jour"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, за днями"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.byLineItem" : {
+      "comment" : "Detail table title: OpenAI cost per billing line item this month.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "By line item, this month"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Par poste, ce mois-ci"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "За статтями, цього місяця"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.byModel" : {
+      "comment" : "Detail table title: token usage (and cost) per model this month.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "By model, this month"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Par modèle, ce mois-ci"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "За моделями, цього місяця"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.cancel" : {
+      "comment" : "Add / Replace sheet: cancel button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скасувати"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.col.cacheRead" : {
+      "comment" : "Detail table column: tokens read from the prompt cache.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache read"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture cache"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Читання кешу"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.col.cacheWrite" : {
+      "comment" : "Detail table column: tokens written to the prompt cache.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache write"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écriture cache"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запис у кеш"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.col.input" : {
+      "comment" : "Detail table column: uncached input tokens.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Input"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entrée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вхід"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.col.output" : {
+      "comment" : "Detail table column: output tokens.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Output"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sortie"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вихід"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.completionsOnly" : {
+      "comment" : "Detail note under OpenAI token table.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tokens cover chat completions only."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les jetons ne couvrent que les complétions de chat."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Токени охоплюють лише завершення чату."
+          }
+        }
+      }
+    },
+    "apiSpend.settings.inKeychain" : {
+      "comment" : "Detail pane: the Admin key is stored in the macOS Keychain.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Keychain"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dans le trousseau"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "У в’язці ключів"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.key" : {
+      "comment" : "Admin API key field label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Admin key"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clé administrateur"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ключ адміністратора"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.label" : {
+      "comment" : "API org name field label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nom"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Назва"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.labelPlaceholder" : {
+      "comment" : "Placeholder for the API org name: left empty, the name comes from the organization.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From the organization"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Celui de l’organisation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "З організації"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.otherCharges" : {
+      "comment" : "Detail table row: charges without a model (e.g. code execution).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other charges"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autres frais"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Інші витрати"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.pause" : {
+      "comment" : "Detail pane toggle: stop polling this API org.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause polling"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suspendre l’actualisation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Призупинити оновлення"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.pendingKeyBanner" : {
+      "comment" : "Settings banner while a removed org's key is still being deleted from the Keychain.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A removed organization’s key is still in the Keychain — retrying."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clé d’une organisation supprimée est toujours dans le trousseau — nouvelle tentative en cours."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ключ видаленої організації досі у в’язці ключів — повторюємо спробу."
+          }
+        }
+      }
+    },
+    "apiSpend.settings.remove" : {
+      "comment" : "Detail pane: remove this API org and delete its key.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Видалити"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.removeConfirm" : {
+      "comment" : "Detail pane: confirmation shown before removing an API org.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove this organization and delete its key from the Keychain?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer cette organisation et effacer sa clé du trousseau ?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Видалити цю організацію та її ключ із в’язки ключів?"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.removeFailed" : {
+      "comment" : "Detail pane: removing the org failed; nothing changed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t remove — try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suppression impossible — réessayez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося видалити — спробуйте ще раз."
+          }
+        }
+      }
+    },
+    "apiSpend.settings.replace" : {
+      "comment" : "Detail pane: replace the stored Admin key.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplacer…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Замінити…"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.replaceTitle" : {
+      "comment" : "Title of the Replace key sheet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace the Admin key"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplacer la clé administrateur"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Замінити ключ адміністратора"
+          }
+        }
+      }
+    },
+    "apiSpend.settings.replaceUnavailable" : {
+      "comment" : "Shown instead of Replace when the vendor gives no organization identity.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To use a different key, remove this organization and add it again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour utiliser une autre clé, supprimez cette organisation puis ajoutez-la à nouveau."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Щоб використати інший ключ, видаліть цю організацію й додайте її знову."
+          }
+        }
+      }
+    },
+    "apiSpend.settings.todayPartial" : {
+      "comment" : "Detail chart note: today's bar is still accumulating.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "today (partial)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "aujourd’hui (partiel)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "сьогодні (частково)"
+          }
+        }
+      }
+    },
+    "apiSpend.state.keyMissing" : {
+      "comment" : "API org card state: the Admin key is no longer in the Keychain.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key missing. Use Replace… in Settings."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clé manquante. Utilisez Remplacer… dans les Réglages."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ключ відсутній. Скористайтеся «Замінити…» у Параметрах."
+          }
+        }
+      }
+    },
+    "apiSpend.state.keyRejected" : {
+      "comment" : "API org card state for HTTP 401: the Admin key was rejected. Uses the app's word for its Settings window.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key rejected. Replace it in Settings."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clé refusée. Remplacez-la dans les Réglages."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ключ відхилено. Замініть його в Параметрах."
+          }
+        }
+      }
+    },
+    "apiSpend.state.keychain" : {
+      "comment" : "API org card state: any other Keychain failure.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t read the key from the Keychain."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de lire la clé dans le trousseau."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося прочитати ключ із в’язки ключів."
+          }
+        }
+      }
+    },
+    "apiSpend.state.noAdminAccess" : {
+      "comment" : "API org card state for HTTP 403: the key lacks admin access.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This key has no admin access."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette clé n’a pas d’accès administrateur."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей ключ не має прав адміністратора."
           }
         }
       }
@@ -8828,6 +10196,78 @@
         }
       }
     },
+    "drop.spoken.budget" : {
+      "comment" : "VoiceOver subject for an API budget drop row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "monthly budget"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "budget mensuel"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "місячний бюджет"
+          }
+        }
+      }
+    },
+    "drop.spoken.budgetValue" : {
+      "comment" : "VoiceOver value for an API budget row. %1$lld = percent, %2$@ = spent, %3$@ = monthly budget.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld percent, %2$@ of %3$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld pour cent, %2$@ sur %3$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld відсотків, %2$@ з %3$@"
+          }
+        }
+      }
+    },
+    "drop.spoken.budgetValue.lowerBound" : {
+      "comment" : "Same when the figures are lower bounds (Priority Tier excluded).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "at least %1$lld percent, at least %2$@ of %3$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "au moins %1$lld pour cent, au moins %2$@ sur %3$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "щонайменше %1$lld відсотків, щонайменше %2$@ з %3$@"
+          }
+        }
+      }
+    },
     "drop.spoken.criticalCount" : {
       "comment" : "VoiceOver: number of critical rows in the drop panel.",
       "extractionState" : "manual",
@@ -9592,6 +11032,30 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "drop.subject.budget" : {
+      "comment" : "Attention-drop row subject for an API org's monthly budget. Uppercase like the other drop subjects.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BUDGET"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BUDGET"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "БЮДЖЕТ"
           }
         }
       }
@@ -14590,6 +16054,30 @@
         }
       }
     },
+    "settings.sidebar.addSubscriptionAccount" : {
+      "comment" : "Settings sidebar, under the accounts: opens the window that adds a Claude, ChatGPT or Cursor subscription account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Subscription Account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un compte d’abonnement"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Додати обліковий запис підписки"
+          }
+        }
+      }
+    },
     "settings.sidebar.alerts" : {
       "comment" : "Settings sidebar item: usage alert thresholds and where they are delivered.",
       "extractionState" : "manual",
@@ -14946,6 +16434,102 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Використання знижується"
+          }
+        }
+      }
+    },
+    "statusItem.tooltip.budgetLeft" : {
+      "comment" : "Same, in remaining mode. %2$lld = percent of the monthly budget left.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$lld%% of monthly budget left"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : %2$lld %% du budget mensuel restant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: залишилося %2$lld%% місячного бюджету"
+          }
+        }
+      }
+    },
+    "statusItem.tooltip.budgetLeft.upperBound" : {
+      "comment" : "Remaining mode when Priority Tier spend is excluded: an upper bound on what is left.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ at most %2$lld%% of monthly budget left"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : au plus %2$lld %% du budget mensuel restant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: залишилося щонайбільше %2$lld%% місячного бюджету"
+          }
+        }
+      }
+    },
+    "statusItem.tooltip.budgetUsed" : {
+      "comment" : "Menu-bar tooltip for an API org budget gauge. %1$@ = vendor + org label (e.g. \"Anthropic API IZZY\"), %2$lld = percent of the monthly budget spent.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$lld%% of monthly budget spent"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : %2$lld %% du budget mensuel dépensé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: витрачено %2$lld%% місячного бюджету"
+          }
+        }
+      }
+    },
+    "statusItem.tooltip.budgetUsed.lowerBound" : {
+      "comment" : "Used mode when Priority Tier spend is excluded: the figure is a lower bound.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ at least %2$lld%% of monthly budget spent"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : au moins %2$lld %% du budget mensuel dépensé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: витрачено щонайменше %2$lld%% місячного бюджету"
           }
         }
       }

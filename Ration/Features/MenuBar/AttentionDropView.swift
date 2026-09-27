@@ -293,10 +293,15 @@ struct AttentionDropView: View {
             case .window(let kind): kind.spokenName(locale: locale)
             case .cursorSpend: LocalizedStringResource.dropSpokenSpend.string(in: locale)
             case .resetCredit: ""
+            case .apiBudget: LocalizedStringResource.dropSpokenBudget.string(in: locale)
         }
         let tier: LocalizedStringResource = row.tier == .critical ? .dropSpokenTierCritical : .dropSpokenTierWarning
         var value: String = ""
-        if let percent = row.usedPercent {
+        if row.subject == .apiBudget {
+            // API rows speak the bound, the amount and the budget — never the
+            // generic "N percent used" path.
+            value = budgetSpokenValue(row, locale: locale)
+        } else if let percent = row.usedPercent {
             value = LocalizedStringResource.dropSpokenPercentUsed(percent).string(in: locale)
         } else if let cents = row.spentCents {
             value = LocalizedStringResource.dropSpokenSpent(AlertMessage.dollars(cents, locale: locale)).string(in: locale)
@@ -308,7 +313,37 @@ struct AttentionDropView: View {
             return resource.string(in: locale)
         } ?? ""
         let switchTo: String = advice.map { SwitchAdviceCopy.dropSpokenSuffix($0, locale: locale) } ?? ""
-        return "\(row.accountLabel), \(subject), \(value), \(tier.string(in: locale))\(reset)\(switchTo)"
+        // An API row names its vendor, so two orgs labelled alike stay distinct.
+        let name: String = if case .api = row.source { "\(row.accountLabel), \(row.source.displayName)" } else { row.accountLabel }
+        return "\(name), \(subject), \(value), \(tier.string(in: locale))\(reset)\(switchTo)"
+    }
+
+    /// Drawn fill for a row's meter: capped at 100 % (an API budget can be
+    /// exceeded); the text keeps the real percentage.
+    static func meterFraction(forPercent percent: Int) -> Double { min(max(Double(percent) / 100, 0), 1) }
+
+    /// "78 % of $600 ($468.20)", with "≥" on both figures for a lower bound.
+    /// The percent alone: the value column is sized for "100%" / "$123.45";
+    /// the dollars are in the spoken label, the card and the notification.
+    /// The vendor whose mark an API row draws before its name, so two orgs
+    /// both called "Work" stay apart. nil for accounts.
+    static func vendorMark(for row: AttentionRow) -> APIVendor? {
+        if case .api(let vendor) = row.source { vendor } else { nil }
+    }
+
+    static func budgetValueText(_ row: AttentionRow, locale: Locale = .current) -> String {
+        guard let percent = row.usedPercent else { return "—" }
+        return (row.isLowerBound ? "≥" : "") + UsageFormatters.compactPercent(percent, locale: locale)
+    }
+
+    static func budgetSpokenValue(_ row: AttentionRow, locale: Locale = .current) -> String {
+        guard let percent = row.usedPercent, let spent = row.spentCents, let budget = row.budgetCents else { return "" }
+        let spentText = UsageFormatters.usd(cents: spent, locale: locale)
+        let budgetText = AlertMessage.dollars(budget, locale: locale)
+        let resource: LocalizedStringResource = row.isLowerBound
+            ? .dropSpokenBudgetValueLowerBound(percent, spentText, budgetText)
+            : .dropSpokenBudgetValue(percent, spentText, budgetText)
+        return resource.string(in: locale)
     }
 
     /// A non-window row's drawn subject word — uppercase in the catalog. A
@@ -317,6 +352,7 @@ struct AttentionDropView: View {
         switch subject {
         case .window(let kind): WindowTag.text(kind: kind, label: nil)
         case .cursorSpend: LocalizedStringResource.dropSubjectSpend.string(in: locale)
+        case .apiBudget: LocalizedStringResource.dropSubjectBudget.string(in: locale)
         case .resetCredit(_, .available): LocalizedStringResource.dropSubjectReset.string(in: locale)
         case .resetCredit(_, .expiring): LocalizedStringResource.dropSubjectExpires.string(in: locale)
         }
@@ -443,7 +479,12 @@ private struct AttentionDropRowView: View {
             .font(Theme.display(15, .semibold))
             .foregroundStyle(Theme.cream)
             .lineLimit(1)
-        if let advice {
+        if let vendor = AttentionDropView.vendorMark(for: row) {
+            HStack(spacing: 6) {
+                DropVendorMark(vendor: vendor)
+                label
+            }
+        } else if let advice {
             AdvisedNameLayout(spacing: 5) {
                 label
                 Text(SwitchAdviceCopy.dropSuffix(advice))
@@ -467,7 +508,7 @@ private struct AttentionDropRowView: View {
                     Capsule().fill(Theme.track)
                     Capsule()
                         .fill(tint)
-                        .frame(width: max(2, geometry.size.width * Double(percent) / 100))
+                        .frame(width: max(2, geometry.size.width * AttentionDropView.meterFraction(forPercent: percent)))
                 }
             }
             // A long account label (layout priority 1) otherwise squeezes the
@@ -496,6 +537,7 @@ private struct AttentionDropRowView: View {
 
     private var valueLabel: String {
         if let count = row.resetCount { return "×\(count)" }
+        if row.subject == .apiBudget { return AttentionDropView.budgetValueText(row) }
         if let percent = row.usedPercent { return UsageFormatters.compactPercent(percent) }
         if let cents = row.spentCents { return AlertMessage.dollars(cents) }
         return "—"
@@ -611,5 +653,21 @@ struct AdvisedNameLayout: Layout {
             anchor: .leading,
             proposal: ProposedViewSize(width: split.target, height: bounds.height)
         )
+    }
+}
+
+/// The Settings sidebar's A / O mark at drop size. Hidden from VoiceOver:
+/// the row's label already names the vendor.
+private struct DropVendorMark: View {
+    let vendor: APIVendor
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(vendor.accent.opacity(Theme.markFillOpacity(colorScheme)))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(vendor.accent.opacity(0.4)))
+            .frame(width: 16, height: 16)
+            .overlay(Text(verbatim: vendor.markLetter).font(Theme.mono(10, bold: true)).foregroundStyle(vendor.accent))
+            .accessibilityHidden(true)
     }
 }

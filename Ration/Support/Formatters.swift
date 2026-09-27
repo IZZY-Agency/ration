@@ -83,6 +83,12 @@ enum UsageFormatters {
     }
 
     /// The app language as a region-free locale ("fr", "uk", "en").
+    /// A token count, compact ("4.8M", "4,8 M"), in the app language like
+    /// `usd` — the org pane shows both side by side.
+    static func tokenCount(_ value: Int, locale: Locale = .current) -> String {
+        value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)).locale(languageLocale(for: locale)))
+    }
+
     private static func languageLocale(for locale: Locale) -> Locale {
         let shipped: Locale = LocalizedCopy.shippedLocale(for: locale)
         return Locale(identifier: shipped.language.languageCode?.identifier ?? "en")

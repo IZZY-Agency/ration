@@ -3,6 +3,8 @@ import Foundation
 /// Which item the Settings split view has selected.
 enum SettingsSelection: Hashable {
     case account(UUID)
+    /// An API org (API spend).
+    case apiOrg(UUID)
     case general
     case warmUp
     case alerts
@@ -18,7 +20,8 @@ enum SettingsSelection: Hashable {
     /// added or removed.
     static func normalized(
         _ selection: SettingsSelection?,
-        accounts: [AccountRecord]
+        accounts: [AccountRecord],
+        apiOrgIDs: [UUID] = []
     ) -> SettingsSelection {
         switch selection {
         case .general:
@@ -29,7 +32,9 @@ enum SettingsSelection: Hashable {
             return .alerts
         case let .account(id) where accounts.contains(where: { $0.id == id }):
             return .account(id)
-        case .account, nil:
+        case let .apiOrg(id) where apiOrgIDs.contains(id):
+            return .apiOrg(id)
+        case .account, .apiOrg, nil:
             return defaultSelection
         }
     }
@@ -71,10 +76,11 @@ final class SettingsSelectionRequest: ObservableObject {
     static func resolve(
         _ request: Request?,
         appliedSerial: Int,
-        accounts: [AccountRecord]
+        accounts: [AccountRecord],
+        apiOrgIDs: [UUID] = []
     ) -> (selection: SettingsSelection, serial: Int)? {
         guard let request, request.serial > appliedSerial else { return nil }
-        let selection = SettingsSelection.normalized(request.selection, accounts: accounts)
+        let selection = SettingsSelection.normalized(request.selection, accounts: accounts, apiOrgIDs: apiOrgIDs)
         return (selection, request.serial)
     }
 }

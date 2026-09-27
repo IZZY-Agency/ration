@@ -93,7 +93,7 @@ final class AttentionDropPlacementLogTests: XCTestCase {
         let rows = AttentionDropSample.rows(now: Date(timeIntervalSince1970: 0), locale: Locale(identifier: "en"))
         XCTAssertEqual(rows.count, 3)
         XCTAssertTrue(rows.allSatisfy { $0.accountLabel == "SAMPLE" })
-        XCTAssertTrue(rows.allSatisfy { AttentionDropSample.accountIDs.contains($0.accountID) })
+        XCTAssertTrue(rows.allSatisfy { $0.accountID.map(AttentionDropSample.accountIDs.contains) ?? false })
         XCTAssertEqual(Set(rows.map(\.id)).count, 3, "row ids must be distinct for ForEach")
     }
 }

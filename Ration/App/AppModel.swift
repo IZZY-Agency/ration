@@ -789,6 +789,11 @@ final class AppModel: ObservableObject {
     /// request time, regardless of hydration, so a disable requested
     /// mid-launch always wins.
     private var alertsHydrated = false
+    /// API spend: true once a successful `load()` has finished its startup
+    /// reconcile and priming. Never goes back to false.
+    private(set) var alertsReady = false
+    /// API spend: hooks run synchronously at the end of `primeAllAlerts()`.
+    private var externalPrimeHooks: [@MainActor () -> Void] = []
     /// Reconciler mode, captured SYNCHRONOUSLY at request time (spec I6): a
     /// request born before hydration can never prompt, no matter when its
     /// pass actually runs. `.startup` passes never write settings (I7).
@@ -2429,6 +2434,8 @@ final class AppModel: ObservableObject {
                 changed: decision.changed
             )
         }
+        // API spend orgs baseline after the subscription accounts.
+        for hook in externalPrimeHooks { hook() }
     }
 
     /// Re-evaluates every refreshable account against the settings as they
@@ -2686,14 +2693,19 @@ final class AppModel: ObservableObject {
 
     func dismissAttentionRows(_ rows: [AttentionRow]) {
         var touched: Set<UUID> = []
-        for row in rows where !alertTombstones.contains(row.accountID) {
-            guard accounts.contains(where: { $0.id == row.accountID }) else { continue }
-            var state = alertStates[row.accountID] ?? AccountAlertState()
+        for row in rows {
+            // API rows never reach here (MenuBarController routes them by owner).
+            guard let accountID = row.accountID, !alertTombstones.contains(accountID) else { continue }
+            guard accounts.contains(where: { $0.id == accountID }) else { continue }
+            var state = alertStates[accountID] ?? AccountAlertState()
             switch row.subject {
             case .window(.fiveHour): state.fiveHour.dismissedTier = row.tier
             case .window(.weekly): state.weekly.dismissedTier = row.tier
             case .window(.modelWeekly): state.modelWeekly.dismissedTier = row.tier
             case .cursorSpend: state.spend.dismissedTier = row.tier
+            case .apiBudget:
+                // API budget rows are owned by APISpendModel (routed by owner).
+                continue
             case let .resetCredit(id, kind):
                 // A grouped row (see `AttentionDropModel.rows`) folds several
                 // credits into one; `subject`'s id is only the soonest-
@@ -2710,8 +2722,8 @@ final class AppModel: ObservableObject {
                     state.resetCredits[creditID] = entry
                 }
             }
-            alertStates[row.accountID] = state
-            touched.insert(row.accountID)
+            alertStates[accountID] = state
+            touched.insert(accountID)
         }
 
         for accountID in touched {
@@ -3158,6 +3170,7 @@ final class AppModel: ObservableObject {
             // (one status query) — both prompt-free — so this await is
             // bounded by settings-save and status-query round-trips.
             _ = await startup.value
+            alertsReady = true
 
             await historyStore.load(activeAccountIDs: Set(accountStore.accounts.map(\.id)))
             await retryProfileCleanup()
@@ -4388,3 +4401,50 @@ private final class ProviderContractCaptureErrorRelay {
 
 /// The history read was refused at dispatch (a sign-in session holds the view).
 struct CursorHistoryReadVetoed: Error {}
+
+// MARK: - AlertDeliveryBridge (API spend)
+
+extension AppModel: AlertDeliveryBridge {
+    var alertsEnabled: Bool { appSettings.usageAlertsEnabled }
+
+    func registerPrimeHook(_ hook: @escaping @MainActor () -> Void) -> Bool {
+        externalPrimeHooks.append(hook)
+        return alertsActive
+    }
+
+    func enqueueExternalAlertDecision(
+        persist: @escaping @MainActor () async -> PersistOutcome,
+        posts: [ExternalAlertPost]
+    ) {
+        // Posting eligibility is decided at enqueue, like `applyAlertDecision`.
+        let gateOpenAtDecision = alertsActive
+        let activation = alertsActivationGeneration
+        alertSideEffectQueue.enqueue { [weak self] in
+            let outcome = await persist()
+            guard let self, gateOpenAtDecision, outcome != .stale else { return }
+            for post in posts {
+                guard self.alertsActive,
+                      self.alertsActivationGeneration == activation,
+                      post.stillValid()
+                else { continue }
+                // Privacy read and copy rendered HERE, at post time.
+                let text = post.render(self.appSettings.redactNotifications)
+                await self.notificationScheduler.post(id: post.id, title: text.title, body: text.body)
+            }
+        }
+    }
+
+    func liftDropSnooze() {
+        guard appSettings.data.dropSnoozed else { return }
+        appSettings.setDropSnoozedInMemory(false)
+        Task { [weak self] in
+            try? await self?.appSettings.setDropSnoozed()
+        }
+    }
+
+    func dropGateOpen(at now: Date) -> Bool {
+        !appSettings.data.dropSnoozed
+            && appSettings.data.usageAlertsEnabled
+            && !warmUpSchedule.isQuiet(at: now, calendar: .autoupdatingCurrent)
+    }
+}

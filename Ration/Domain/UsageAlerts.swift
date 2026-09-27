@@ -41,6 +41,19 @@ enum AlertEvent: Equatable, Sendable {
     // never a percentage — Cursor's API exposes spend with no denominator (see
     // `SpendThresholds`), so there is no fraction to report.
     case spendThreshold(tier: AlertTier, thresholdCents: Int, spentCents: Int)
+    // API org budget ladder (API spend).
+    // Every value is fixed at the commit that produced it; the notification id
+    // and copy are built from these alone, never from live model state.
+    case budgetThreshold(
+        orgID: UUID,
+        monthKey: String,
+        tier: AlertTier,
+        percent: Int,
+        spentCents: Int,
+        budgetCents: Int,
+        isLowerBound: Bool,
+        reportFetchedAt: Date
+    )
     // Usage-limit resets. `expiringSoon` = the credit arrived already inside
     // the lead window, so this one alert also carries the expiry.
     case resetCreditAvailable(credit: ResetCredit, expiringSoon: Bool)

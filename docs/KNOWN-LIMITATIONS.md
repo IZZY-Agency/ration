@@ -119,3 +119,22 @@ cycles are accepted only when the invoice ends at the next UTC month start;
 anything else is not saved and retried on a later day. An account with more than
 10,000 events before its oldest missing month keeps those months unfilled.
 
+## Anthropic API spend runs through yesterday (accepted 2026-09-27)
+
+Anthropic's cost report covers finished UTC days only: during a day it has no
+bucket for that day, even hours after the Claude Console already shows the
+spend. An Anthropic card therefore says "through yesterday", and a budget alert
+can arrive up to a day after the spend that crossed it. Ration reads this from
+the report itself (a bucket for today, even an empty one, switches the card back
+to "today"), so it follows Anthropic if that changes. OpenAI sends a bucket for
+the current day.
+
+## API spend is the vendors' reported cost, with gaps they document (accepted 2026-09-27)
+
+Dollars come only from the cost endpoints, never from tokens × price.
+Anthropic's cost report excludes Priority Tier usage: when the usage report
+shows Priority Tier requests this month, the card's figures are lower bounds
+("≥"). OpenAI's token counts cover chat completions only. Budget alerts are
+advisory: they follow the reported cost, so they can arrive after the budget is
+already spent.
+

@@ -74,6 +74,11 @@ provider's usage page itself calls. Everything it keeps lives in the app's
 sandbox container at `~/Library/Containers/agency.izzy.ration/` and never
 leaves your Mac. Removing an account deletes its data store.
 
+API accounts are the one exception: the Admin key you paste for an Anthropic
+or OpenAI organization is stored in your login Keychain, sent only to that
+vendor's admin API to read the organization's cost and usage reports, and
+deleted from the Keychain when you remove the API account.
+
 ## Install
 
 Requires macOS 26 or newer. Universal binary for Apple silicon and Intel,

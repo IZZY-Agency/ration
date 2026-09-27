@@ -25,11 +25,12 @@ enum AlertMessage {
         accountLabel: String,
         redacted: Bool = false,
         advice: SwitchAdvice? = nil,
-        locale: Locale = .current
+        locale: Locale = .current,
+        now: Date = .now
     ) -> (title: String, body: String) {
         let base: (title: String, body: String) = redacted
             ? redactedText(for: event, locale: locale)
-            : plainText(for: event, accountLabel: accountLabel, locale: locale)
+            : plainText(for: event, accountLabel: accountLabel, locale: locale, now: now)
         guard case .threshold = event, let advice else { return base }
         let line: String = SwitchAdviceCopy.notificationLine(advice, redacted: redacted, locale: locale)
         return (base.title, base.body + "\n" + line)
@@ -38,7 +39,8 @@ enum AlertMessage {
     private static func plainText(
         for event: AlertEvent,
         accountLabel: String,
-        locale: Locale
+        locale: Locale,
+        now: Date
     ) -> (title: String, body: String) {
         let copy: (title: LocalizedStringResource, body: LocalizedStringResource)
         switch event {
@@ -58,6 +60,14 @@ enum AlertMessage {
             copy = spentCents > thresholdCents
                 ? (.alertSpendTitlePast(accountLabel, limit), .alertSpendBodyPast(accountLabel, spent, limit))
                 : (.alertSpendTitleReached(accountLabel, limit), .alertSpendBodyReached(accountLabel, spent, limit))
+        case .budgetThreshold(_, _, _, let percent, let spentCents, let budgetCents, let isLowerBound, let fetchedAt):
+            let spent = AlertMessage.dollars(spentCents, locale: locale)
+            let budget = AlertMessage.dollars(budgetCents, locale: locale)
+            let asOf = AlertMessage.asOfText(fetchedAt, now: now, locale: locale)
+            copy = (
+                .alertBudgetTitle(accountLabel, UsageFormatters.compactPercent(percent)),
+                isLowerBound ? .alertBudgetBodyLowerBound(spent, budget, asOf) : .alertBudgetBody(spent, budget, asOf)
+            )
         case .resetCreditAvailable(let credit, let expiringSoon):
             let expiry = Self.expiryText(credit.expiresAt, locale: locale)
             // The real rule is on `count`, not on where the count came
@@ -152,6 +162,7 @@ enum AlertMessage {
         case .reauthRequired: .alertRedactedReauth
         case .rateLimited: .alertRedactedRateLimited
         case .spendThreshold: .alertRedactedSpend
+        case .budgetThreshold: .alertRedactedBudget
         case .resetCreditAvailable: .alertRedactedResetCreditAvailable
         case .resetCreditExpiring: .alertRedactedResetCreditExpiring
         }
@@ -171,6 +182,8 @@ enum AlertMessage {
             return "\(base).rateLimited"
         case .spendThreshold(let tier, _, _):
             return "\(base).spend.\(tier.token)"
+        case .budgetThreshold(_, let monthKey, let tier, _, _, _, _, _):
+            return "\(base).budget.\(monthKey).\(tier.token)"
         case .resetCreditAvailable(let credit, _):
             return "\(base).resetCredit.\(credit.id).available"
         case .resetCreditExpiring(let credit):
@@ -189,6 +202,19 @@ enum AlertMessage {
     /// defaults to the running language for all production copy.
     static func dollars(_ cents: Int, locale: Locale = .autoupdatingCurrent) -> String {
         UsageFormatters.usd(cents: cents, alertStyle: true, locale: locale)
+    }
+
+    /// "14:05" when the report is from today, else "Sep 26, 14:05" (every
+    /// API budget notification states its report's time).
+    static func asOfText(_ date: Date, now: Date, locale: Locale = .autoupdatingCurrent, timeZone: TimeZone = .autoupdatingCurrent) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        var style = calendar.isDate(date, inSameDayAs: now)
+            ? Date.FormatStyle(date: .omitted, time: .shortened)
+            : Date.FormatStyle(date: .abbreviated, time: .shortened)
+        style.locale = locale
+        style.timeZone = timeZone
+        return date.formatted(style)
     }
 
     /// "Oct 22, 18:00" in the reader's locale. `locale`/`timeZone` injectable for tests.

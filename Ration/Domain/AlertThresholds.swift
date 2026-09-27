@@ -217,6 +217,8 @@ enum AlertChannelKey {
             AppSettingsData.thresholdKey(provider: provider, window: kind)
         case .spendThreshold:
             AppSettingsData.cursorSpendKey
+        case .budgetThreshold:
+            AppSettingsData.apiBudgetsKey
         case .resetCreditAvailable, .resetCreditExpiring:
             AppSettingsData.resetCreditsKey(provider: provider)
         case .reset, .reauthRequired, .rateLimited:
