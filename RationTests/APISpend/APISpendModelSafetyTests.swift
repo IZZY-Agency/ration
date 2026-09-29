@@ -211,4 +211,26 @@ final class APISpendModelSafetyTests: APISpendModelTestCase {
         }
         _ = await removal.value
     }
+
+    /// A key missing from the Keychain is not read again on every refresh:
+    /// nothing can change until the user replaces it, and each try logged.
+    func testAMissingKeyIsNotRetriedUntilItIsReplaced() async throws {
+        let id = try await seedOrg()
+        let model = makeModel()
+        await model.start()
+        try keys.delete(for: id)
+        let before = keys.reads
+        await model.refresh(id)
+        XCTAssertEqual(model.costErrors[id], .keyMissing)
+        XCTAssertEqual(keys.reads, before + 1)
+        await model.refresh(id)
+        await model.refreshAll()
+        XCTAssertEqual(keys.reads, before + 1, "not retried while the key is missing")
+
+        anthropic.costResults = [.success(costReport(month: UTCMonth(containing: now), cents: "0", fetchedAt: now)),
+                                 .success(costReport(month: UTCMonth(containing: now), cents: "100", fetchedAt: now))]
+        try await model.replaceKey(id, rawKey: "sk-ant-admin01-RESTOREDRESTORED")
+        XCTAssertNil(model.costErrors[id], "Replace clears it and refreshes")
+        XCTAssertEqual(model.snapshots[id]?.cost?.monthToDateCents, 100)
+    }
 }

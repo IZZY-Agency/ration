@@ -2636,6 +2636,22 @@ final class AppModel: ObservableObject {
     /// The flag is committed to the in-memory settings snapshot SYNCHRONOUSLY
     /// so the panel closes on this turn of the run loop; the persist is the
     /// usual best-effort side effect.
+    /// The drop is held back by a ✕ (and alerts are on, so it would otherwise
+    /// show): the popover says so and offers `showAttentionDrop()`.
+    var isAttentionDropSnoozed: Bool {
+        appSettings.data.dropSnoozed && appSettings.data.usageAlertsEnabled
+    }
+
+    /// The popover's "Show now": the user lifts the ✕ snooze by hand. Committed
+    /// in memory synchronously so the panel can open this turn; saved like the ✕.
+    func showAttentionDrop() {
+        guard appSettings.data.dropSnoozed else { return }
+        appSettings.setDropSnoozedInMemory(false)
+        Task { [weak self] in
+            try? await self?.appSettings.setDropSnoozed()
+        }
+    }
+
     func snoozeAttentionDrop(_ rows: [AttentionRow]) {
         dismissAttentionRows(rows.filter(\.isResetCredit))
         appSettings.setDropSnoozedInMemory(true)
@@ -2677,7 +2693,7 @@ final class AppModel: ObservableObject {
         // Cursor has no rate window and emits no `.reset` — its rollover only
         // clears spend memory. Without this a spend-only user could dismiss the
         // drop and never see it again: the one reset they ever get would not
-        // count, and there is no manual un-snooze. Decided by `AlertPolicy`,
+        // count; the only manual un-snooze is the popover's "Show now". Decided by `AlertPolicy`,
         // the same rule the re-arm uses — keying on `periodEnd` here undid the
         // ✕ on every poll once Cursor started reporting it as "now".
         let spendRollover = AlertPolicy.spendPeriodAdvanced(

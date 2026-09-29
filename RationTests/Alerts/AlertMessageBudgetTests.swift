@@ -4,8 +4,23 @@ import XCTest
 final class AlertMessageBudgetTests: XCTestCase {
     private let en = Locale(identifier: "en")
     private let fetched = ISO8601DateFormatter().date(from: "2026-09-27T12:05:00Z")!
-    private func event(lowerBound: Bool = false, tier: AlertTier = .warning, percent: Int = 75) -> AlertEvent {
-        .budgetThreshold(orgID: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!, monthKey: "2026-09", tier: tier, percent: percent, spentCents: 46_820, budgetCents: 60_000, isLowerBound: lowerBound, reportFetchedAt: fetched)
+    private func event(lowerBound: Bool = false, tier: AlertTier = .warning, percent: Int = 75, coversToday: Bool = true) -> AlertEvent {
+        .budgetThreshold(orgID: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!, monthKey: "2026-09", tier: tier, percent: percent, spentCents: 46_820, budgetCents: 60_000, isLowerBound: lowerBound, reportFetchedAt: fetched, coversToday: coversToday)
+    }
+
+    /// A report without today's bucket (Anthropic reports whole days): the
+    /// notification says so, like the card — plain and lower-bound, every language.
+    func testWithoutTodaysBucketTheBodySaysThroughYesterday() {
+        let expected = ["en": "through yesterday", "fr": "jusqu’à hier", "uk": "до вчора включно"]
+        for (language, phrase) in expected {
+            let locale = Locale(identifier: language)
+            for lowerBound in [false, true] {
+                let body = AlertMessage.text(for: event(lowerBound: lowerBound, coversToday: false), accountLabel: "IZZY", locale: locale, now: fetched).body
+                XCTAssertTrue(body.contains(phrase), "\(language) lowerBound=\(lowerBound): \(body)")
+            }
+            let covered = AlertMessage.text(for: event(), accountLabel: "IZZY", locale: locale, now: fetched).body
+            XCTAssertFalse(covered.contains(phrase), "\(language): a report covering today keeps the plain body: \(covered)")
+        }
     }
 
     func testPlainCopyNamesLabelThresholdAmountsAndAsOf() {

@@ -575,6 +575,8 @@ struct MenuBarContent: View {
             onOpenNotificationSettings: NotificationSettingsOpener.open,
             onAllowNotifications: { model.requestNotificationPermission() },
             attentionDropShowing: attentionPresence.isShowing,
+            attentionDropSnoozed: settings.dropSnoozed && settings.usageAlertsEnabled,
+            onShowAttentionDrop: { model.showAttentionDrop() },
             onDismissAttentionDrop: onDismissAttentionDrop,
             switchAdvice: model.switchAdvice,
             layout: settings.popoverLayout,

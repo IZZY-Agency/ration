@@ -13,7 +13,9 @@ final class InMemoryAPIKeyStore: APIKeyStore, @unchecked Sendable {
     }
 
     func add(_ key: String, for orgID: UUID) throws { try maybeFail(.add); lock.withLock { keys[orgID] = key } }
+    private(set) var reads = 0
     func read(for orgID: UUID) throws -> String {
+        lock.withLock { reads += 1 }
         try maybeFail(.read)
         guard let key = lock.withLock({ keys[orgID] }) else { throw APISpendError.keyMissing }
         return key

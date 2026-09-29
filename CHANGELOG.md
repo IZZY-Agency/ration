@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.1
+
+- After you dismiss the alerts drop, the popover says it is hidden until a
+  limit resets, with a Show now button to bring it back sooner.
+- Anthropic budget notifications say "through yesterday", like the card:
+  Anthropic reports whole days only.
+- An API account whose Admin key is missing from the Keychain no longer tries
+  to read it on every refresh; Replace… brings it back.
+
 ## 1.8.0
 
 - API accounts: add an Anthropic or OpenAI organization with its Admin key to

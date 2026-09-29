@@ -175,6 +175,7 @@ extension APISpendModel {
         guard replacing[id] == token else { return }
         replacing[id] = nil
         generation[id, default: 0] += 1
+        markCostError(id, nil)
         await refresh(id)
     }
 

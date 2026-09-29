@@ -52,7 +52,10 @@ enum AlertEvent: Equatable, Sendable {
         spentCents: Int,
         budgetCents: Int,
         isLowerBound: Bool,
-        reportFetchedAt: Date
+        reportFetchedAt: Date,
+        /// false: the vendor has not reported today yet (Anthropic reports
+        /// whole days), so the amount runs through yesterday.
+        coversToday: Bool
     )
     // Usage-limit resets. `expiringSoon` = the credit arrived already inside
     // the lead window, so this one alert also carries the expiry.

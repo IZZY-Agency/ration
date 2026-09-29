@@ -1068,6 +1068,10 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         for (scheme, suffix) in Self.schemes {
             try write(await renderHosted(popover(orderedAccounts, layout: .standard).withAPISpend(model), width: 540, height: 1700, scheme),
                       dir, "popover-api-ordered-\(suffix).png")
+            // The ✕ is holding the drop back: the banner offers "Show now".
+            var snoozed = popover(orderedAccounts, layout: .standard)
+            snoozed.attentionDropSnoozed = true
+            try write(render(snoozed.frame(width: 540).background(Theme.ink), scheme), dir, "popover-drop-snoozed-\(suffix).png")
             try write(render(AttentionDropView(model: drop).frame(width: AttentionDropPanel.width), scheme),
                       dir, "drop-api-\(suffix).png")
             let group = APISpendGroupView(model: model, now: now).frame(width: 540).background(Theme.ink)

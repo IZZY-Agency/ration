@@ -57,6 +57,10 @@ struct MenuBarView: View {
     /// The attention drop is on screen. The panel never takes focus, so its ✕
     /// is mouse-only; this offers the same dismissal from the keyboard.
     var attentionDropShowing: Bool = false
+    /// A ✕ is holding the drop back until a limit resets: the popover says so,
+    /// with "Show now" (`onShowAttentionDrop`).
+    var attentionDropSnoozed: Bool = false
+    var onShowAttentionDrop: () -> Void = {}
     var onDismissAttentionDrop: () -> Void = {}
     /// `AppModel.switchAdvice`. While non-empty, the NEXT RESET line gives
     /// way to one "→ SWITCH … TO …" line per advice (provider order).
@@ -165,6 +169,24 @@ struct MenuBarView: View {
                 } else {
                     EmptyView()
                 }
+            }
+
+            if attentionDropSnoozed && !attentionDropShowing {
+                HStack(spacing: 10) {
+                    bannerLabel(
+                        String(localized: LocalizedStringResource.popoverDropSnoozedBanner),
+                        symbol: "bell.badge.slash",
+                        tint: Theme.creamDim
+                    )
+                    Button(action: onShowAttentionDrop) { Text(LocalizedStringResource.popoverDropSnoozedShow) }
+                        .font(Theme.mono(12))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.gold)
+                        .accessibilityIdentifier("popoverShowAttentionDropButton")
+                }
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
+                Divider().overlay(Theme.line)
             }
 
             if let notificationProblem {

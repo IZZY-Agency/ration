@@ -157,6 +157,9 @@ final class APISpendModel: ObservableObject {
               !removingOrgIDs.contains(id), !pausingOrgIDs.contains(id), replacing[id] == nil
         else { return }
         if let until = retryAt[id], until > deps.now() { return }
+        // A key missing from the Keychain stays missing until Replace adds
+        // it (which clears this): no read, no log line, on every poll.
+        if costErrors[id] == .keyMissing { return }
         guard !inFlight.contains(id) else { followUp.insert(id); return }
         inFlight.insert(id)
         repeat {
@@ -280,7 +283,8 @@ final class APISpendModel: ObservableObject {
             orgID: org.id, monthKey: report.month.key, tier: tier,
             percent: state.thresholds.percent(for: tier),
             spentCents: isLowerBound ? APIMoney.flooredCents(report.monthToDateCents) : APIMoney.roundedCents(report.monthToDateCents),
-            budgetCents: budget, isLowerBound: isLowerBound, reportFetchedAt: report.fetchedAt
+            budgetCents: budget, isLowerBound: isLowerBound, reportFetchedAt: report.fetchedAt,
+            coversToday: report.coversToday ?? true
         )
         let orgID = org.id
         let fallbackLabel = org.label
@@ -402,7 +406,7 @@ final class APISpendModel: ObservableObject {
     func mutateOrg(at index: Int, _ body: (inout APIOrgRecord) -> Void) { body(&state.orgs[index]) }
     func markRemoveFailure(_ id: UUID) { removeFailures.insert(id) }
     func clearRemoveFailure(_ id: UUID) { removeFailures.remove(id) }
-    func markCostError(_ id: UUID, _ error: APISpendError) { costErrors[id] = error }
+    func markCostError(_ id: UUID, _ error: APISpendError?) { costErrors[id] = error }
     func dropCaches(for id: UUID) {
         snapshots[id] = nil
         costErrors[id] = nil

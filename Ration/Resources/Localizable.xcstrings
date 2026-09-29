@@ -4971,6 +4971,54 @@
         }
       }
     },
+    "alert.budget.body.lowerBound.throughYesterday" : {
+      "comment" : "Same, as a lower bound (Priority Tier spend excluded). Priority Tier is a brand term.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At least %1$@ of %2$@ spent this month through yesterday, as of %3$@. Priority Tier is not included."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Au moins %1$@ dépensés sur %2$@ ce mois-ci jusqu’à hier, à %3$@. Le Priority Tier n’est pas inclus."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Витрачено щонайменше %1$@ з %2$@ цього місяця до вчора включно, станом на %3$@. Priority Tier не враховано."
+          }
+        }
+      }
+    },
+    "alert.budget.body.throughYesterday" : {
+      "comment" : "Notification body when the vendor has not reported today yet (Anthropic reports whole days). %1$@ = spent this month through yesterday, %2$@ = monthly budget, %3$@ = the report's time (e.g. \"14:05\").",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of %2$@ spent this month through yesterday, as of %3$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ dépensés sur %2$@ ce mois-ci jusqu’à hier, à %3$@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Витрачено %1$@ з %2$@ цього місяця до вчора включно, станом на %3$@."
+          }
+        }
+      }
+    },
     "alert.budget.title" : {
       "comment" : "Notification title: an API org reached its budget alert. %1$@ = org label, %2$@ = threshold percent (e.g. \"75 %\").",
       "extractionState" : "manual",
@@ -14467,6 +14515,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Який це тариф?"
+          }
+        }
+      }
+    },
+    "popover.dropSnoozed.banner" : {
+      "comment" : "Popover banner while the user's ✕ holds the menu-bar alerts drop back until a limit resets.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alerts drop hidden until a limit resets"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Panneau d’alertes masqué jusqu’à la réinitialisation d’une limite"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Панель сповіщень прихована до скидання ліміту"
+          }
+        }
+      }
+    },
+    "popover.dropSnoozed.show" : {
+      "comment" : "Button beside that banner: shows the alerts drop again now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show now"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показати"
           }
         }
       }

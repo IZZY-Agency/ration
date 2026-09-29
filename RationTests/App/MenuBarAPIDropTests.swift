@@ -34,6 +34,36 @@ final class MenuBarAPIDropTests: APISpendModelTestCase {
         XCTAssertFalse(fixture.model.settings.data.dropSnoozed)
     }
 
+    /// The popover's "Show now": the user lifts the ✕ snooze by hand, and it
+    /// stays lifted on disk; the banner that offers it reads the same flag.
+    func testShowNowLiftsTheSnoozeAndSavesIt() async throws {
+        _ = try await wire()
+        fixture.model.snoozeAttentionDrop([])
+        XCTAssertTrue(fixture.model.isAttentionDropSnoozed)
+        fixture.model.showAttentionDrop()
+        XCTAssertFalse(fixture.model.settings.data.dropSnoozed, "lifted at once, so the panel can open this turn")
+        XCTAssertFalse(fixture.model.isAttentionDropSnoozed)
+        // The save is fire-and-forget (like the ✕'s): poll the file.
+        let file = fixture.directory.appending(path: "app-settings.json")
+        var savedSnoozed = true
+        for _ in 0..<100 {
+            let saved = AppSettings(fileURL: file)
+            try await saved.load()
+            savedSnoozed = saved.data.dropSnoozed
+            if !savedSnoozed { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(savedSnoozed)
+    }
+
+    /// Nothing to offer while usage alerts are off: the panel never shows then.
+    func testSnoozedBannerIsOnlyOfferedWhileAlertsAreOn() async throws {
+        _ = try await wire()
+        fixture.model.snoozeAttentionDrop([])
+        try await fixture.model.settings.setUsageAlertsEnabled(false)
+        XCTAssertFalse(fixture.model.isAttentionDropSnoozed)
+    }
+
     func testAnAPIEscalationDoesNotLiftTheSnoozeButStillNotifies() async throws {
         let (model, id) = try await wire()
         fixture.model.snoozeAttentionDrop([])

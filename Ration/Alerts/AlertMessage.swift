@@ -60,14 +60,17 @@ enum AlertMessage {
             copy = spentCents > thresholdCents
                 ? (.alertSpendTitlePast(accountLabel, limit), .alertSpendBodyPast(accountLabel, spent, limit))
                 : (.alertSpendTitleReached(accountLabel, limit), .alertSpendBodyReached(accountLabel, spent, limit))
-        case .budgetThreshold(_, _, _, let percent, let spentCents, let budgetCents, let isLowerBound, let fetchedAt):
+        case .budgetThreshold(_, _, _, let percent, let spentCents, let budgetCents, let isLowerBound, let fetchedAt, let coversToday):
             let spent = AlertMessage.dollars(spentCents, locale: locale)
             let budget = AlertMessage.dollars(budgetCents, locale: locale)
             let asOf = AlertMessage.asOfText(fetchedAt, now: now, locale: locale)
-            copy = (
-                .alertBudgetTitle(accountLabel, UsageFormatters.compactPercent(percent)),
-                isLowerBound ? .alertBudgetBodyLowerBound(spent, budget, asOf) : .alertBudgetBody(spent, budget, asOf)
-            )
+            let body: LocalizedStringResource = switch (isLowerBound, coversToday) {
+            case (false, true): .alertBudgetBody(spent, budget, asOf)
+            case (true, true): .alertBudgetBodyLowerBound(spent, budget, asOf)
+            case (false, false): .alertBudgetBodyThroughYesterday(spent, budget, asOf)
+            case (true, false): .alertBudgetBodyLowerBoundThroughYesterday(spent, budget, asOf)
+            }
+            copy = (.alertBudgetTitle(accountLabel, UsageFormatters.compactPercent(percent)), body)
         case .resetCreditAvailable(let credit, let expiringSoon):
             let expiry = Self.expiryText(credit.expiresAt, locale: locale)
             // The real rule is on `count`, not on where the count came
@@ -182,7 +185,7 @@ enum AlertMessage {
             return "\(base).rateLimited"
         case .spendThreshold(let tier, _, _):
             return "\(base).spend.\(tier.token)"
-        case .budgetThreshold(_, let monthKey, let tier, _, _, _, _, _):
+        case .budgetThreshold(_, let monthKey, let tier, _, _, _, _, _, _):
             return "\(base).budget.\(monthKey).\(tier.token)"
         case .resetCreditAvailable(let credit, _):
             return "\(base).resetCredit.\(credit.id).available"
