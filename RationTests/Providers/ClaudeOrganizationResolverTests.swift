@@ -686,7 +686,14 @@ final class ClaudeOrganizationResolverTests: XCTestCase {
         async let first = resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
         await withCheckedContinuation { reachedList = $0 }
         async let second = resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
-        await Task.yield()
+        // Release only once the second caller has joined. A single yield was a
+        // guess: on a slow runner the child task entered after the release,
+        // started its own read, and that read was never released.
+        let deadline = ContinuousClock.now + .seconds(5)
+        while resolver.planJoinsForTesting == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        XCTAssertEqual(resolver.planJoinsForTesting, 1, "the second caller joined before the release")
         release?.resume()
         let (one, two) = try await (first, second)
         XCTAssertEqual(listCalls, 1, "the second caller joins the in-flight read")

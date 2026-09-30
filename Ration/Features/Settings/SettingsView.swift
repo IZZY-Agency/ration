@@ -22,12 +22,11 @@ struct SettingsView: View {
     /// The account banner's "Refresh now". nil refreshes through the model
     /// directly; `MenuBarController` passes its own refresh path.
     var onRefreshNow: (() -> Void)? = nil
-    /// General › Diagnostics › Test drop. nil hides the Diagnostics group —
-    /// only `MenuBarController` owns a drop to show.
-    var onShowTestDrop: (() -> Void)? = nil
     /// API spend's orgs, detail pane and budget alerts. nil — snapshots,
     /// tests — shows none of them.
     var apiSpend: APISpendModel? = nil
+    /// Claude Code switching's pane.
+    var claudeCode: ClaudeCodeModel? = nil
     /// Opens with the Add API Account sheet up (tests).
     var startsAddingAPIAccount = false
 
@@ -142,6 +141,7 @@ struct SettingsView: View {
                     activeUsage: activeUsage[id],
                     features: features,
                     attentionContext: model.presentations,
+                    tokenBurn: model.tokenBurn,
                     // Awaited so `LabelAutosave` can serialize saves, retry a
                     // busy account and keep a failed edit. It does not clear
                     // the banner per attempt: busy retries would wipe other
@@ -246,8 +246,12 @@ struct SettingsView: View {
                 },
                 onOpenSetupGuide: onOpenSetupGuide,
                 onAllowNotifications: { model.requestNotificationPermission() },
-                onShowTestDrop: onShowTestDrop
+                tokenBurn: model.tokenBurn
             )
+        case .claudeCode:
+            if let claudeCode {
+                ClaudeCodeDetailView(model: claudeCode)
+            }
         case .alerts:
             AlertsDetailView(
                 settings: model.settings,

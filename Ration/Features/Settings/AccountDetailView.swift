@@ -34,6 +34,8 @@ struct AccountDetailView: View {
     /// The accounts the popover header judges with this one, so an account
     /// the header counts as OFFLINE gets connection guidance.
     var attentionContext: [AccountPresentation] = []
+    /// Plan value: its section on Claude accounts while the feature is on.
+    var tokenBurn: TokenBurnModel? = nil
     let onReauthenticate: () -> Void
     /// The attention banner's "Refresh now": `refreshAll(reason: .manual)`.
     let onRefreshNow: () -> Void
@@ -58,6 +60,7 @@ struct AccountDetailView: View {
         features: FeatureSwitches = .allOn,
         now: Date = .now,
         attentionContext: [AccountPresentation] = [],
+        tokenBurn: TokenBurnModel? = nil,
         onRename: @escaping @MainActor (String) async throws -> Void,
         onRenameError: @escaping @MainActor (Error?) -> Void,
         pendingEdits: PendingEditRegistry? = nil,
@@ -75,6 +78,7 @@ struct AccountDetailView: View {
         self.features = features
         self.now = now
         self.attentionContext = attentionContext
+        self.tokenBurn = tokenBurn
         self.onReauthenticate = onReauthenticate
         self.onRefreshNow = onRefreshNow
         self.onRemove = onRemove
@@ -236,6 +240,11 @@ struct AccountDetailView: View {
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
             }
+            }
+
+            if account.provider == .claude, let tokenBurn {
+                TokenBurnPlanValueSection(model: tokenBurn, accountID: account.id,
+                                          planName: account.effectivePlan?.displayName)
             }
 
             Section(SettingsSectionTitle.session) {

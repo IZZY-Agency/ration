@@ -24,6 +24,12 @@ shows, from your own signed-in session, on your Mac.
 
 ## What it does
 
+- **Claude Code account switching.** Move Claude Code to another of your
+  Claude accounts in one click, from the account's card or the Focus layout;
+  open Claude Code sessions follow within 30 seconds, with no new login and no
+  restart. Optionally, switch automatically when the account in use passes a
+  limit you choose (75% of the weekly limit by default), to the remembered
+  account with the most room.
 - **Live meters per window.** Claude 5-hour, weekly and Fable weekly (Max
   plans); ChatGPT / Codex 5-hour and weekly; Cursor's usage-based spend for the
   current billing period.
@@ -56,8 +62,15 @@ shows, from your own signed-in session, on your Mac.
   capacity (Pro, Max 5x/20x, Plus, Pro 5x/20x), not just percentages.
 - **Focus layout.** One big number for the subscription you're using, what's
   nearly spent, and where to go next; switch from the popover header.
+- **API spend.** This month's spend for an Anthropic or OpenAI organization,
+  from its Admin key, with an optional monthly budget and alerts.
+- **Claude plan value** (off until you turn it on). What your Claude Code use
+  would cost at Anthropic's API list prices, from its local session logs: the
+  total for all your Claude accounts over the last 30 days, each account's
+  share since Ration started tracking (the logs don't say which account did
+  the work), a breakdown by model and tokens, and daily bars in History.
 - **Feature switches.** Resets, switch suggestions, Claude warm-up and in-use
-  detection can each be turned off in Settings.
+  detection can each be turned off in Settings; Claude plan value starts off.
 - **English, French and Ukrainian.** Follows your macOS language, or pick one
   in Settings → General → Language.
 - **Light or dark.** Follows macOS, or pick Light or Dark in Settings. Every
@@ -78,6 +91,24 @@ API accounts are the one exception: the Admin key you paste for an Anthropic
 or OpenAI organization is stored in your login Keychain, sent only to that
 vendor's admin API to read the organization's cost and usage reports, and
 deleted from the Keychain when you remove the API account.
+
+Claude Code switching works on your Mac only. When you remember a Claude Code
+sign-in, Ration keeps a copy of it in your login Keychain (not synced). To
+switch, it reads and writes Claude Code's own sign-in entry in the Keychain and
+the account section of `~/.claude.json`, and sends none of it anywhere. Ration
+writes that entry with macOS's `security` tool, the way Claude Code does; when
+the entry is large it goes on that tool's command line, where other processes
+on your Mac can see it for the moment it runs, as they can each time Claude
+Code saves it. Forget all sign-ins deletes Ration's copies.
+
+Claude plan value is off until you agree to it and choose Claude Code's
+projects folder. Ration then reads Claude Code's local session logs in that
+folder and the account section of `~/.claude.json`. From each reply it keeps
+a hash of its id, its time, model, what sets its price, and its token and web
+search counts; from the sign-in, which Claude account and organization it was,
+whether it was a subscription or an API key, and when it was read or switched.
+It never keeps prompts, replies, code, keys or file and project names. Stop and
+forget deletes everything it counted and the folder permission.
 
 ## Install
 

@@ -20,9 +20,8 @@ struct GeneralDetailView: View {
     /// Relaunch after a language change; the shared instance the app
     /// delegate reports the quit outcome to.
     var relauncher: AppRelauncher = .shared
-    /// Shows the sample attention drop (for live placement checks). nil
-    /// hides the Diagnostics group entirely.
-    var onShowTestDrop: (() -> Void)? = nil
+    /// "Claude plan value"; nil (snapshots, tests) hides its row.
+    var tokenBurn: TokenBurnModel? = nil
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -186,6 +185,9 @@ struct GeneralDetailView: View {
                         .font(Theme.mono(12))
                         .foregroundStyle(feature.isAvailable(in: features) ? Theme.creamDim : Theme.warn)
                 }
+                if let tokenBurn {
+                    TokenBurnFeatureRow(model: tokenBurn)
+                }
             }
 
             Section(SettingsSectionTitle.menuBar) {
@@ -249,22 +251,6 @@ struct GeneralDetailView: View {
                     Text("ChatGPT reports only a weekly limit.")
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
-                }
-            }
-
-            if let onShowTestDrop {
-                Section {
-                    DisclosureGroup("Diagnostics") {
-                        LabeledContent("Test drop") {
-                            Button("Show", action: onShowTestDrop)
-                        }
-                        .accessibilityIdentifier("showTestDropButton")
-
-                        Text("Shows the menu-bar drop with sample rows 5 seconds after you click, so you can switch to another app, Space or full-screen app first. Changes nothing: no alerts, no notifications, nothing saved.")
-                            .font(Theme.mono(12))
-                            .foregroundStyle(Theme.creamDim)
-                    }
-                    .accessibilityIdentifier("diagnosticsDisclosure")
                 }
             }
         }

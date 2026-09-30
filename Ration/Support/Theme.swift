@@ -191,6 +191,15 @@ enum Theme {
     /// (9.19 : 1); light: white (5.54 : 1).
     static let onGoldNS = dynamic(dark: 0x141519, light: 0xFFFFFF)
     static let onGold = Color(nsColor: onGoldNS)
+    /// Claude Code's switch controls: the tag on the account it uses, the
+    /// button on the others, the Focus line. Lavender, clear of the gold
+    /// provider chip and the green IN USE. Same hue as Cursor's
+    /// `iris`, but only ever drawn on Claude cards and with the terminal glyph.
+    static let claudeCodeNS = dynamic(dark: 0xB0A6EE, light: 0x5A55B5)
+    static let claudeCode = Color(nsColor: claudeCodeNS)
+    /// Label colour on a `claudeCode` fill. Dark: ink; light: white.
+    static let onClaudeCodeNS = dynamic(dark: 0x141519, light: 0xFFFFFF)
+    static let onClaudeCode = Color(nsColor: onClaudeCodeNS)
 
     // MARK: Fonts (registered PostScript names)
     //

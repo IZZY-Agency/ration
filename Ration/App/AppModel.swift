@@ -555,6 +555,11 @@ final class AppModel: ObservableObject {
     /// "Switch to this account next", per advised provider (`SwitchAdvisor`).
     /// Assigned only when it changes, so subscribers see real transitions.
     @Published private(set) var switchAdvice: [SwitchAdvice] = []
+    /// Claude Code account switching, beside this model like API spend. Fed the
+    /// Claude accounts on every snapshot/state pass; told about removals.
+    weak var claudeCode: ClaudeCodeModel?
+    /// "Claude plan value" (token burn); the app owns it.
+    weak var tokenBurn: TokenBurnModel?
 
     /// Warm-up's own banner row. Computed on every read from live accounts,
     /// snapshots and `autoStartFailures`; it shares no storage with
@@ -1139,6 +1144,9 @@ final class AppModel: ObservableObject {
             // a crossing's notification is composed against it. Ungated:
             // advice is presentation, not an alert.
             self.recomputeSwitchAdvice(snapshots: snapshots, states: states, now: self.now())
+            // Ungated like advice: switching has its own switch and pause.
+            self.claudeCode?.usageDidChange(self.claudeCodeCandidates(snapshots: snapshots, states: states), now: self.now())
+            self.tokenBurn?.accountsDidChange(self.tokenBurnAccounts(snapshots: snapshots))
             guard self.appSettings.usageAlertsEnabled else { return }
             // `refreshableAccounts` (not `accounts`) excludes accounts currently
             // being removed: `removeAccount` sets `removingAccountIDs` BEFORE
@@ -3340,6 +3348,56 @@ final class AppModel: ObservableObject {
         )
     }
 
+    /// Every Claude account for plan value (token burn §10.1), in card order.
+    /// `personalPlanDetected` comes only from the tier of the organization the
+    /// snapshot itself came from (the resolver caches it per organization): a
+    /// plan the user set proves nothing about seats, and neither does a
+    /// reading kept per account from an earlier organization.
+    func tokenBurnAccounts(snapshots: [UUID: UsageSnapshot]) -> [TokenBurnAccount] {
+        accounts.compactMap { account in
+            guard account.provider == .claude, !removingAccountIDs.contains(account.id) else { return nil }
+            let snapshot = snapshots[account.id]
+            let personal: Bool
+            switch snapshot?.planDetection {
+            case .tier(.claudePro), .tier(.claudeMax5x), .tier(.claudeMax20x): personal = true
+            default: personal = false
+            }
+            return TokenBurnAccount(
+                id: account.id,
+                label: account.label,
+                organizationID: snapshot?.organizationID,
+                personalPlanDetected: personal,
+                plan: withLatestDetectedPlan(account, snapshot: snapshot).effectivePlan,
+                renewalDay: account.billingRenewalDay
+            )
+        }
+    }
+
+    /// Every Claude account for Claude Code switching, paused ones flagged (a
+    /// link stays checkable; the rule never uses them), in card order. From
+    /// the pass's own parameters, like switch advice.
+    func claudeCodeCandidates(
+        snapshots: [UUID: UsageSnapshot],
+        states: [UUID: AccountViewState]
+    ) -> [ClaudeCodeCandidate] {
+        accounts.enumerated().compactMap { index, account in
+            guard account.provider == .claude, !removingAccountIDs.contains(account.id) else { return nil }
+            let snapshot = snapshots[account.id]
+            let state = states[account.id] ?? (snapshot == nil ? .unavailable : .current)
+            let plan = withLatestDetectedPlan(account, snapshot: snapshot).effectivePlan
+            return ClaudeCodeCandidate(
+                accountID: account.id,
+                label: account.label,
+                organizationID: snapshot?.organizationID,
+                isPaused: account.isPaused || pausingAccountIDs.contains(account.id),
+                usable: UsageHeadroom.isUsableState(state),
+                snapshot: snapshot,
+                planUnits: plan.map { Int($0.capacityUnits) },
+                order: index
+            )
+        }
+    }
+
     /// Per-account phases (every burning account, not the popover's one
     /// winner per provider) — the one rule for switch advice and Focus.
     static func inUsePhases(_ activity: [UUID: ActiveUsage], now date: Date) -> [UUID: InUsePhase] {
@@ -4068,6 +4126,13 @@ final class AppModel: ObservableObject {
             }
 
             try await removeAccountBody(id: id, account: account)
+            // Plan value first, while the switcher still has the link that
+            // proves which usage was this account's (token burn §10.1).
+            await tokenBurn?.accountRemoved(id, links: claudeCode?.state.links ?? [:])
+            // Only after the removal succeeded, on every path (Settings calls
+            // this directly): its Claude Code sign-in is unlinked, never
+            // deleted (spec §4.2).
+            await claudeCode?.accountRemoved(id)
         }
     }
 

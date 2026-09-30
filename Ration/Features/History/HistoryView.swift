@@ -30,8 +30,12 @@ struct HistoryView: View {
     @State private var series: [HistoryOverlaySeries] = []
     @State private var heatHours: [HourOfDayBurn] = []
 
-    private enum Mode: Hashable { case patterns, billingCycle }
+    private enum Mode: Hashable { case patterns, billingCycle, planValue }
     @State private var mode: Mode = .patterns
+
+    /// Plan value's mode exists only while the feature is on.
+    private var showsPlanValue: Bool { model.tokenBurn?.isEnabled == true }
+    private var effectiveMode: Mode { mode == .planValue && !showsPlanValue ? .patterns : mode }
 
     /// The scope actually in effect: the user's selection if its account still
     /// exists, otherwise the overlay — which, unlike a removed account, can
@@ -99,7 +103,7 @@ struct HistoryView: View {
             presentations: model.presentations, scope: effectiveScope, kind: effectiveKind
         )
         return Self.patternsLoadKey(
-            identity: identity, historyRevision: clock.historyRevision, isPatternsActive: mode == .patterns
+            identity: identity, historyRevision: clock.historyRevision, isPatternsActive: effectiveMode == .patterns
         )
     }
 
@@ -115,7 +119,7 @@ struct HistoryView: View {
             Divider().overlay(Theme.line)
 
             Group {
-                switch mode {
+                switch effectiveMode {
                 case .patterns:
                     if model.accounts.isEmpty {
                         emptyAccountsState
@@ -128,6 +132,10 @@ struct HistoryView: View {
                     }
                 case .billingCycle:
                     BillingCycleView(model: model)
+                case .planValue:
+                    if let tokenBurn = model.tokenBurn {
+                        TokenBurnHistoryView(model: tokenBurn, accounts: model.accounts.filter { $0.provider == .claude })
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -140,6 +148,9 @@ struct HistoryView: View {
         }
         .onAppear { clock.start() }
         .onDisappear { clock.stop() }
+        .onChange(of: showsPlanValue) { _, shows in
+            if !shows, mode == .planValue { mode = .patterns }
+        }
     }
 
     private var header: some View {
@@ -148,7 +159,9 @@ struct HistoryView: View {
                 .font(Theme.display(19, .semibold))
                 .foregroundStyle(Theme.cream)
 
-            Picker("Mode", selection: $mode) {
+            // The mode in effect: while plan value is off its segment is gone
+            // and Patterns shows.
+            Picker("Mode", selection: Binding(get: { effectiveMode }, set: { mode = $0 })) {
                 // Short segment titles (French and Ukrainian did not fit the
                 // 200 pt control); VoiceOver keeps the full names.
                 Text(LocalizedStringResource.historyModePatterns)
@@ -157,14 +170,19 @@ struct HistoryView: View {
                 Text(LocalizedStringResource.historyModeBillingCycle)
                     .accessibilityLabel(Text("Billing cycle"))
                     .tag(Mode.billingCycle)
+                if showsPlanValue {
+                    Text(LocalizedStringResource.historyModePlanValue)
+                        .accessibilityLabel(Text(LocalizedStringResource.tokenBurnHistoryModeSpoken))
+                        .tag(Mode.planValue)
+                }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 200)
+            .frame(width: showsPlanValue ? 290 : 200)
 
             Spacer()
 
-            if mode == .patterns && !model.accounts.isEmpty {
+            if effectiveMode == .patterns && !model.accounts.isEmpty {
                 Picker(
                     "Account",
                     selection: Binding(get: { effectiveScope }, set: { scope = $0 })

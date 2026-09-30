@@ -25,8 +25,6 @@ struct AttentionDropPlacementReport: Equatable {
     }
 
     var event: Event
-    /// Whether the rows are the Settings › Diagnostics sample.
-    var isTestDrop: Bool
     /// The status-item button frame in screen coordinates; nil when there is
     /// no status item, no button, or the button has no window.
     var buttonFrame: NSRect?
@@ -50,7 +48,6 @@ struct AttentionDropPlacementReport: Equatable {
     var line: String {
         var fields: [String] = []
         fields.append("event=\(event.rawValue)")
-        fields.append("test=\(Self.flag(isTestDrop))")
         fields.append("button=\(Self.frameText(buttonFrame))")
         fields.append("screen=\(Self.frameText(screenFrame))")
         fields.append("visible=\(Self.frameText(visibleFrame))")

@@ -630,8 +630,8 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         return AccountPresentation(account: record, snapshot: snapshot, state: .current)
     }
 
-    /// Six closed cycles averaging $29.80 and $41.20 this cycle (+38%), as in
-    /// the mockup — the widest "vs average" line. Twelve for History.
+    /// Six closed cycles averaging $29.80 and $41.20 this cycle (+38%): the
+    /// widest "vs average" line. Twelve for History.
     private var cursorSixCycles: [Int] { [2980, 2410, 3410, 2980, 3550, 2550] }
     private var cursorTwelveCycles: [Int] { [1520, 2210, 3890, 2750, 1980, 3120] + cursorSixCycles }
 
@@ -1160,6 +1160,168 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             priorityPresentMonth: nil
         ))
         return APISpendFixture(model: model, anthropicID: anthropicID, openAIID: openAIID, directory: dir)
+    }
+
+    // MARK: Claude Code switching
+
+    /// The card rows, every status line, Settings › Claude Code (paused, one
+    /// verified and one chosen link) and the Remember sheet.
+    func testClaudeCode() async throws {
+        let dir = try directory
+        let work = sampleAccounts()[0]
+        let model = try await makeClaudeCodeModel(workID: work.id)
+        let lines: [ClaudeCodeStatusLine] = [
+            .needsAttention, .paused, .failed, .noRoom,
+            .rememberPrompt(organization: "ai@izzy.agency's Organization"),
+            .switched(to: "Personal", automatic: true), .switched(to: "Personal", automatic: false),
+        ]
+        let popover = VStack(alignment: .leading, spacing: 10) {
+            AccountCardView(presentation: work, onReauthenticate: {}, now: now, claudeCode: .current)
+            AccountCardView(presentation: work, onReauthenticate: {}, now: now, claudeCode: .canSwitch)
+            AccountCardView(presentation: work, onReauthenticate: {}, now: now, claudeCode: .switching, claudeCodeBusy: true)
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in ClaudeCodeStatusLineView(line: line, action: {}) }
+        }
+        .padding(.vertical, 8)
+        .frame(width: 540, alignment: .leading)
+        .background(Theme.ink)
+        // Focus: Claude Code's line under the hero, with and without a target.
+        let accounts = sampleAccounts()
+        let byLabel = Dictionary(uniqueKeysWithValues: accounts.map { ($0.account.label, $0.id) })
+        let focus = FocusModel.make(presentations: accounts, phases: [byLabel["Client"]!: .inUse(age: 60)],
+                                    advice: [], fableCounts: { _ in false }, now: now)
+        let focusViews = VStack(alignment: .leading, spacing: 10) {
+            FocusView(model: focus, now: now, onShowHero: { _ in }, onReauthenticate: { _ in },
+                      claudeCode: ClaudeCodeFocusLine(currentLabel: "Client", target: .init(accountID: byLabel["Personal"]!, label: "Personal")))
+            FocusView(model: focus, now: now, onShowHero: { _ in }, onReauthenticate: { _ in },
+                      claudeCode: ClaudeCodeFocusLine(currentLabel: "ai@izzy.agency's Organization", target: nil))
+        }
+        .frame(width: 540, alignment: .leading)
+        .background(Theme.ink)
+        for (scheme, suffix) in Self.schemes {
+            try write(render(popover, scheme), dir, "claude-code-popover-\(suffix).png")
+            try write(render(focusViews, scheme), dir, "claude-code-focus-\(suffix).png")
+            try write(await renderHosted(ClaudeCodeDetailView(model: model), width: 520, height: 1250, scheme),
+                      dir, "settings-claude-code-\(suffix).png")
+            try write(await renderHosted(ClaudeCodeRememberSheet(model: model, onDone: {}).background(Color(nsColor: .windowBackgroundColor)), width: 480, height: 460, scheme),
+                      dir, "settings-claude-code-remember-\(suffix).png")
+        }
+    }
+
+    /// Plan value's card line, Settings section and History chart after a
+    /// real pass over fixture replies: twelve days of use, the sign-in proven
+    /// for the last five (layout only; the figures are the fixture's).
+    func testPlanValue() async throws {
+        let dir = try directory
+        let base = FileManager.default.temporaryDirectory.appending(path: "plan-value-l10n-\(UUID())", directoryHint: .isDirectory)
+        let projects = base.appending(path: "projects", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: projects.appending(path: "-Users-me-app"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var lines: [String] = []
+        for day in 0..<12 {
+            for hour in [1, 3] {
+                let at = now.addingTimeInterval(-Double(day) * 86_400 - Double(hour) * 3_600)
+                lines.append(TokenBurnFixtures.line(
+                    id: "m\(day)-\(hour)", request: "r\(day)-\(hour)", timestamp: iso.string(from: at),
+                    model: day % 3 == 0 ? "claude-sonnet-5-5" : "claude-opus-5-5", input: 5_000, output: 40_000,
+                    cacheRead: 2_000_000 * (day % 4 + 1), cacheWrite: 60_000, split5m: 40_000, split1h: 20_000))
+            }
+        }
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: projects.appending(path: "-Users-me-app/s1.jsonl"))
+        let work = sampleAccounts()[0]
+        let identity = SignInIdentity(accountUUID: "acc-W", organizationUUID: "org-W", billingType: "stripe_subscription")
+        let fetched = now.addingTimeInterval(-5 * 86_400)
+        let model = TokenBurnModel(dependencies: .init(
+            folderAccess: FakeFolderAccess(),
+            settings: JSONFileStore(fileURL: base.appending(path: "token-burn.json"), defaultValue: TokenBurnSettings()),
+            databaseURL: base.appending(path: "token-burn.sqlite"),
+            readSignIn: { (identity, fetched) }, scanInterval: .infinity, readingInterval: .infinity), now: { [now] in now })
+        model.linksProvider = { ["acc-W": work.id] }
+        _ = await model.enable(folder: projects)
+        model.accountsDidChange([TokenBurnAccount(id: work.id, label: work.account.label, organizationID: "org-W",
+                                                  personalPlanDetected: true, plan: .claudeMax20x, renewalDay: nil)])
+        await model.scanNow()
+        XCTAssertGreaterThan(model.values[work.id]?.current.value.replies ?? 0, 0)
+        let untracked = sampleAccounts()[1]
+        let card = VStack(alignment: .leading, spacing: 0) {
+            TokenBurnTotalLineView(text: TokenBurnCopy.totalLine(model.total ?? PlanValue(), choice: model.period))
+            AccountCardView(presentation: work, onReauthenticate: {}, now: now,
+                            planValue: TokenBurnCardLine.make(model.values[work.id], trackingSince: model.trackingSince))
+            AccountCardView(presentation: untracked, onReauthenticate: {}, now: now,
+                            planValue: TokenBurnCardLine.make(
+                                TokenBurnAccountValues(current: AccountPlanValue(period: model.values[work.id]!.current.period, value: PlanValue(), planPriceUSD: nil),
+                                                       previous: [], byModel: [], tokens: TokenCounts(), since: nil),
+                                trackingSince: model.trackingSince))
+        }
+        .frame(width: 540).padding(.vertical, 8).background(Theme.ink)
+        let section = Form {
+            TokenBurnPlanValueSection(model: model, accountID: work.id, planName: PlanTier.claudeMax20x.displayName)
+        }.formStyle(.grouped)
+        let history = TokenBurnHistoryView(model: model, accounts: [work.account]).background(Theme.ink)
+        for (scheme, suffix) in Self.schemes {
+            try write(render(card, scheme), dir, "plan-value-card-\(suffix).png")
+            try write(await renderHosted(section, width: 520, height: 1300, scheme), dir, "settings-plan-value-section-\(suffix).png")
+            try write(await renderHosted(history, width: 700, height: 480, scheme), dir, "history-plan-value-\(suffix).png")
+        }
+        await model.stop()
+    }
+
+    /// Plan value: the consent sheet, and the Settings row after a real pass
+    /// over a fixture folder (one reply, one malformed line).
+    func testTokenBurn() async throws {
+        let dir = try directory
+        let base = FileManager.default.temporaryDirectory.appending(path: "token-burn-l10n-\(UUID())", directoryHint: .isDirectory)
+        let projects = base.appending(path: "projects", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: projects.appending(path: "-Users-me-app"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        try Data((TokenBurnFixtures.line(id: "m1", request: "r1") + "\n{\"type\":\"assistant\"\n").utf8)
+            .write(to: projects.appending(path: "-Users-me-app/s1.jsonl"))
+        let model = TokenBurnModel(dependencies: .init(
+            folderAccess: FakeFolderAccess(),
+            settings: JSONFileStore(fileURL: base.appending(path: "token-burn.json"), defaultValue: TokenBurnSettings()),
+            databaseURL: base.appending(path: "token-burn.sqlite"),
+            readSignIn: { nil }, scanInterval: .infinity, readingInterval: .infinity), now: { [now] in now })
+        _ = await model.enable(folder: projects)
+        await model.scanNow()
+        XCTAssertEqual(model.summary?.malformedLines, 1)
+        let row = Form { Section { TokenBurnFeatureRow(model: model) } }.formStyle(.grouped)
+        let consent = TokenBurnConsentSheet(onDone: { _ in }).background(Color(nsColor: .windowBackgroundColor))
+        for (scheme, suffix) in Self.schemes {
+            try write(await renderHosted(row, width: 520, height: 240, scheme), dir, "settings-plan-value-\(suffix).png")
+            try write(await renderHosted(consent, width: 480, height: 640, scheme), dir, "settings-plan-value-consent-\(suffix).png")
+        }
+        await model.stop()
+    }
+
+    /// Claude Code on account A (remembered, verified); B remembered with a
+    /// link the organization cannot prove; automatic switching on and paused.
+    private func makeClaudeCodeModel(workID: UUID) async throws -> ClaudeCodeModel {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "claude-code-l10n-\(UUID())", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let personal = UUID()
+        var state = ClaudeCodeState()
+        state.links = ["acc-A": workID, "acc-B": personal]
+        state.autoSwitchEnabled = true
+        state.autoSwitchPaused = true
+        let stateStore = JSONFileStore(fileURL: dir.appending(path: "claude-code-switch.json"), defaultValue: ClaudeCodeState())
+        try await stateStore.save(state)
+        let model = ClaudeCodeModel(dependencies: .init(
+            switcher: ClaudeCodeSwitcher(
+                entry: ClaudeCodeKeychainEntry(tool: FakeSecurityTool(item: ["claudeAiOauth": ["refreshToken": "refresh-A"]]), user: "me"),
+                config: FakeClaudeCodeConfig(bytes: ClaudeCodeConfigTests.file(account: ClaudeCodeConfigTests.account("A"))),
+                store: InMemoryClaudeCodeSignInStore([ClaudeCodeSignInTests.signIn("A"), ClaudeCodeSignInTests.signIn("B")]),
+                journal: InMemoryJournal(), now: { .now }, confirmDelay: 0),
+            stateStore: stateStore,
+            logStore: JSONFileStore(fileURL: dir.appending(path: "claude-code-switches.json"), defaultValue: [])))
+        await model.start()
+        model.usageDidChange([
+            ClaudeCodeCandidate(accountID: workID, label: "Client", organizationID: "org-A", isPaused: false, usable: true,
+                                snapshot: nil, planUnits: 20, order: 0),
+            ClaudeCodeCandidate(accountID: personal, label: "Personal", organizationID: nil, isPaused: false, usable: true,
+                                snapshot: nil, planUnits: 5, order: 1),
+        ], now: now)
+        return model
     }
 
     // MARK: Rendering

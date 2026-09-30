@@ -77,6 +77,12 @@ struct SettingsSidebar: View {
                 systemImage: "bell",
                 accessibilityIdentifier: "alertsSettingsItem"
             ),
+            FixedItem(
+                selection: .claudeCode,
+                title: LocalizedStringResource.settingsSidebarClaudeCode.string(in: locale),
+                systemImage: "terminal",
+                accessibilityIdentifier: "claudeCodeSettingsItem"
+            ),
         ],
     ] }
 

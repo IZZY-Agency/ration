@@ -18,6 +18,7 @@ final class ThemeContrastTests: XCTestCase {
         ("creamFaint", Theme.creamFaintNS, 0x8D9097, 0x6A665C),
         ("gold", Theme.goldNS, 0xD9B44A, 0x836400),
         ("iris", Theme.irisNS, 0xB0A6EE, 0x5A55B5),
+        ("claudeCode", Theme.claudeCodeNS, 0xB0A6EE, 0x5A55B5),
         ("chatGPTGreen", Theme.chatGPTGreenNS, 0x5CC79F, 0x0F7657),
         ("calm", Theme.calmNS, 0x98AABE, 0x4B5C70),
         ("warn", Theme.warnNS, 0xDDA05E, 0x9C5210),
@@ -25,7 +26,7 @@ final class ThemeContrastTests: XCTestCase {
         ("resetAccent", Theme.resetAccentNS, 0x8FB8F2, 0x21667A),
         ("active", Theme.activeNS, 0x8FC79A, 0x3B7239),
     ]
-    static let textTokens: Set = ["cream", "creamDim", "creamFaint", "gold", "iris", "chatGPTGreen",
+    static let textTokens: Set = ["cream", "creamDim", "creamFaint", "gold", "iris", "claudeCode", "chatGPTGreen",
                                   "calm", "warn", "crit", "resetAccent", "active"]
 
     func testEveryTokenResolvesToItsSpecHexInBothAppearances() {
@@ -79,8 +80,8 @@ final class ThemeContrastTests: XCTestCase {
 
     /// Near-neighbour colours must stay visibly apart, measured as CIE76 ΔE
     /// (sRGB → Lab, D65) in both appearances. Floor 12 ≈ 5× the just-
-    /// noticeable difference (ΔE ≈ 2.3). It is not 20: the owner approved
-    /// these hexes side by side, and each pair plays different roles, which
+    /// noticeable difference (ΔE ≈ 2.3). It is not 20: these hexes were chosen
+    /// side by side, and each pair plays different roles, which
     /// keeps them apart in use. ChatGPT green is identity and `active` is
     /// state; `calm` is a meter fill and `resetAccent` is countdown text.
     /// Measured at 1.2.x: green/active 14.6 dark, 17.2 light; calm/reset 21.6
@@ -171,6 +172,15 @@ final class ThemeContrastTests: XCTestCase {
         }
         XCTAssertEqual(resolvedHex(Theme.onGoldNS, .darkAqua), 0x141519)
         XCTAssertEqual(resolvedHex(Theme.onGoldNS, .aqua), 0xFFFFFF)
+    }
+
+    /// The card's CLAUDE CODE tag: `onClaudeCode` on a `claudeCode` fill.
+    func testTheClaudeCodeTagPassesAA() {
+        for appearance in [NSAppearance.Name.darkAqua, .aqua] {
+            XCTAssertGreaterThanOrEqual(
+                contrast(resolvedHex(Theme.onClaudeCodeNS, appearance), resolvedHex(Theme.claudeCodeNS, appearance)), 4.5,
+                "onClaudeCode on claudeCode, \(appearance.rawValue)")
+        }
     }
 
     /// The SwiftUI token must wrap the SAME dynamic colour: bridging back to

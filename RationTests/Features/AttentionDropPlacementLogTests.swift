@@ -12,7 +12,6 @@ final class AttentionDropPlacementLogTests: XCTestCase {
     ) -> AttentionDropPlacementReport {
         AttentionDropPlacementReport(
             event: event,
-            isTestDrop: true,
             buttonFrame: buttonFrame,
             screenFrame: NSRect(x: 0, y: 0, width: 1728, height: 1117),
             visibleFrame: NSRect(x: 0, y: 0, width: 1728, height: 1080),
@@ -30,7 +29,7 @@ final class AttentionDropPlacementLogTests: XCTestCase {
     func testLineCarriesEveryFrameAndFlag() {
         XCTAssertEqual(
             report().line,
-            "event=present test=1 button=(1402.5,1095.0 54.0x22.0) "
+            "event=present button=(1402.5,1095.0 54.0x22.0) "
                 + "screen=(0.0,0.0 1728.0x1117.0) visible=(0.0,0.0 1728.0x1080.0) "
                 + "main=1 notch=1 screens=3 "
                 + "anchor=statusItem panel=(1269.5,900.0 320.0x174.0) "
@@ -72,28 +71,8 @@ final class AttentionDropPlacementLogTests: XCTestCase {
         XCTAssertFalse(report().line.contains("com."), "no bundle id")
     }
 
-    /// VoiceOver must never announce sample crossings as real.
-    func testTestDropAnnouncementSaysTest() {
-        let en = Locale(identifier: "en")
-        let rows = AttentionDropSample.rows(now: Date(timeIntervalSince1970: 0), locale: en)
-        let test = AttentionDropAnnouncement.evaluate(rows: rows, previouslySeen: [], isTestDrop: true, locale: en)
-        XCTAssertEqual(test.announcement?.hasPrefix("Test drop, sample data, "), true, test.announcement ?? "nil")
-        let real = AttentionDropAnnouncement.evaluate(rows: rows, previouslySeen: [], locale: en)
-        XCTAssertEqual(real.announcement?.hasPrefix("Test drop"), false)
-    }
-
     func testLogAddress() {
         XCTAssertEqual(AttentionDropPlacementLog.subsystem, "agency.izzy.ration")
         XCTAssertEqual(AttentionDropPlacementLog.category, "drop")
-    }
-
-    /// The sample rows are the only thing a test drop shows; none of them may
-    /// name a real account or carry a real label.
-    func testSampleRowsAreFakeAndLabelledSo() {
-        let rows = AttentionDropSample.rows(now: Date(timeIntervalSince1970: 0), locale: Locale(identifier: "en"))
-        XCTAssertEqual(rows.count, 3)
-        XCTAssertTrue(rows.allSatisfy { $0.accountLabel == "SAMPLE" })
-        XCTAssertTrue(rows.allSatisfy { $0.accountID.map(AttentionDropSample.accountIDs.contains) ?? false })
-        XCTAssertEqual(Set(rows.map(\.id)).count, 3, "row ids must be distinct for ForEach")
     }
 }

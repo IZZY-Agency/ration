@@ -34,6 +34,9 @@ struct SwitchAdvice: Equatable, Sendable {
 ///   of the two plans' units (identical to the percentage rule for equal
 ///   plans). Unknown-plan accounts are only compared with each other.
 ///   Ties → capacity desc, soonest weekly reset (nil last), presentation order.
+/// - No advice while a same-provider account that qualifies as a target is
+///   itself `.inUse`: the user has already moved (`from` is often the account
+///   just left, still inside its in-use window).
 enum SwitchAdvisor {
     static let requiredMargin: Double = 0.20
     static let advisedProviders: [Provider] = [.claude, .chatGPT]
@@ -113,6 +116,12 @@ enum SwitchAdvisor {
             guard gain >= margin - tolerance else { continue }
             targets.append(Target(order: order, presentation: presentation, standing: standing, capacity: targetRemaining))
         }
+
+        let alreadyMoved: Bool = targets.contains { target in
+            if case .inUse = phases[target.presentation.id] { return true }
+            return false
+        }
+        guard !alreadyMoved else { return nil }
 
         let sorted = targets.sorted { lhs, rhs in
             precedes(lhs: lhs, rhs: rhs)

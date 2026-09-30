@@ -17,6 +17,13 @@ struct AccountCardView: View {
     var onProblem: ((FreshnessHelp.Target) -> Void)? = nil
     /// The pointer entered / left the problem badge, or it moved.
     var onProblemHover: (BadgeHoverEvent) -> Void = { _ in }
+    /// Claude Code switching (spec §4.4): the tag or the button, Claude only.
+    var claudeCode: ClaudeCodeCardState = .none
+    var claudeCodeBusy = false
+    var onUseInClaudeCode: () -> Void = {}
+    /// Plan value: dollars at API list prices for the chosen period (Claude
+    /// cards while the feature is on).
+    var planValue: TokenBurnCardLine? = nil
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -105,6 +112,13 @@ struct AccountCardView: View {
                 }
 
                 Spacer(minLength: 8)
+                if claudeCode != .none {
+                    // The name truncates before the control does.
+                    ClaudeCodeCardRow(state: claudeCode, accountLabel: presentation.account.label,
+                                      busy: claudeCodeBusy, action: onUseInClaudeCode)
+                        .fixedSize()
+                        .layoutPriority(1)
+                }
                 AccountStateBadge(
                     state: presentation.state,
                     style: .compact,
@@ -173,6 +187,9 @@ struct AccountCardView: View {
                     now: currentDate
                 ) {
                     ResetCreditsLineView(summary: summary, now: currentDate)
+                }
+                if let planValue {
+                    TokenBurnCardLineView(line: planValue)
                 }
             }
         }

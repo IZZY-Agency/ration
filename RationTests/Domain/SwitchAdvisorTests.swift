@@ -340,12 +340,39 @@ final class SwitchAdvisorTests: XCTestCase {
         XCTAssertEqual(advice([a, laterAccount, sooner], phases: inUse(a)).map(\.toAccountID), [sooner.id])
     }
 
-    func testOtherInUseAccountCanBeTheTarget() {
+    /// Owner report 2026-09-30: "switch Claude to AI" while AI was already in
+    /// use. `from` was the account just left (still inside its in-use window);
+    /// an account with room already in use means the user has moved.
+    func testNoAdviceWhileAnAccountWithRoomIsAlreadyInUse() {
         let a = account("A", weekly: 0.9)
         let b = account("B", weekly: 0.2)
-        let result = advice([a, b], phases: inUse(a, b))
-        XCTAssertEqual(result.first?.fromAccountID, a.id)
-        XCTAssertEqual(result.first?.toAccountID, b.id)
+        XCTAssertEqual(advice([a, b], phases: inUse(a, b)), [])
+    }
+
+    /// Nor a third account: the user is on B, which has room.
+    func testAnInUseAccountWithRoomSilencesTheAdviceForTheProvider() {
+        let a = account("A", weekly: 0.9)
+        let b = account("B", weekly: 0.3)
+        let c = account("C", weekly: 0.0)
+        XCTAssertEqual(advice([a, b, c], phases: inUse(a, b)), [])
+    }
+
+    /// An in-use account WITHOUT the margin does not count as having moved.
+    func testAnInUseAccountWithoutRoomDoesNotSilenceTheAdvice() {
+        let a = account("A", weekly: 0.9)
+        let b = account("B", weekly: 0.85)
+        let c = account("C", weekly: 0.1)
+        let result = advice([a, b, c], phases: inUse(a, b))
+        XCTAssertEqual(result.map(\.fromAccountID), [a.id])
+        XCTAssertEqual(result.map(\.toAccountID), [c.id])
+    }
+
+    /// Only the same provider's in-use accounts count.
+    func testAnInUseAccountOfAnotherProviderDoesNotSilenceTheAdvice() {
+        let a = account("A", weekly: 0.9)
+        let b = account("B", weekly: 0.1)
+        let g = account("G", provider: .chatGPT, weekly: 0.0)
+        XCTAssertEqual(advice([a, b, g], phases: inUse(a, g)).map(\.toAccountID), [b.id])
     }
 
     func testCursorIsNeverAdvised() {

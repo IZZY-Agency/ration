@@ -48,14 +48,15 @@ enum UsageFormatters {
     ///
     /// `alertStyle` is the alert and drop form: thousands grouped, and no
     /// ".00" on a whole-dollar amount ("$50", "$1,234.05"), as those texts
-    /// read in 1.3.0.
-    static func usd(cents: Int, alertStyle: Bool = false, locale: Locale = .current) -> String {
+    /// read in 1.3.0. `grouped` keeps two decimals and groups thousands
+    /// (plan value: "$13,116.77").
+    static func usd(cents: Int, alertStyle: Bool = false, grouped: Bool = false, locale: Locale = .current) -> String {
         let shipped: Locale = LocalizedCopy.shippedLocale(for: locale)
         let languageCode: String = shipped.language.languageCode?.identifier ?? "en"
         let numberLocale = Locale(identifier: languageCode)
         let amount: Decimal = Decimal(cents) / 100
         let fractionDigits: Int = alertStyle && cents % 100 == 0 ? 0 : 2
-        let grouping: Decimal.FormatStyle.Configuration.Grouping = alertStyle ? .automatic : .never
+        let grouping: Decimal.FormatStyle.Configuration.Grouping = alertStyle || grouped ? .automatic : .never
         let style = Decimal.FormatStyle(locale: numberLocale)
             .precision(.fractionLength(fractionDigits))
             .grouping(grouping)

@@ -19,6 +19,11 @@ struct FocusView: View {
     var onProblem: ((FreshnessHelp.Target) -> Void)? = nil
     /// The pointer entered / left an account's problem badge.
     var onProblemHover: (UUID, BadgeHoverEvent) -> Void = { _, _ in }
+    /// Claude Code's line under the hero; nil when the feature is not in use.
+    var claudeCode: ClaudeCodeFocusLine? = nil
+    var claudeCodeBusy = false
+    /// Switch Claude Code to this account.
+    var onClaudeCodeSwitch: (UUID) -> Void = { _ in }
 
     private static let inset: CGFloat = 16
 
@@ -46,6 +51,15 @@ struct FocusView: View {
                 heroView(hero)
             }
 
+            if let claudeCode {
+                if model.hero != nil {
+                    separator
+                }
+                ClaudeCodeFocusLineView(line: claudeCode, busy: claudeCodeBusy, action: onClaudeCodeSwitch)
+                    .padding(.horizontal, Self.inset)
+                    .padding(.vertical, 10)
+            }
+
             ForEach(model.otherInUse, id: \.presentation.id) { line in
                 separator
                 inUseLine(line)
@@ -62,7 +76,7 @@ struct FocusView: View {
             }
 
             if !model.others.isEmpty {
-                if model.hero != nil || !model.otherInUse.isEmpty || !model.warnings.isEmpty
+                if model.hero != nil || claudeCode != nil || !model.otherInUse.isEmpty || !model.warnings.isEmpty
                     || !model.switchLines.isEmpty {
                     separator
                 }

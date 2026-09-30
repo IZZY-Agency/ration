@@ -1151,29 +1151,6 @@
         }
       }
     },
-    "Diagnostics" : {
-      "comment" : "Settings › General: collapsed group holding diagnostic tools.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diagnostics"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Diagnostic"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Діагностика"
-          }
-        }
-      }
-    },
     "Dismiss alerts" : {
       "comment" : "VoiceOver: the Dismiss Alerts button.",
       "localizations" : {
@@ -3037,29 +3014,6 @@
         }
       }
     },
-    "Show" : {
-      "comment" : "Button: shows the test drop under the menu bar.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Показати"
-          }
-        }
-      }
-    },
     "Show this in the menu-bar drop" : {
       "comment" : "Settings › Alerts tooltip on the Drop checkbox.",
       "localizations" : {
@@ -3102,29 +3056,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Показувати кільця використання в рядку меню"
-          }
-        }
-      }
-    },
-    "Shows the menu-bar drop with sample rows 5 seconds after you click, so you can switch to another app, Space or full-screen app first. Changes nothing: no alerts, no notifications, nothing saved." : {
-      "comment" : "Settings › General › Diagnostics: explains the Test drop button, which shows the drop after a 5-second delay.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shows the menu-bar drop with sample rows 5 seconds after you click, so you can switch to another app, Space or full-screen app first. Changes nothing: no alerts, no notifications, nothing saved."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Affiche le panneau sous la barre des menus avec des lignes d’exemple 5 secondes après le clic, pour vous laisser passer d’abord à une autre app, un autre Space ou une app en plein écran. Ne modifie rien : aucune alerte, aucune notification, rien n’est enregistré."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Показує панель під рядком меню зі зразковими рядками через 5 секунд після натискання, щоб ви встигли перейти в іншу програму, інший Space або повноекранну програму. Нічого не змінює: стан сповіщень не зачіпається, нічого не надсилається й не зберігається."
           }
         }
       }
@@ -3355,29 +3286,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Вихідний код"
-          }
-        }
-      }
-    },
-    "Test drop" : {
-      "comment" : "Settings › General › Diagnostics row: shows the menu-bar drop with sample rows.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Test drop"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Panneau de test"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Тестова панель"
           }
         }
       }
@@ -9429,6 +9337,1590 @@
         }
       }
     },
+    "claudeCode.card.current" : {
+      "comment" : "Tag on the Claude account card whose account Claude Code (the CLI, a product name — keep it) is signed in to. Shown uppercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code"
+          }
+        }
+      }
+    },
+    "claudeCode.card.current.accessibility" : {
+      "comment" : "VoiceOver for the Claude Code tag on an account card.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code uses this account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code utilise ce compte"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code використовує цей обліковий запис"
+          }
+        }
+      }
+    },
+    "claudeCode.card.switching" : {
+      "comment" : "Card button while Claude Code is being switched to this account. Shown uppercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switching…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculement…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикання…"
+          }
+        }
+      }
+    },
+    "claudeCode.card.use" : {
+      "comment" : "The button on a Claude card's name line that switches Claude Code to that account. Drawn uppercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути"
+          }
+        }
+      }
+    },
+    "claudeCode.card.use.accessibility" : {
+      "comment" : "VoiceOver for the card button. %@ = the account's name in Ration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch Claude Code to %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faire passer Claude Code à %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути Claude Code на %@"
+          }
+        }
+      }
+    },
+    "claudeCode.error.changing" : {
+      "comment" : "Error: Claude Code changed its sign-in while Ration was reading it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code is changing its sign-in. Try again in a moment."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code est en train de changer de connexion. Réessayez dans un instant."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code саме змінює вхід. Спробуйте ще раз за мить."
+          }
+        }
+      }
+    },
+    "claudeCode.error.conflict" : {
+      "comment" : "Error: Claude Code wrote its sign-in during the switch, so Ration undid the switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code saved its sign-in during the switch, so Ration undid it. Try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code a enregistré sa connexion pendant le basculement ; Ration l’a annulé. Réessayez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code зберіг свій вхід під час перемикання, тож Ration його скасував. Спробуйте ще раз."
+          }
+        }
+      }
+    },
+    "claudeCode.error.failed" : {
+      "comment" : "Error: the switch did not go through and was undone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The switch didn’t go through and was undone."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le basculement n’a pas abouti et a été annulé."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикання не вдалося, його скасовано."
+          }
+        }
+      }
+    },
+    "claudeCode.error.needsAttention" : {
+      "comment" : "Error: Ration could not fully undo a switch; the user should sign in again in Claude Code (/login is a command, keep it).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration couldn’t fully undo a switch. Run /login in Claude Code to be safe."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration n’a pas pu annuler complètement un basculement. Lancez /login dans Claude Code par précaution."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration не зміг повністю скасувати перемикання. Для певності виконайте /login у Claude Code."
+          }
+        }
+      }
+    },
+    "claudeCode.error.notSignedIn" : {
+      "comment" : "Error: Claude Code has no Claude sign-in to switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code isn’t signed in with a Claude account."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code n’est pas connecté à un compte Claude."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code не ввійшов в обліковий запис Claude."
+          }
+        }
+      }
+    },
+    "claudeCode.error.rememberFirst" : {
+      "comment" : "Error: switching away would lose a sign-in Ration has not remembered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code is on an account Ration hasn’t remembered. Remember it first, so it isn’t lost."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code utilise un compte que Ration n’a pas mémorisé. Mémorisez-le d’abord pour ne pas le perdre."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code використовує обліковий запис, який Ration не зберіг. Спершу збережіть його, щоб не втратити."
+          }
+        }
+      }
+    },
+    "claudeCode.focus.on" : {
+      "comment" : "Focus layout, the line under the big number: the account Claude Code uses now. %@ = its name in Ration, else its organization.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code on %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code utilise %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code використовує %@"
+          }
+        }
+      }
+    },
+    "claudeCode.focus.switch" : {
+      "comment" : "Focus layout, the button on the Claude Code line. Drawn uppercase. %@ = the account it switches Claude Code to.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer vers %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути на %@"
+          }
+        }
+      }
+    },
+    "claudeCode.notification.failed.body" : {
+      "comment" : "Notification body after a failed automatic Claude Code switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic switching is paused. Open Ration to see why."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le basculement automatique est en pause. Ouvrez Ration pour en savoir plus."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Автоматичне перемикання призупинено. Відкрийте Ration, щоб дізнатися причину."
+          }
+        }
+      }
+    },
+    "claudeCode.notification.failed.title" : {
+      "comment" : "Notification title: an automatic switch of Claude Code (the CLI) did not happen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code was not switched"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code n’a pas été basculé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code не перемкнено"
+          }
+        }
+      }
+    },
+    "claudeCode.notification.noRoom.body" : {
+      "comment" : "Notification body: Claude Code (the CLI) stays on the account it uses. %@ = that account's name in Ration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code stays on %@: every remembered account is past your limit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code reste sur %@ : tous les comptes mémorisés ont dépassé votre limite."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code залишається на %@: усі збережені облікові записи перевищили ваш ліміт."
+          }
+        }
+      }
+    },
+    "claudeCode.notification.noRoom.title" : {
+      "comment" : "Notification title: automatic switching found no remembered Claude account with room left.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Claude account has room"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun compte Claude n’a de marge"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Жоден обліковий запис Claude не має запасу"
+          }
+        }
+      }
+    },
+    "claudeCode.notification.redacted.body" : {
+      "comment" : "Notification body when notification details are hidden (privacy setting): no account names.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code switched accounts."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code a changé de compte."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code змінив обліковий запис."
+          }
+        }
+      }
+    },
+    "claudeCode.notification.switched.body.fable" : {
+      "comment" : "Notification body after an automatic Claude Code switch. %1$@ = the account it left, %2$lld = percent of its Fable weekly limit used (Fable is a model name). fr: U+202F before '%'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ used %2$lld%% of its Fable weekly limit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ a utilisé %2$lld %% de sa limite hebdomadaire Fable."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ використав %2$lld%% тижневого ліміту Fable."
+          }
+        }
+      }
+    },
+    "claudeCode.notification.switched.body.fiveHour" : {
+      "comment" : "Notification body after an automatic Claude Code switch. %1$@ = the account it left, %2$lld = percent of its 5-hour limit used. fr: U+202F before '%'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ used %2$lld%% of its 5-hour limit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ a utilisé %2$lld %% de sa limite de 5 heures."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ використав %2$lld%% 5-годинного ліміту."
+          }
+        }
+      }
+    },
+    "claudeCode.notification.switched.body.weekly" : {
+      "comment" : "Notification body after an automatic Claude Code switch. %1$@ = the account it left, %2$lld = percent of its weekly limit used. fr: U+202F before '%'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ used %2$lld%% of its weekly limit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ a utilisé %2$lld %% de sa limite hebdomadaire."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ використав %2$lld%% тижневого ліміту."
+          }
+        }
+      }
+    },
+    "claudeCode.notification.switched.title" : {
+      "comment" : "Notification title when Ration switched Claude Code (the CLI) to another Claude account automatically. %@ = that account's name in Ration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code switched to %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code est passé à %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code перемкнено на %@"
+          }
+        }
+      }
+    },
+    "claudeCode.remember.account" : {
+      "comment" : "Picker label in the Remember sheet: which Ration account the sign-in belongs to.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It belongs to this Ration account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle appartient à ce compte Ration"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Він належить цьому обліковому запису Ration"
+          }
+        }
+      }
+    },
+    "claudeCode.remember.confirm" : {
+      "comment" : "Sheet button: remember the sign-in.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remember"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémoriser"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зберегти"
+          }
+        }
+      }
+    },
+    "claudeCode.remember.disclosure" : {
+      "comment" : "Remember sheet: what Ration keeps, and the command-line exposure (security is a macOS tool name; MCP is a protocol name).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration keeps a copy of this sign-in in your login Keychain (not synced) so it can switch Claude Code back to it without a new login, and sends it nowhere. To write Claude Code’s sign-in, Ration uses macOS’s security tool the way Claude Code does; when the entry is large (it also holds your MCP servers’ sign-ins) it is passed on that tool’s command line, where other processes on this Mac can see it for the moment it runs — as they already can each time Claude Code saves it."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration garde une copie de cette connexion dans votre trousseau de session (non synchronisé) pour y rebasculer Claude Code sans nouvelle connexion, et ne l’envoie nulle part. Pour écrire la connexion de Claude Code, Ration utilise l’outil security de macOS comme le fait Claude Code ; quand l’entrée est volumineuse (elle contient aussi les connexions de vos serveurs MCP), elle passe par la ligne de commande de cet outil, où d’autres processus de ce Mac peuvent la voir le temps de son exécution — comme chaque fois que Claude Code l’enregistre."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration зберігає копію цього входу у вашій в’язці ключів входу (без синхронізації), щоб повертати на нього Claude Code без нового входу, і нікуди її не надсилає. Щоб записати вхід Claude Code, Ration використовує інструмент macOS security так само, як Claude Code; коли запис великий (він також містить входи ваших MCP-серверів), він передається в командному рядку цього інструмента, де інші процеси на цьому Mac можуть бачити його під час виконання — так само, як щоразу, коли Claude Code його зберігає."
+          }
+        }
+      }
+    },
+    "claudeCode.remember.notNow" : {
+      "comment" : "Sheet button: close without remembering.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not now"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas maintenant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не зараз"
+          }
+        }
+      }
+    },
+    "claudeCode.remember.title" : {
+      "comment" : "Sheet title: remember the sign-in Claude Code uses now. fr: U+202F before '?'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remember this Claude Code sign-in?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémoriser cette connexion Claude Code ?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зберегти цей вхід Claude Code?"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.auto.explain" : {
+      "comment" : "Explains the automatic switching rule.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration switches Claude Code to the remembered account with the most room on that limit, and never to one already past it. Only verified sign-ins are used. Open Claude Code sessions follow within 30 seconds."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration bascule Claude Code vers le compte mémorisé qui a le plus de marge sur cette limite, jamais vers un compte qui l’a déjà dépassée. Seules les connexions vérifiées sont utilisées. Les sessions Claude Code ouvertes suivent en 30 secondes."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration перемикає Claude Code на збережений обліковий запис із найбільшим запасом за цим лімітом і ніколи — на обліковий запис, який його вже перевищив. Використовуються лише перевірені входи. Відкриті сесії Claude Code переходять протягом 30 секунд."
+          }
+        }
+      }
+    },
+    "claudeCode.settings.auto.header" : {
+      "comment" : "Settings section: switch Claude Code to another account automatically by a rule.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch automatically"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer automatiquement"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикати автоматично"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.auto.limit" : {
+      "comment" : "Picker label: which usage limit the automatic switching rule watches.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limite"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ліміт"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.auto.paused" : {
+      "comment" : "Shown when automatic switching stopped after a failed switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused after a switch that didn’t go through."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pause après un basculement qui n’a pas abouti."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Призупинено після невдалого перемикання."
+          }
+        }
+      }
+    },
+    "claudeCode.settings.auto.percent" : {
+      "comment" : "Stepper value. %lld = percent. fr: U+202F before '%'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%%"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %%"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%%"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.auto.resume" : {
+      "comment" : "Button: turn automatic switching back on after a pause.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reprendre"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відновити"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.auto.threshold" : {
+      "comment" : "Stepper label: the share of the chosen limit that triggers an automatic switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch when used"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer à partir de"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикати, коли використано"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.auto.toggle" : {
+      "comment" : "Toggle: automatic Claude Code account switching on or off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch Claude Code automatically"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer Claude Code automatiquement"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикати Claude Code автоматично"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.current.tag" : {
+      "comment" : "Tag on the remembered sign-in that Claude Code uses right now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In use by Claude Code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisée par Claude Code"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Використовується Claude Code"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.forget" : {
+      "comment" : "Button: delete Ration's copy of this remembered sign-in.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oublier"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Забути"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.forgetAll" : {
+      "comment" : "Button: delete every remembered Claude Code sign-in and the switch history.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget all sign-ins"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oublier toutes les connexions"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Забути всі входи"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.forgetAll.confirm" : {
+      "comment" : "Confirmation title for Forget all. fr: U+202F before '?'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget every remembered Claude Code sign-in?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oublier toutes les connexions Claude Code mémorisées ?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Забути всі збережені входи Claude Code?"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.forgetAll.message" : {
+      "comment" : "Confirmation message for Forget all.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration deletes its copies, the links and the switch history. Claude Code itself stays signed in."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration supprime ses copies, les liens et l’historique des basculements. Claude Code lui-même reste connecté."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration видалить свої копії, зв’язки та історію перемикань. Сам Claude Code залишиться в системі."
+          }
+        }
+      }
+    },
+    "claudeCode.settings.limit.fable" : {
+      "comment" : "Picker choice: the weekly limit of the Fable model (Fable is a model name).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fable weekly"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fable hebdomadaire"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тижневий Fable"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.limit.fiveHour" : {
+      "comment" : "Picker choice: the 5-hour usage limit.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5-hour"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 heures"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5-годинний"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.limit.weekly" : {
+      "comment" : "Picker choice: the weekly usage limit.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weekly"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hebdomadaire"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тижневий"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.link.chosen" : {
+      "comment" : "Under a remembered sign-in linked by the user but not proven by the organization id.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chosen by you — not used for automatic switching"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisie par vous — pas utilisée pour le basculement automatique"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вибрано вами — не використовується для автоматичного перемикання"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.link.label" : {
+      "comment" : "Picker label: which Ration account a remembered Claude Code sign-in belongs to.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compte Ration"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обліковий запис Ration"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.link.none" : {
+      "comment" : "Picker choice: the sign-in is not linked to any Ration account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not linked"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non liée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не пов’язано"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.link.verified" : {
+      "comment" : "Under a remembered sign-in: its organization matches the linked Ration account's, so automatic switching may use it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verified"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérifiée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перевірено"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.notify" : {
+      "comment" : "Toggle: send a notification when Ration switches Claude Code automatically.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notify me when Ration switches Claude Code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "M’avertir quand Ration bascule Claude Code"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сповіщати, коли Ration перемикає Claude Code"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.now.header" : {
+      "comment" : "Settings › Claude Code section: the Claude account Claude Code (the CLI) is signed in to right now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code now"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code maintenant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code зараз"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.now.none" : {
+      "comment" : "Shown when Claude Code has no Claude sign-in in its default configuration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code isn’t signed in with a Claude account in its default configuration."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code n’est pas connecté à un compte Claude dans sa configuration par défaut."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code не ввійшов в обліковий запис Claude у стандартній конфігурації."
+          }
+        }
+      }
+    },
+    "claudeCode.settings.now.remember" : {
+      "comment" : "Button: remember the sign-in Claude Code uses now, to switch back to it later.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remember…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémoriser…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зберегти…"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.now.remembered" : {
+      "comment" : "Label next to the current sign-in when Ration has already remembered it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remembered"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémorisée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Збережено"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.privacy" : {
+      "comment" : "Privacy note at the bottom of Settings › Claude Code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration keeps a copy of each remembered sign-in in your login Keychain (not synced) so it can switch Claude Code back without a new login. It reads and writes Claude Code’s own sign-in entry and the account section of ~/.claude.json, and sends none of it anywhere. It controls Claude Code’s default configuration only."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration garde une copie de chaque connexion mémorisée dans votre trousseau de session (non synchronisé) pour rebasculer Claude Code sans nouvelle connexion. Il lit et écrit l’entrée de connexion de Claude Code et la section du compte de ~/.claude.json, et n’en envoie rien nulle part. Il ne gère que la configuration par défaut de Claude Code."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration зберігає копію кожного збереженого входу у вашій в’язці ключів входу (без синхронізації), щоб повертати Claude Code без нового входу. Він читає й записує власний запис входу Claude Code та розділ облікового запису в ~/.claude.json і нікуди нічого з цього не надсилає. Він керує лише стандартною конфігурацією Claude Code."
+          }
+        }
+      }
+    },
+    "claudeCode.settings.remembered.empty" : {
+      "comment" : "Shown when no sign-in is remembered yet: how to get two.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None yet. Remember the sign-in Claude Code uses now, then sign in to your other account in Claude Code and remember that one too."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune pour l’instant. Mémorisez la connexion que Claude Code utilise, puis connectez-vous à votre autre compte dans Claude Code et mémorisez-la aussi."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поки немає. Збережіть вхід, який зараз використовує Claude Code, потім увійдіть в інший обліковий запис у Claude Code і збережіть і його."
+          }
+        }
+      }
+    },
+    "claudeCode.settings.remembered.header" : {
+      "comment" : "Settings section: Claude Code sign-ins Ration keeps copies of, to switch between.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remembered sign-ins"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connexions mémorisées"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Збережені входи"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.saveFailed" : {
+      "comment" : "Settings › Claude Code: the feature's settings file could not be written, so automatic switching was turned off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration couldn’t save its Claude Code settings, so automatic switching is off. Try turning it on again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration n’a pas pu enregistrer ses réglages Claude Code ; le basculement automatique est donc désactivé. Réessayez de l’activer."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration не зміг зберегти налаштування Claude Code, тому автоматичне перемикання вимкнено. Спробуйте ввімкнути його знову."
+          }
+        }
+      }
+    },
+    "claudeCode.settings.status.header" : {
+      "comment" : "Settings › Claude Code section: the last thing that happened (a switch, a failure, a pause).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last event"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernier événement"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остання подія"
+          }
+        }
+      }
+    },
+    "claudeCode.settings.switch" : {
+      "comment" : "Button: switch Claude Code to this remembered sign-in.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути"
+          }
+        }
+      }
+    },
+    "claudeCode.status.failed" : {
+      "comment" : "Popover line: the last Claude Code switch failed and was undone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t switch Claude Code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de basculer Claude Code"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося перемкнути Claude Code"
+          }
+        }
+      }
+    },
+    "claudeCode.status.needsAttention" : {
+      "comment" : "Popover line: a Claude Code switch could not be undone completely; the user should check Claude Code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’s sign-in needs attention"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La connexion de Claude Code demande votre attention"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вхід Claude Code потребує уваги"
+          }
+        }
+      }
+    },
+    "claudeCode.status.noRoom" : {
+      "comment" : "Popover line: automatic switching found no remembered Claude account with room left.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No remembered Claude account has room"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun compte Claude mémorisé n’a de marge"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Жоден збережений обліковий запис Claude не має запасу"
+          }
+        }
+      }
+    },
+    "claudeCode.status.paused" : {
+      "comment" : "Popover line: automatic Claude Code switching stopped after a failed switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic Claude Code switching is paused"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le basculement automatique de Claude Code est en pause"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Автоматичне перемикання Claude Code призупинено"
+          }
+        }
+      }
+    },
+    "claudeCode.status.remember" : {
+      "comment" : "Popover line offering to remember the sign-in Claude Code uses now. %@ = its organization name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code is on %@ — remember it"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code utilise %@ — mémorisez-le"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code на %@ — збережіть його"
+          }
+        }
+      }
+    },
+    "claudeCode.status.switched.automatic" : {
+      "comment" : "Popover line for an hour after an automatic switch. %@ = the account's name in Ration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code switched to %@ automatically"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code est passé automatiquement à %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code автоматично перемкнено на %@"
+          }
+        }
+      }
+    },
+    "claudeCode.status.switched.manual" : {
+      "comment" : "Popover line for an hour after the user switched Claude Code. %@ = the account's name in Ration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code now uses %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code utilise maintenant %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code тепер використовує %@"
+          }
+        }
+      }
+    },
+    "claudeCode.status.waiting" : {
+      "comment" : "Popover and Settings line: automatic switching wants to switch, but some accounts' usage is not fresh yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for fresh usage to switch Claude Code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de données d’utilisation à jour pour basculer Claude Code"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очікування свіжих даних про використання, щоб перемкнути Claude Code"
+          }
+        }
+      }
+    },
     "common.system" : {
       "comment" : "Language picker option that follows the macOS language order instead of forcing one language.",
       "extractionState" : "manual",
@@ -11180,78 +12672,6 @@
         }
       }
     },
-    "drop.test.header" : {
-      "comment" : "Drop panel header of the Settings › Diagnostics test drop, uppercase monospaced, one line in a 320 pt panel: keep it short. Says the rows are fake sample data.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "TEST DROP · SAMPLE"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PANNEAU TEST · EXEMPLE"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ТЕСТ ПАНЕЛІ · ЗРАЗОК"
-          }
-        }
-      }
-    },
-    "drop.test.sampleAccount" : {
-      "comment" : "Account name shown on every row of the Settings › Diagnostics test drop. Must read as obviously fake; short (it shares a 320 pt row with a meter and a countdown).",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SAMPLE"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "EXEMPLE"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ЗРАЗОК"
-          }
-        }
-      }
-    },
-    "drop.test.spoken" : {
-      "comment" : "VoiceOver: read before the counts of the Settings › Diagnostics test drop, whose rows are fake sample data.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Test drop, sample data"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Panneau de test, données d’exemple"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Тестова панель, зразкові дані"
-          }
-        }
-      }
-    },
     "featureSwitch.note.switchAdviceNeedsInUse" : {
       "comment" : "Shown under the Switch suggestions switch while In-use detection is off.",
       "extractionState" : "manual",
@@ -12958,6 +14378,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Тенденції"
+          }
+        }
+      }
+    },
+    "history.mode.planValue" : {
+      "comment" : "History window mode: plan value per day. Short: the segmented control is narrow; VoiceOver reads tokenBurn.history.modeSpoken.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Value"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valeur"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вартість"
           }
         }
       }
@@ -16078,6 +17522,30 @@
         }
       }
     },
+    "settings.section.planValue" : {
+      "comment" : "Settings section header on a Claude account: what its Claude Code use would cost at API prices. Title Case in English, sentence case in French and Ukrainian.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan Value"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valeur du forfait"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вартість плану"
+          }
+        }
+      }
+    },
     "settings.section.quietHours" : {
       "comment" : "Settings › Warm-up section header: the weekly quiet-hours grid.",
       "extractionState" : "manual",
@@ -16194,6 +17662,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сповіщення"
+          }
+        }
+      }
+    },
+    "settings.sidebar.claudeCode" : {
+      "comment" : "Settings sidebar item for Claude Code account switching. Claude Code is a product name — keep it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code"
           }
         }
       }
@@ -17238,6 +18730,1686 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "tokenBurn.beforeTracking" : {
+      "comment" : "Plan value: a period, or use, before Ration could tell which account Claude Code was signed in to.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Before tracking started"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avant le début du suivi"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "До початку відстеження"
+          }
+        }
+      }
+    },
+    "tokenBurn.byModel" : {
+      "comment" : "Plan value: heading over the current period's value per Claude model.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "By model"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Par modèle"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "За моделями"
+          }
+        }
+      }
+    },
+    "tokenBurn.card.grantLost" : {
+      "comment" : "Plan value line on a Claude card when Ration lost access to the logs folder. \"Settings\" is the app's Settings window.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan value paused · grant access again in Settings"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valeur du forfait en pause · autorisez à nouveau l’accès dans Réglages"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вартість плану призупинено · знову надайте доступ у Налаштуваннях"
+          }
+        }
+      }
+    },
+    "tokenBurn.card.none" : {
+      "comment" : "Plan value line on a Claude card with no Claude Code use in the period. %@ = the period, lowercase (tokenBurn.period.*.phrase).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Claude Code use · %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune utilisation de Claude Code · %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code не використовувався · %@"
+          }
+        }
+      }
+    },
+    "tokenBurn.card.noneSince" : {
+      "comment" : "Plan value line on a Claude card with no Claude Code use since Ration started tracking. %@ = when tracking began (date and time).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Claude Code use since %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune utilisation de Claude Code depuis le %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code не використовувався з %@"
+          }
+        }
+      }
+    },
+    "tokenBurn.card.notTracked" : {
+      "comment" : "Plan value line on a Claude card before Ration has read who is signed in to Claude Code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan value: not tracked yet"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valeur du forfait : pas encore suivie"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вартість плану: ще не відстежується"
+          }
+        }
+      }
+    },
+    "tokenBurn.card.value" : {
+      "comment" : "Plan value line on a Claude card. %1$@ = a dollar amount, maybe prefixed \"≥ \" (at least); %2$@ = the period, lowercase in a sentence (tokenBurn.period.*.phrase).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ at API prices · %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ aux prix de l’API · %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ за цінами API · %2$@"
+          }
+        }
+      }
+    },
+    "tokenBurn.card.valueSince" : {
+      "comment" : "Plan value line on a Claude card when Ration started tracking inside the period. %1$@ = a dollar amount, maybe \"≥ \" (at least); %2$@ = when tracking began (date and time).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ at API prices · since %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ aux prix de l’API · depuis le %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ за цінами API · з %2$@"
+          }
+        }
+      }
+    },
+    "tokenBurn.consent.cancel" : {
+      "comment" : "Consent sheet: cancel button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скасувати"
+          }
+        }
+      }
+    },
+    "tokenBurn.consent.choose" : {
+      "comment" : "Consent sheet: continues to the folder picker.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose folder…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisir le dossier…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вибрати теку…"
+          }
+        }
+      }
+    },
+    "tokenBurn.consent.keeps" : {
+      "comment" : "Consent sheet, paragraph 2: what is kept.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration opens these files on your Mac. From each reply it keeps only a hash of its id, its time, its model and what sets its price (speed, region, service tier), and its token and web-search counts. From the sign-in it keeps only which Claude account and organization were signed in, whether it was a subscription or an API key, when Claude Code last refreshed it, and when Ration read or switched it."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration ouvre ces fichiers sur votre Mac. De chaque réponse, il ne garde qu’une empreinte de son identifiant, son heure, son modèle et ce qui fixe son prix (vitesse, région, niveau de service), ainsi que ses nombres de jetons et de recherches web. De la connexion, il ne garde que le compte et l’organisation Claude connectés, s’il s’agissait d’un abonnement ou d’une clé API, quand Claude Code l’a actualisée pour la dernière fois, et quand Ration l’a lue ou changée."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration відкриває ці файли на вашому Mac. З кожної відповіді він зберігає лише хеш її ідентифікатора, час, модель і те, що визначає ціну (швидкість, регіон, рівень обслуговування), а також кількість токенів і вебпошуків. З даних входу — лише те, який обліковий запис і яка організація Claude були під’єднані, чи це була підписка, чи ключ API, коли Claude Code востаннє їх оновив і коли Ration їх прочитав або перемкнув."
+          }
+        }
+      }
+    },
+    "tokenBurn.consent.local" : {
+      "comment" : "Consent sheet, paragraph 5: nothing leaves the Mac; turning off deletes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing leaves your Mac. Turn this off at any time; Ration stops, forgets the folder and deletes what it counted."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien ne quitte votre Mac. Désactivez-le à tout moment : Ration s’arrête, oublie le dossier et supprime ce qu’il a compté."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ніщо не залишає ваш Mac. Вимкніть це будь-коли: Ration зупиниться, забуде теку й видалить усе, що полічив."
+          }
+        }
+      }
+    },
+    "tokenBurn.consent.never" : {
+      "comment" : "Consent sheet, paragraph 3: what is never kept or sent.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It never keeps or sends your prompts or replies, code, keys, or file and project names. It sees folder names while listing the logs, and forgets them."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il ne garde ni n’envoie jamais vos requêtes ou réponses, votre code, vos clés, ni les noms de fichiers et de projets. Il voit les noms de dossiers en listant les journaux, puis les oublie."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Він ніколи не зберігає й не надсилає ваші запити чи відповіді, код, ключі, назви файлів і проєктів. Назви тек він бачить, коли перелічує журнали, і відразу їх забуває."
+          }
+        }
+      }
+    },
+    "tokenBurn.consent.reads" : {
+      "comment" : "Consent sheet, paragraph 1: what is opened.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To estimate what your Claude Code use would cost at API prices, Ration reads Claude Code’s session logs in the folder you choose (normally ~/.claude/projects) and the sign-in section of ~/.claude.json."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour estimer ce que votre utilisation de Claude Code coûterait aux prix de l’API, Ration lit les journaux de session de Claude Code dans le dossier que vous choisissez (en principe ~/.claude/projects) et la section de connexion de ~/.claude.json."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Щоб оцінити, скільки коштувало б ваше використання Claude Code за цінами API, Ration читає журнали сеансів Claude Code у вибраній вами теці (зазвичай ~/.claude/projects) і розділ входу у ~/.claude.json."
+          }
+        }
+      }
+    },
+    "tokenBurn.consent.signInFile" : {
+      "comment" : "Consent sheet, paragraph 4: how ~/.claude.json is opened (the app's signed permission).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS lets Ration open ~/.claude.json without asking: that permission is part of the app’s signature and visible in its open source. For plan value Ration only reads it, and only while this is on. It changes it only when you switch Claude Code’s account."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS laisse Ration ouvrir ~/.claude.json sans demander : cette autorisation fait partie de la signature de l’app et se voit dans son code source ouvert. Pour la valeur du forfait, Ration ne fait que le lire, et seulement tant que c’est activé. Il ne le modifie que lorsque vous changez le compte de Claude Code."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS дозволяє Ration відкривати ~/.claude.json без запиту: цей дозвіл є частиною підпису застосунку, і його видно у відкритому коді. Для вартості плану Ration лише читає цей файл і лише поки функцію ввімкнено. Змінює він його тільки тоді, коли ви перемикаєте обліковий запис Claude Code."
+          }
+        }
+      }
+    },
+    "tokenBurn.consent.title" : {
+      "comment" : "Consent sheet title, before any file is opened.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Count Claude Code’s usage?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compter l’utilisation de Claude Code ?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Рахувати використання Claude Code?"
+          }
+        }
+      }
+    },
+    "tokenBurn.countedThrough" : {
+      "comment" : "Plan value status. %@ = date and time of the last pass.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Counted through %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compté jusqu’à %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Пораховано до %@"
+          }
+        }
+      }
+    },
+    "tokenBurn.counting" : {
+      "comment" : "Plan value status during a pass. First %lld = files done, second = files in the pass.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Counting… %lld of %lld files"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Décompte… %lld sur %lld fichiers"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Підрахунок… %lld з %lld файлів"
+          }
+        }
+      }
+    },
+    "tokenBurn.earlier" : {
+      "comment" : "Plan value: heading over the three periods before the current one.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Earlier"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Раніше"
+          }
+        }
+      }
+    },
+    "tokenBurn.enable.failed" : {
+      "comment" : "Settings › Features › Claude plan value, when turning it on failed (the folder could not be kept or the data could not be created). It stays off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration couldn’t turn this on. Try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration n’a pas pu l’activer. Réessayez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration не вдалося це ввімкнути. Спробуйте ще раз."
+          }
+        }
+      }
+    },
+    "tokenBurn.enable.noSignIn" : {
+      "comment" : "Settings › Features › Claude plan value, after consent and the folder, when ~/.claude.json has no Claude Code sign-in: the feature stays off. Keep ~/.claude.json verbatim.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code isn’t signed in on this Mac (no sign-in in ~/.claude.json), so there is nothing to count. Sign in to Claude Code, then turn this on."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code n’est pas connecté sur ce Mac (aucune connexion dans ~/.claude.json) : il n’y a rien à compter. Connectez-vous à Claude Code, puis activez cette option."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code не має входу на цьому Mac (у ~/.claude.json немає входу), тож рахувати нічого. Увійдіть у Claude Code, потім увімкніть це."
+          }
+        }
+      }
+    },
+    "tokenBurn.failed" : {
+      "comment" : "Plan value status: its store could not be opened.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not open the plan value data."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d’ouvrir les données de la valeur du forfait."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося відкрити дані вартості плану."
+          }
+        }
+      }
+    },
+    "tokenBurn.feature.summary" : {
+      "comment" : "Settings › General › Features: under the plan value switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What your Claude Code use would cost at API list prices, next to your plan. Off by default; reads local logs only after you agree."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que votre utilisation de Claude Code coûterait aux prix catalogue de l’API, à côté de votre forfait. Désactivé par défaut ; ne lit les journaux locaux qu’après votre accord."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скільки коштувало б ваше використання Claude Code за прейскурантними цінами API, поруч із вашим планом. Вимкнено за замовчуванням; читає локальні журнали лише після вашої згоди."
+          }
+        }
+      }
+    },
+    "tokenBurn.feature.title" : {
+      "comment" : "Settings › General › Features: the plan value switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude plan value"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valeur du forfait Claude"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вартість плану Claude"
+          }
+        }
+      }
+    },
+    "tokenBurn.folder" : {
+      "comment" : "Plan value status. %@ = the granted folder's own name, e.g. projects.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Folder: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dossier : %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Тека: %@"
+          }
+        }
+      }
+    },
+    "tokenBurn.forget" : {
+      "comment" : "Destructive button: stops plan value, forgets the folder, deletes the counts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop and forget"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrêter et oublier"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зупинити й забути"
+          }
+        }
+      }
+    },
+    "tokenBurn.forget.failed" : {
+      "comment" : "Shown when deleting the counts failed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not delete the counts — try again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de supprimer les décomptes — réessayez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося видалити підрахунки — спробуйте ще раз."
+          }
+        }
+      }
+    },
+    "tokenBurn.forget.question" : {
+      "comment" : "Confirmation when the plan value switch is turned off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop counting and delete what Ration counted?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrêter le décompte et supprimer ce que Ration a compté ?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зупинити підрахунок і видалити все, що Ration полічив?"
+          }
+        }
+      }
+    },
+    "tokenBurn.grantAgain" : {
+      "comment" : "Button: reopens the consent sheet and the folder picker.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant access again"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autoriser à nouveau l’accès"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Надати доступ знову"
+          }
+        }
+      }
+    },
+    "tokenBurn.grantLost" : {
+      "comment" : "Plan value status: the folder grant no longer works.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration can no longer open the folder."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration ne peut plus ouvrir le dossier."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration більше не може відкрити теку."
+          }
+        }
+      }
+    },
+    "tokenBurn.history.empty" : {
+      "comment" : "History, plan value mode, before the first count finishes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing counted yet."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien de compté pour l’instant."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ще нічого не пораховано."
+          }
+        }
+      }
+    },
+    "tokenBurn.history.modeSpoken" : {
+      "comment" : "VoiceOver name of the History mode segment for plan value (history.mode.planValue may only shorten it).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan value"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valeur du forfait"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вартість плану"
+          }
+        }
+      }
+    },
+    "tokenBurn.history.subtitle" : {
+      "comment" : "History, plan value mode: under the title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per day, at API list prices"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Par jour, aux prix catalogue de l’API"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "За день, за прейскурантними цінами API"
+          }
+        }
+      }
+    },
+    "tokenBurn.history.title" : {
+      "comment" : "History, plan value mode: title. %@ = the period title (tokenBurn.period.*.title).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan value · %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valeur du forfait · %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вартість плану · %@"
+          }
+        }
+      }
+    },
+    "tokenBurn.noUse" : {
+      "comment" : "Plan value when Ration has not yet seen this account signed in to Claude Code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Claude Code use seen yet."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune utilisation de Claude Code pour l’instant."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Використання Claude Code ще не видно."
+          }
+        }
+      }
+    },
+    "tokenBurn.note.atLeast" : {
+      "comment" : "Plan value footnote when the figure is a lower bound. %@ = a percentage like \"31%\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At least: %@ of the tokens come from logs that don’t record the speed and are priced at the standard rate."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Au moins : %@ des jetons viennent de journaux sans vitesse, comptés au tarif standard."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Щонайменше: %@ токенів — із журналів без швидкості, їх пораховано за стандартною ціною."
+          }
+        }
+      }
+    },
+    "tokenBurn.note.estimate" : {
+      "comment" : "Plan value footnote. %@ = the date of the bundled API price list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estimate at Anthropic’s API list prices of %@: what this use would have cost through the API, not a bill."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estimation aux prix catalogue de l’API d’Anthropic du %@ : ce que cette utilisation aurait coûté via l’API, pas une facture."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оцінка за прейскурантними цінами API Anthropic на %@: скільки це використання коштувало б через API, а не рахунок."
+          }
+        }
+      }
+    },
+    "tokenBurn.note.limits" : {
+      "comment" : "Plan value footnote: what Ration cannot see. Keep ANTHROPIC_API_KEY and ~/.claude.json verbatim.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use through ANTHROPIC_API_KEY or an API-key helper leaves no trace Ration can read: it is counted for whichever account ~/.claude.json names. Another tool that swaps Claude Code’s sign-in without a login can move use to the wrong account."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une utilisation via ANTHROPIC_API_KEY ou un assistant de clé API ne laisse aucune trace lisible par Ration : elle est comptée pour le compte que désigne ~/.claude.json. Un autre outil qui change la connexion de Claude Code sans nouvelle connexion peut attribuer l’utilisation au mauvais compte."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Використання через ANTHROPIC_API_KEY або помічник ключа API не лишає слідів, які Ration може прочитати: його зараховано обліковому запису, який названо в ~/.claude.json. Інший інструмент, що змінює вхід Claude Code без повторного входу, може приписати використання не тому обліковому запису."
+          }
+        }
+      }
+    },
+    "tokenBurn.owner.apiKey" : {
+      "comment" : "Plan value: a line for use that belongs to no single Claude account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Billed to an API key"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Facturé sur une clé API"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оплачено ключем API"
+          }
+        }
+      }
+    },
+    "tokenBurn.owner.notObserved" : {
+      "comment" : "Plan value: a line for use that belongs to no single Claude account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch not observed"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changement non observé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикання не зафіксовано"
+          }
+        }
+      }
+    },
+    "tokenBurn.owner.unassigned" : {
+      "comment" : "Plan value: a line for use that belongs to no single Claude account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unassigned"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non attribué"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не призначено"
+          }
+        }
+      }
+    },
+    "tokenBurn.owner.unclassified" : {
+      "comment" : "Plan value: a line for use that belongs to no single Claude account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unclassified sign-in"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connexion non classée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Некласифікований вхід"
+          }
+        }
+      }
+    },
+    "tokenBurn.panel.message" : {
+      "comment" : "Folder picker message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Claude Code’s projects folder (normally ~/.claude/projects)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez le dossier des projets de Claude Code (en principe ~/.claude/projects)."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Виберіть теку проєктів Claude Code (зазвичай ~/.claude/projects)."
+          }
+        }
+      }
+    },
+    "tokenBurn.panel.prompt" : {
+      "comment" : "Folder picker confirm button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autoriser"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Дозволити"
+          }
+        }
+      }
+    },
+    "tokenBurn.perAccountNote" : {
+      "comment" : "Settings › Plan Value and History: why per-account figures start later than the total. %@ = when Ration started tracking (date and time).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’s logs don’t say which account did the work, so per account Ration counts only the time since it started tracking (%@). The total for all Claude accounts covers the whole period."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les journaux de Claude Code n’indiquent pas quel compte a travaillé : par compte, Ration ne compte que le temps écoulé depuis le début de son suivi (%@). Le total de tous les comptes Claude couvre toute la période."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Журнали Claude Code не вказують, який обліковий запис виконав роботу, тож для кожного облікового запису Ration рахує лише час від початку відстеження (%@). Загальна сума для всіх облікових записів Claude охоплює весь період."
+          }
+        }
+      }
+    },
+    "tokenBurn.perAccountNote.notYet" : {
+      "comment" : "Settings › Plan Value and History, before Ration has read who is signed in to Claude Code.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Code’s logs don’t say which account did the work, so per account Ration counts only the time after it starts tracking. The total for all Claude accounts covers the whole period."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les journaux de Claude Code n’indiquent pas quel compte a travaillé : par compte, Ration ne compte que le temps après le début de son suivi. Le total de tous les comptes Claude couvre toute la période."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Журнали Claude Code не вказують, який обліковий запис виконав роботу, тож для кожного облікового запису Ration рахує лише час після початку відстеження. Загальна сума для всіх облікових записів Claude охоплює весь період."
+          }
+        }
+      }
+    },
+    "tokenBurn.period.billingCycle.title" : {
+      "comment" : "Plan value period: a picker option in Settings, or the title of the current period's row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Billing cycle"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cycle de facturation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цикл оплати"
+          }
+        }
+      }
+    },
+    "tokenBurn.period.cycle.phrase" : {
+      "comment" : "Plan value period inside a sentence, after \"·\" on a card (lowercase where the language allows).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "this billing cycle"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ce cycle de facturation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "цей цикл оплати"
+          }
+        }
+      }
+    },
+    "tokenBurn.period.cycle.title" : {
+      "comment" : "Plan value period: a picker option in Settings, or the title of the current period's row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This billing cycle"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce cycle de facturation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей цикл оплати"
+          }
+        }
+      }
+    },
+    "tokenBurn.period.label" : {
+      "comment" : "Settings › Claude account › Plan value: the picker for the period every figure covers.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Period"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Période"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Період"
+          }
+        }
+      }
+    },
+    "tokenBurn.period.last30Days.phrase" : {
+      "comment" : "Plan value period inside a sentence, after \"·\" on a card (lowercase where the language allows).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last 30 days"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 derniers jours"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "останні 30 днів"
+          }
+        }
+      }
+    },
+    "tokenBurn.period.last30Days.title" : {
+      "comment" : "Plan value period: a picker option in Settings, or the title of the current period's row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last 30 days"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 derniers jours"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Останні 30 днів"
+          }
+        }
+      }
+    },
+    "tokenBurn.period.last7Days.phrase" : {
+      "comment" : "Plan value period inside a sentence, after \"·\" on a card (lowercase where the language allows).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "last 7 days"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7 derniers jours"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "останні 7 днів"
+          }
+        }
+      }
+    },
+    "tokenBurn.period.last7Days.title" : {
+      "comment" : "Plan value period: a picker option in Settings, or the title of the current period's row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last 7 days"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7 derniers jours"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Останні 7 днів"
+          }
+        }
+      }
+    },
+    "tokenBurn.period.month.phrase" : {
+      "comment" : "Plan value period inside a sentence, after \"·\" on a card (lowercase where the language allows).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "this month"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ce mois-ci"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "цього місяця"
+          }
+        }
+      }
+    },
+    "tokenBurn.period.note" : {
+      "comment" : "Under the period picker. \"Billing\" is the Settings section with the renewal day (settings.section.billing).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For every Claude card, this section and History. Billing cycle uses the renewal day under Billing, else the calendar month."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour chaque carte Claude, cette section et l’historique. Le cycle de facturation suit le jour de renouvellement indiqué sous Facturation, sinon le mois civil."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Для кожної картки Claude, цього розділу та історії. Цикл оплати бере день поновлення з розділу «Оплата», інакше — календарний місяць."
+          }
+        }
+      }
+    },
+    "tokenBurn.period.thisMonth.title" : {
+      "comment" : "Plan value period: a picker option in Settings, or the title of the current period's row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This month"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce mois-ci"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей місяць"
+          }
+        }
+      }
+    },
+    "tokenBurn.pooled" : {
+      "comment" : "Plan value: heading over use that belongs to no single Claude account in the period.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not on an account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hors compte"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поза обліковими записами"
+          }
+        }
+      }
+    },
+    "tokenBurn.ratio" : {
+      "comment" : "Plan value against the plan price. %1$@ = a ratio like \"1.53×\"; %2$@ = the plan name (e.g. Max 20x); %3$@ = its monthly price like \"$200\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ the %2$@ price (%3$@ a month)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ le prix de %2$@ (%3$@ par mois)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ від ціни %2$@ (%3$@ на місяць)"
+          }
+        }
+      }
+    },
+    "tokenBurn.replies" : {
+      "comment" : "Plan value: number of Claude Code replies counted. %lld = the number.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replies: %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réponses : %lld"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відповідей: %lld"
+          }
+        }
+      }
+    },
+    "tokenBurn.since" : {
+      "comment" : "Plan value, under the current figure. %1$@ = a date and time (when Ration could first prove this account was signed in to Claude Code); %2$lld = number of replies.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Since %1$@ · replies: %2$lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depuis le %1$@ · réponses : %2$lld"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "З %1$@ · відповідей: %2$lld"
+          }
+        }
+      }
+    },
+    "tokenBurn.skipped" : {
+      "comment" : "Plan value status, shown only when something was not counted. %lld = files the last pass could not open, lines that were not a valid reply record, lines over the size limit.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unreadable files: %lld · malformed lines: %lld · lines too long: %lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fichiers illisibles : %lld · lignes mal formées : %lld · lignes trop longues : %lld"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нечитабельні файли: %lld · пошкоджені рядки: %lld · задовгі рядки: %lld"
+          }
+        }
+      }
+    },
+    "tokenBurn.tokens" : {
+      "comment" : "Plan value: heading over the current period's token counts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tokens"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jetons"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Токени"
+          }
+        }
+      }
+    },
+    "tokenBurn.tokens.cacheRead" : {
+      "comment" : "Plan value: a kind of token Claude Code used (Cache reads).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache reads"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lectures du cache"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Читання з кешу"
+          }
+        }
+      }
+    },
+    "tokenBurn.tokens.cacheSplit" : {
+      "comment" : "Plan value, under \"Cache writes\": %1$@ = tokens cached for 5 minutes, %2$@ = for 1 hour (compact numbers like 10.3M).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5-minute %1$@ · 1-hour %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 minutes %1$@ · 1 heure %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5 хвилин %1$@ · 1 година %2$@"
+          }
+        }
+      }
+    },
+    "tokenBurn.tokens.cacheWrite" : {
+      "comment" : "Plan value: a kind of token Claude Code used (Cache writes).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache writes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écritures du cache"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Записи в кеш"
+          }
+        }
+      }
+    },
+    "tokenBurn.tokens.input" : {
+      "comment" : "Plan value: a kind of token Claude Code used (Input).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Input"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entrée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вхідні токени"
+          }
+        }
+      }
+    },
+    "tokenBurn.tokens.output" : {
+      "comment" : "Plan value: a kind of token Claude Code used (Output).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Output"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sortie"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вихідні токени"
+          }
+        }
+      }
+    },
+    "tokenBurn.total.label" : {
+      "comment" : "Settings › Plan Value and History: the row for all Claude Code use in the period, whichever account it was.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Claude accounts"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tous les comptes Claude"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Усі облікові записи Claude"
+          }
+        }
+      }
+    },
+    "tokenBurn.total.line" : {
+      "comment" : "Popover, under the Claude group header: all Claude Code use in the period, whichever account it was. %1$@ = a dollar amount, maybe \"≥ \"; %2$@ = the period, lowercase (tokenBurn.period.*.phrase).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Claude accounts: %1$@ at API prices · %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tous les comptes Claude : %1$@ aux prix de l’API · %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Усі облікові записи Claude: %1$@ за цінами API · %2$@"
           }
         }
       }

@@ -86,6 +86,11 @@ struct MenuBarView: View {
     /// API spend: its cards join the list (after the provider groups, or in
     /// the saved Settings order once the user has dragged it).
     var apiSpend: APISpendModel? = nil
+    /// Claude Code switching (`withClaudeCode`).
+    var claudeCode: ClaudeCodeModel? = nil
+    /// Plan value: the line on Claude cards.
+    var tokenBurn: TokenBurnModel? = nil
+    var onClaudeCodeStatus: () -> Void = {}
     /// A click on the header's STALE / OFFLINE word: open Settings on the
     /// account to fix, or refresh everything.
     var onFreshnessAction: (FreshnessHelp.Target) -> Void = { _ in }
@@ -585,7 +590,17 @@ struct MenuBarView: View {
         }
     }
 
+    /// Observes the Claude Code model when there is one, for its Focus line.
+    @ViewBuilder
     private var focusBody: some View {
+        if let claudeCode {
+            ClaudeCodeReader(model: claudeCode) { focusTimeline }
+        } else {
+            focusTimeline
+        }
+    }
+
+    private var focusTimeline: some View {
         TimelineView(PopoverClock(pinned: pinnedNow)) { context in
             let focus: FocusModel = focusModel(context.date)
             if focus.emptyState == .noAccounts {
@@ -601,6 +616,11 @@ struct MenuBarView: View {
                     onProblem: onFreshnessAction,
                     onProblemHover: { id, event in
                         badgeHoverChanged(id, event: event)
+                    },
+                    claudeCode: claudeCode?.focusLine(now: context.date),
+                    claudeCodeBusy: claudeCode?.isSwitching ?? false,
+                    onClaudeCodeSwitch: { [claudeCode] accountID in
+                        Task { await claudeCode?.useInClaudeCode(accountID: accountID) }
                     }
                 )
                 .fixedSize(horizontal: false, vertical: true)
@@ -688,6 +708,24 @@ struct MenuBarView: View {
     /// API account or a fresh report redraws the list.
     @ViewBuilder
     private var accountList: some View {
+        if let tokenBurn {
+            TokenBurnReader(model: tokenBurn) { claudeCodeAwareList }
+        } else {
+            claudeCodeAwareList
+        }
+    }
+
+    @ViewBuilder
+    private var claudeCodeAwareList: some View {
+        if let claudeCode {
+            ClaudeCodeReader(model: claudeCode) { apiAwareList }
+        } else {
+            apiAwareList
+        }
+    }
+
+    @ViewBuilder
+    private var apiAwareList: some View {
         if let apiSpend {
             APISpendReader(model: apiSpend) { cardList(api: $0) }
         } else {
@@ -719,6 +757,12 @@ struct MenuBarView: View {
                     switch run.kind {
                     case .provider(let provider):
                         sectionHeader(provider)
+                        if provider == .claude, run.id == runs.first(where: { $0.kind == .provider(.claude) })?.id {
+                            if let tokenBurn, tokenBurn.isEnabled, tokenBurn.phase != .grantLost, let total = tokenBurn.total {
+                                TokenBurnTotalLineView(text: TokenBurnCopy.totalLine(total, choice: tokenBurn.period))
+                            }
+                            claudeCodeStatusLine(now: now)
+                        }
                         ForEach(Array(run.subscriptions.enumerated()), id: \.element.id) { index, presentation in
                             accountCard(presentation)
                             if index < run.subscriptions.count - 1 { cardDivider }
@@ -766,9 +810,30 @@ struct MenuBarView: View {
             onProblem: onFreshnessAction,
             onProblemHover: { event in
                 badgeHoverChanged(presentation.id, event: event)
-            }
+            },
+            claudeCode: claudeCode?.cardState(for: presentation.id) ?? .none,
+            claudeCodeBusy: claudeCode?.isSwitching ?? false,
+            onUseInClaudeCode: { [claudeCode] in
+                Task { await claudeCode?.useInClaudeCode(accountID: presentation.id) }
+            },
+            planValue: presentation.account.provider == .claude && tokenBurn?.isEnabled == true
+                ? TokenBurnCardLine.make(tokenBurn?.values[presentation.id], trackingSince: tokenBurn?.trackingSince,
+                                         grantLost: tokenBurn?.phase == .grantLost) : nil
         )
         .background(bottomReporter(presentation.id))
+    }
+
+    @ViewBuilder
+    private func claudeCodeStatusLine(now: Date) -> some View {
+        if let claudeCode,
+           let line = ClaudeCodeStatusLine.make(
+               state: claudeCode.state,
+               rememberPrompt: claudeCode.rememberPrompt.map { $0.organizationName ?? $0.uuid },
+               label: claudeCode.displayLabel(forSignIn:),
+               now: now
+           ) {
+            ClaudeCodeStatusLineView(line: line, action: onClaudeCodeStatus)
+        }
     }
 
     /// Where a card ends, for the four-card cap.
@@ -1130,6 +1195,37 @@ extension MenuBarView {
         copy.apiSpend = model
         return copy
     }
+
+    /// Claude Code switching: the card controls, the Focus line, and the
+    /// status line whose click opens Settings.
+    func withClaudeCode(_ model: ClaudeCodeModel?, onStatus: @escaping () -> Void) -> MenuBarView {
+        var copy = self
+        copy.claudeCode = model
+        copy.onClaudeCodeStatus = onStatus
+        return copy
+    }
+
+    func withTokenBurn(_ model: TokenBurnModel?) -> MenuBarView {
+        var copy = self
+        copy.tokenBurn = model
+        return copy
+    }
+}
+
+/// Re-renders its content whenever the Claude Code model publishes.
+private struct ClaudeCodeReader<Content: View>: View {
+    @ObservedObject var model: ClaudeCodeModel
+    @ViewBuilder let content: () -> Content
+
+    var body: some View { content() }
+}
+
+/// Re-renders its content whenever plan value publishes.
+private struct TokenBurnReader<Content: View>: View {
+    @ObservedObject var model: TokenBurnModel
+    @ViewBuilder let content: () -> Content
+
+    var body: some View { content() }
 }
 
 /// Re-renders its content whenever the API model publishes.

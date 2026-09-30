@@ -44,8 +44,8 @@ final class AlertsGridModelTests: XCTestCase {
     /// The fixed rows must stay in their intended display order and grouping:
     /// General and Warm-up together, Alerts visually separated below.
     func testAlertsRendersInItsOwnGroupBelowGeneralAndWarmUp() {
-        XCTAssertEqual(SettingsSidebar.fixedSelections, [.general, .warmUp, .alerts])
+        XCTAssertEqual(SettingsSidebar.fixedSelections, [.general, .warmUp, .alerts, .claudeCode])
         XCTAssertEqual(SettingsSidebar.fixedGroups.count, 2)
-        XCTAssertEqual(SettingsSidebar.fixedGroups.last?.map(\.selection), [.alerts])
+        XCTAssertEqual(SettingsSidebar.fixedGroups.last?.map(\.selection), [.alerts, .claudeCode])
     }
 }

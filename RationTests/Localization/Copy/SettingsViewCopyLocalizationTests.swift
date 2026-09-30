@@ -14,26 +14,26 @@ final class SettingsViewCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(
             SettingsSectionTitle.all(locale: L10n.en),
             ["Accounts", "General", "Menu Bar", "Features", "Identity", "Automation", "Resets", "Billing",
-             "Session", "Quiet Hours", "Holidays", "Cursor Spend"]
+             "Session", "Quiet Hours", "Holidays", "Cursor Spend", "Plan Value"]
         )
         XCTAssertEqual(
             SettingsSectionTitle.all(locale: L10n.fr),
             ["Comptes", "Général", "Barre des menus", "Fonctionnalités", "Identité", "Automatisation",
-             "Réinitialisations", "Facturation", "Session", "Heures calmes", "Jours fériés", "Dépenses Cursor"]
+             "Réinitialisations", "Facturation", "Session", "Heures calmes", "Jours fériés", "Dépenses Cursor", "Valeur du forfait"]
         )
         XCTAssertEqual(
             SettingsSectionTitle.all(locale: L10n.uk),
             ["Облікові записи", "Загальні", "Рядок меню", "Функції", "Ідентифікація", "Автоматизація",
-             "Скидання", "Оплата", "Сеанс", "Тихі години", "Вихідні дні", "Витрати Cursor"]
+             "Скидання", "Оплата", "Сеанс", "Тихі години", "Вихідні дні", "Витрати Cursor", "Вартість плану"]
         )
     }
 
-    /// "General" is quoted by 4b's copy (Général / «Загальні»): the sidebar
-    /// item must carry the same name.
+    /// "General" is quoted by the warm-up-off note (Général / «Загальні»):
+    /// the sidebar item must carry the same name.
     func testSidebarItemsInEveryLanguage() {
-        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.en), ["General", "Warm-up", "Alerts"])
-        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.fr), ["Général", "Préchauffage", "Alertes"])
-        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.uk), ["Загальні", "Розігрів", "Сповіщення"])
+        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.en), ["General", "Warm-up", "Alerts", "Claude Code"])
+        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.fr), ["Général", "Préchauffage", "Alertes", "Claude Code"])
+        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.uk), ["Загальні", "Розігрів", "Сповіщення", "Claude Code"])
         XCTAssertTrue(
             FeatureSwitch.warmUpOffNote(locale: L10n.uk).contains("«\(SettingsSidebar.fixedTitles(locale: L10n.uk)[0])»")
         )
@@ -225,7 +225,7 @@ final class SettingsViewCopyLocalizationTests: XCTestCase {
             ("quiet", "heure calme", "тиха година"),
             ("Skip", "Ignorer", "Пропустити"),
             ("Save", "Enregistrer", "Зберегти"),
-            // Reused from Task 5.
+            // Keys shared with other screens.
             ("Layout", "Disposition", "Макет"),
             ("Add Account", "Ajouter un compte", "Додати обліковий запис"),
         ]

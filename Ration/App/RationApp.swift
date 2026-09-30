@@ -8,6 +8,7 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
     weak var launchAtLogin: LaunchAtLoginController?
     /// API spend: threaded to the menu bar; stopped on quit.
     weak var apiSpend: APISpendModel?
+    weak var claudeCode: ClaudeCodeModel?
     private var appRefresh: AppRefresh?
     private var hotKeyRegistrar: (any GlobalHotKeyRegistering)?
     /// Dock + ⌘-Tab presence while any Ration window is open — see `DockPresence`.
@@ -53,11 +54,13 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
         launchAtLogin: LaunchAtLoginController,
         hotKeyRegistrar: any GlobalHotKeyRegistering = CarbonHotKeyRegistrar(),
         apiSpend: APISpendModel? = nil,
+        claudeCode: ClaudeCodeModel? = nil,
         appRefresh: AppRefresh? = nil
     ) {
         self.model = model
         self.launchAtLogin = launchAtLogin
         self.apiSpend = apiSpend
+        self.claudeCode = claudeCode
         self.appRefresh = appRefresh
         self.hotKeyRegistrar = hotKeyRegistrar
         startMenuBarIfReady()
@@ -245,6 +248,7 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
             hotKeyRegistrar: hotKeyRegistrar ?? CarbonHotKeyRegistrar(),
             refreshAll: appRefresh?.refreshAll,
             apiSpend: apiSpend,
+            claudeCode: claudeCode,
             appRefresh: appRefresh
         )
         menuBarController = controller
@@ -262,6 +266,8 @@ struct RationApp: App {
     @StateObject private var model: AppModel
     @StateObject private var launchAtLogin: LaunchAtLoginController
     @StateObject private var apiSpend: APISpendModel
+    @StateObject private var claudeCode: ClaudeCodeModel
+    @StateObject private var tokenBurn: TokenBurnModel
     private let isUITesting: Bool
 
     init() {
@@ -317,6 +323,21 @@ struct RationApp: App {
             whenOpened: [{ await model.refreshWhenOpened() }, { await apiSpend.refreshWhenOpened() }]
         )
         _apiSpend = StateObject(wrappedValue: apiSpend)
+        // Claude Code switching: its own stack too. Nothing here touches the
+        // Keychain or ~/.claude.json until `start()`, which the unit-test host
+        // never runs.
+        let claudeCode = ClaudeCodeModel.live(stateDirectory: apiBase)
+        claudeCode.bridge = model
+        model.claudeCode = claudeCode
+        _claudeCode = StateObject(wrappedValue: claudeCode)
+        // Claude plan value: off until the user consents and grants the
+        // folder; `start()` reads nothing while it is off.
+        let tokenBurn = TokenBurnModel.live(directory: apiBase)
+        model.tokenBurn = tokenBurn
+        // The switcher's writes are evidence; its links bind sign-ins.
+        claudeCode.writeObserver = tokenBurn
+        tokenBurn.linksProvider = { [weak claudeCode] in claudeCode?.state.links ?? [:] }
+        _tokenBurn = StateObject(wrappedValue: tokenBurn)
         self.isUITesting = isUITesting
         _model = StateObject(wrappedValue: model)
         _launchAtLogin = StateObject(wrappedValue: launchAtLogin)
@@ -337,6 +358,7 @@ struct RationApp: App {
             model: model,
             launchAtLogin: launchAtLogin,
             apiSpend: apiSpend,
+            claudeCode: claudeCode,
             appRefresh: appRefresh
         )
 
@@ -354,6 +376,8 @@ struct RationApp: App {
                 await model.start()
                 // After AppModel's start (its alert gate reads `alertsReady`).
                 await apiSpend.start()
+                await claudeCode.start()
+                await tokenBurn.start()
                 // Only now can the wizard's predicate be answered: `start()`
                 // is what loads `AppSettings`.
                 delegate.presentOnboardingIfNeeded()
@@ -400,8 +424,8 @@ struct RationApp: App {
                 launchAtLogin: launchAtLogin,
                 appearance: appDelegate.appearance,
                 onOpenSetupGuide: openSetupGuide,
-                onShowTestDrop: showTestDrop,
-                apiSpend: apiSpend
+                apiSpend: apiSpend,
+                claudeCode: claudeCode
             )
         }
         .defaultSize(width: SettingsView.minimumWindowWidth, height: 564)
@@ -440,13 +464,6 @@ struct RationApp: App {
     /// The delegate is captured from the adaptor rather than looked up via
     /// `NSApp.delegate`, which does NOT vend the adaptor instance back (a cast
     /// to `RationApplicationDelegate` returns nil — verified at runtime).
-    /// The drop has one owner too, `MenuBarController`; the scene reaches it
-    /// the same way the Setup Guide does.
-    private var showTestDrop: () -> Void {
-        let delegate = appDelegate
-        return SettingsTestDrop.action { delegate.menuBarController }
-    }
-
     private var openSetupGuide: () -> Void {
         let delegate = appDelegate
         return {
@@ -491,6 +508,8 @@ struct MenuBarContent: View {
     var onSettingsSelecting: ((SettingsSelection) -> Void)?
     /// API spend: its cards in the popover, and the shared refresh.
     var apiSpend: APISpendModel? = nil
+    /// Claude Code switching: the row on Claude cards, the status line.
+    var claudeCode: ClaudeCodeModel? = nil
     var appRefresh: AppRefresh? = nil
 
     var body: some View {
@@ -592,6 +611,10 @@ struct MenuBarContent: View {
             }
         )
         .withAPISpend(apiSpend)
+        .withClaudeCode(claudeCode, onStatus: {
+            if let onSettingsSelecting { onSettingsSelecting(.claudeCode) } else { onSettings() }
+        })
+        .withTokenBurn(model.tokenBurn)
         .tint(Theme.gold)
     }
 
@@ -733,9 +756,8 @@ struct SettingsWindowContent: View {
     @ObservedObject var launchAtLogin: LaunchAtLoginController
     let appearance: AppearanceController
     let onOpenSetupGuide: () -> Void
-    /// Required, not optional: the scene must never drop Diagnostics.
-    let onShowTestDrop: () -> Void
     var apiSpend: APISpendModel? = nil
+    var claudeCode: ClaudeCodeModel? = nil
 
     var body: some View {
         settingsView
@@ -759,8 +781,8 @@ struct SettingsWindowContent: View {
                 openWindow(id: "sign-in", value: sessionID)
             },
             onOpenSetupGuide: onOpenSetupGuide,
-            onShowTestDrop: onShowTestDrop,
-            apiSpend: apiSpend
+            apiSpend: apiSpend,
+            claudeCode: claudeCode
         )
     }
 }

@@ -16,7 +16,6 @@ final class APISettingsWiringTests: APISpendModelTestCase {
             launchAtLogin: LaunchAtLoginController(),
             appearance: AppearanceController(),
             onOpenSetupGuide: {},
-            onShowTestDrop: {},
             apiSpend: apiSpend
         )
 

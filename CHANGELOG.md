@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.9.0
+
+- Claude Code account switching: move Claude Code to another of your Claude
+  accounts in one click, with the Switch button on a Claude card or the Claude
+  Code line in Focus. The card of the account Claude Code uses wears a CLAUDE
+  CODE tag. Open Claude Code sessions follow within 30 seconds, with no new
+  login and no restart. Remember each account's sign-in once in Settings ›
+  Claude Code; Ration keeps its copy in your login Keychain (not synced) and
+  sends it nowhere.
+- Automatic switching (off until you turn it on): when the account Claude Code
+  uses passes the limit you choose (75% of the weekly limit by default, or the
+  5-hour or Fable limit), Ration moves Claude Code to the remembered account
+  with the most room, never to one already past it, and tells you. A switch
+  that can't complete is undone, and automatic switching pauses until you
+  resume it.
+- Claude plan value (off until you turn it on): what your Claude Code use
+  would cost at Anthropic's API list prices, next to your plan. After you agree
+  and choose Claude Code's projects folder, Ration counts its local session
+  logs. The popover shows the total for all your Claude accounts over the last
+  30 days (or 7 days, this month, or the billing cycle), each Claude card shows
+  its own share, Settings breaks it down by model and tokens, and History has
+  daily bars. Claude Code's logs don't say which account did the work, so per
+  account Ration counts only the time since it started tracking. It keeps a
+  hash of each reply's id, its time, model and token counts, never prompts,
+  replies, code or file names, and Stop and forget deletes everything it
+  counted.
+- The suggestion of which account to switch to no longer appears while you are
+  already using an account with room.
+
 ## 1.8.1
 
 - After you dismiss the alerts drop, the popover says it is hidden until a

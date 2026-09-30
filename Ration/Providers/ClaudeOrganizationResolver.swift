@@ -79,6 +79,9 @@ final class ClaudeOrganizationResolver {
     private var planAttemptAt: [String: Date] = [:]
     /// One list request at a time per org: accounts sharing an org join it.
     private var planInFlight: [String: Task<PlanDetection?, Error>] = [:]
+    /// Callers that joined an in-flight read instead of starting one: lets a
+    /// test wait until a concurrent caller has really joined, not guess with yields.
+    private(set) var planJoinsForTesting = 0
     static let planCacheLifetime: TimeInterval = 30 * 60
     private let now: @MainActor () -> Date
 
@@ -106,6 +109,7 @@ final class ClaudeOrganizationResolver {
         in webView: WKWebView
     ) async throws -> PlanDetection? {
         if let running = planInFlight[organizationID] {
+            planJoinsForTesting += 1
             return try? await running.value
         }
         let moment: Date = now()
