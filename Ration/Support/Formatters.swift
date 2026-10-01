@@ -90,6 +90,34 @@ enum UsageFormatters {
         value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)).locale(languageLocale(for: locale)))
     }
 
+    /// An amount in its own currency (Claude usage credits: "€10.00",
+    /// "10,00 €", "10,00 EUR"), with as many decimals as the currency has.
+    /// Formatted for the app language alone, like `usd`, so the region never
+    /// changes English. U+202F becomes U+00A0: Space Mono and JetBrains Mono
+    /// have no U+202F glyph.
+    static func money(_ money: Money, locale: Locale = .current) -> String {
+        money.decimalValue.formatted(
+            .currency(code: money.currency)
+                .precision(.fractionLength(money.exponent))
+                .locale(languageLocale(for: locale))
+        )
+        .replacingOccurrences(of: narrowNbsp, with: nbsp)
+    }
+
+    /// A count of credits (ChatGPT Codex credits): grouped, up to two
+    /// decimals, in the app language ("1,250", "1 250", "12.5"). A positive
+    /// amount under 0.01 keeps its digits ("0.001") so it never reads as 0.
+    /// U+202F becomes U+00A0 for the monospaced faces, as in `money`.
+    static func creditCount(_ value: Decimal, locale: Locale = .current) -> String {
+        let fraction: ClosedRange<Int> = value > 0 && value < Decimal(string: "0.01")! ? 0...8 : 0...2
+        return value.formatted(
+            Decimal.FormatStyle(locale: languageLocale(for: locale))
+                .precision(.fractionLength(fraction))
+                .grouping(.automatic)
+        )
+        .replacingOccurrences(of: narrowNbsp, with: nbsp)
+    }
+
     private static func languageLocale(for locale: Locale) -> Locale {
         let shipped: Locale = LocalizedCopy.shippedLocale(for: locale)
         return Locale(identifier: shipped.language.languageCode?.identifier ?? "en")

@@ -44,9 +44,10 @@ enum StatusItemFactory {
     /// Renders the usage rings onto the status item button: one ring per
     /// visible account, stroke-filled in its provider's brand accent
     /// proportionally to the gauge's fraction, with a green center dot on
-    /// accounts in the bright IN USE phase — or back to the bare template
-    /// icon when there are no gauges (toggle off, or no account reports a
-    /// rate window). The tooltip and accessibility label carry the names and
+    /// accounts in the bright IN USE phase — the icon hidden while rings show
+    /// (the rings already mark the item) — or back to the
+    /// bare template icon when there are no gauges (no accounts, toggle off,
+    /// or no account reports a rate window). The tooltip and accessibility label carry the names and
     /// exact values — the ring alone never has to be decoded.
     static func applyGauges(
         _ gauges: [MenuBarGauge],
@@ -63,7 +64,8 @@ enum StatusItemFactory {
             button.attributedTitle = ringsTitle(
                 for: gauges, appearance: button.effectiveAppearance
             )
-            button.imagePosition = .imageLeft
+            // The image stays on the button, so no gauges brings it back.
+            button.imagePosition = .noImage
         }
         let toolTip = toolTip(for: gauges, displaysRemaining: displaysRemaining)
         button.toolTip = toolTip
@@ -86,7 +88,7 @@ enum StatusItemFactory {
                 inUse: gauge.inUse,
                 appearance: appearance
             )
-            // Dropped baseline so the ring optically centers on the icon.
+            // Dropped baseline so the ring sits optically centred in the bar.
             attachment.bounds = CGRect(
                 x: 0, y: -2.5, width: ringPointSize, height: ringPointSize
             )
@@ -263,6 +265,15 @@ enum StatusItemFactory {
         let name: String = gauge.label.caseInsensitiveCompare(gauge.source.displayName) == .orderedSame
             ? gauge.label
             : "\(gauge.source.displayName) \(gauge.label)"
+        if let credit = gauge.credit {
+            // The money, not a percentage: "TypeSafe Lab $26.58 of $30.00 credit left".
+            let granted: String = UsageFormatters.money(credit.granted, locale: locale)
+            if displaysRemaining {
+                return LocalizedStringResource.statusItemTooltipCreditLeft(name, UsageFormatters.money(credit.balance, locale: locale), granted).string(in: locale)
+            }
+            let used: String = credit.used.map { UsageFormatters.money($0, locale: locale) } ?? ""
+            return LocalizedStringResource.statusItemTooltipCreditUsed(name, used, granted).string(in: locale)
+        }
         let window: String = gauge.windowKind.map { windowLabel($0, locale: locale) } ?? ""
         let resource: LocalizedStringResource = displaysRemaining
             ? .statusItemTooltipLeft(name, window, percent)

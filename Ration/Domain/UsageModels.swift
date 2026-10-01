@@ -83,9 +83,24 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
     /// ONLY; the durable home of the plan is `AccountRecord.plan`. nil = the
     /// plan field was not read this fetch.
     let planDetection: PlanDetection?
+    /// Claude usage credits, from their own background read (never from the
+    /// usage fetch itself). nil = never read; carried forward by the store.
+    let usageCredits: UsageCredits?
+    /// Whether claude.ai spends usage credits once a plan limit is hit (its
+    /// "Turn on usage credits" switch), read by the usage fetch. nil = not
+    /// read this fetch; carried forward by the store.
+    let usageCreditsEnabled: Bool?
+    /// ChatGPT Codex credits, read by the usage fetch. nil = not read this
+    /// fetch; carried forward by the store.
+    let codexCredits: CodexCredits?
+    /// TypeSafe's billing cycle. nil = not read this fetch; carried forward.
+    let typeSafeSpend: TypeSafeSpend?
+    /// TypeSafe's per-day usage. nil = not read this fetch; carried forward.
+    let typeSafeDailyUsage: TypeSafeDailyUsage?
 
     enum CodingKeys: String, CodingKey {
         case accountID, fetchedAt, fiveHour, weekly, modelWeekly, cursorSpend, resetCredits
+        case usageCredits, usageCreditsEnabled, codexCredits, typeSafeSpend, typeSafeDailyUsage
     }
 
     init(
@@ -97,7 +112,12 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         cursorSpend: CursorSpend? = nil,
         organizationID: String? = nil,
         resetCredits: ResetCredits? = nil,
-        planDetection: PlanDetection? = nil
+        planDetection: PlanDetection? = nil,
+        usageCredits: UsageCredits? = nil,
+        usageCreditsEnabled: Bool? = nil,
+        codexCredits: CodexCredits? = nil,
+        typeSafeSpend: TypeSafeSpend? = nil,
+        typeSafeDailyUsage: TypeSafeDailyUsage? = nil
     ) {
         self.accountID = accountID
         self.fetchedAt = fetchedAt
@@ -108,6 +128,11 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         self.organizationID = organizationID
         self.resetCredits = resetCredits
         self.planDetection = planDetection
+        self.usageCredits = usageCredits
+        self.usageCreditsEnabled = usageCreditsEnabled
+        self.codexCredits = codexCredits
+        self.typeSafeSpend = typeSafeSpend
+        self.typeSafeDailyUsage = typeSafeDailyUsage
     }
 
     init(from decoder: any Decoder) throws {
@@ -120,6 +145,12 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         cursorSpend = try c.decodeIfPresent(CursorSpend.self, forKey: .cursorSpend)
         // Lossy: a malformed list must never cost the account its snapshot.
         resetCredits = try? c.decodeIfPresent(ResetCredits.self, forKey: .resetCredits)
+        // Lossy like `resetCredits`: a malformed value costs only itself.
+        usageCredits = (try? c.decodeIfPresent(UsageCredits.self, forKey: .usageCredits)) ?? nil
+        usageCreditsEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .usageCreditsEnabled)) ?? nil
+        codexCredits = (try? c.decodeIfPresent(CodexCredits.self, forKey: .codexCredits)) ?? nil
+        typeSafeSpend = (try? c.decodeIfPresent(TypeSafeSpend.self, forKey: .typeSafeSpend)) ?? nil
+        typeSafeDailyUsage = (try? c.decodeIfPresent(TypeSafeDailyUsage.self, forKey: .typeSafeDailyUsage)) ?? nil
         organizationID = nil
         planDetection = nil
     }
@@ -143,8 +174,56 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         }
     }
 
+    /// The usage-credits reading was applied THIS SESSION for this snapshot's
+    /// own organization. Only then may anything warn about its expiry; a
+    /// reading restored from disk or carried across a workspace switch shows
+    /// its balance and nothing more.
+    /// Also true for a reading this snapshot's OWN fetch made in this session
+    /// (TypeSafe reads its balance with the usage fetch): a carried one keeps
+    /// its older `fetchedAt`, and one restored from disk is not
+    /// `readThisSession`.
+    var usageCreditsVerified: Bool {
+        guard let credits = usageCredits else { return false }
+        if credits.readThisSession, credits.fetchedAt == fetchedAt { return true }
+        guard let readFor = credits.organizationID else { return false }
+        return readFor == organizationID
+    }
+
     /// Same snapshot, different reset list — the store's carry-forward uses it.
     func replacingResetCredits(_ credits: ResetCredits?) -> UsageSnapshot {
+        replacing(resetCredits: credits, usageCredits: usageCredits, usageCreditsEnabled: usageCreditsEnabled, codexCredits: codexCredits, typeSafeSpend: typeSafeSpend)
+    }
+
+    /// Same snapshot, different usage-credits reading.
+    func replacingUsageCredits(_ credits: UsageCredits?) -> UsageSnapshot {
+        replacing(resetCredits: resetCredits, usageCredits: credits, usageCreditsEnabled: usageCreditsEnabled, codexCredits: codexCredits, typeSafeSpend: typeSafeSpend)
+    }
+
+    /// Same snapshot, different usage-credits switch state.
+    func replacingUsageCreditsEnabled(_ enabled: Bool?) -> UsageSnapshot {
+        replacing(resetCredits: resetCredits, usageCredits: usageCredits, usageCreditsEnabled: enabled, codexCredits: codexCredits, typeSafeSpend: typeSafeSpend)
+    }
+
+    /// Same snapshot, different TypeSafe spend reading.
+    func replacingTypeSafeSpend(_ spend: TypeSafeSpend?) -> UsageSnapshot {
+        replacing(resetCredits: resetCredits, usageCredits: usageCredits, usageCreditsEnabled: usageCreditsEnabled, codexCredits: codexCredits, typeSafeSpend: spend)
+    }
+
+    /// Same snapshot, different Codex credits reading.
+    func replacingCodexCredits(_ credits: CodexCredits?) -> UsageSnapshot {
+        replacing(resetCredits: resetCredits, usageCredits: usageCredits, usageCreditsEnabled: usageCreditsEnabled, codexCredits: credits, typeSafeSpend: typeSafeSpend)
+    }
+
+    /// The one rebuild every `replacing…` goes through, so a new field is
+    /// added in one place and none of them can drop it.
+    private func replacing(
+        resetCredits: ResetCredits?,
+        usageCredits: UsageCredits?,
+        usageCreditsEnabled: Bool?,
+        codexCredits: CodexCredits?,
+        typeSafeSpend: TypeSafeSpend?,
+        typeSafeDailyUsage: TypeSafeDailyUsage? = nil
+    ) -> UsageSnapshot {
         UsageSnapshot(
             accountID: accountID,
             fetchedAt: fetchedAt,
@@ -153,8 +232,24 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
             modelWeekly: modelWeekly,
             cursorSpend: cursorSpend,
             organizationID: organizationID,
-            resetCredits: credits,
-            planDetection: planDetection
+            resetCredits: resetCredits,
+            planDetection: planDetection,
+            usageCredits: usageCredits,
+            usageCreditsEnabled: usageCreditsEnabled,
+            codexCredits: codexCredits,
+            typeSafeSpend: typeSafeSpend,
+            typeSafeDailyUsage: typeSafeDailyUsage ?? self.typeSafeDailyUsage
+        )
+    }
+
+    /// Same snapshot, different TypeSafe daily usage.
+    func replacingTypeSafeDailyUsage(_ usage: TypeSafeDailyUsage?) -> UsageSnapshot {
+        UsageSnapshot(
+            accountID: accountID, fetchedAt: fetchedAt, fiveHour: fiveHour, weekly: weekly,
+            modelWeekly: modelWeekly, cursorSpend: cursorSpend, organizationID: organizationID,
+            resetCredits: resetCredits, planDetection: planDetection, usageCredits: usageCredits,
+            usageCreditsEnabled: usageCreditsEnabled, codexCredits: codexCredits,
+            typeSafeSpend: typeSafeSpend, typeSafeDailyUsage: usage
         )
     }
 }

@@ -221,6 +221,10 @@ enum AlertChannelKey {
             AppSettingsData.apiBudgetsKey
         case .resetCreditAvailable, .resetCreditExpiring:
             AppSettingsData.resetCreditsKey(provider: provider)
+        case .usageCreditExpiring:
+            AppSettingsData.usageCreditsKey(provider: provider)
+        case .lowBalance:
+            AppSettingsData.lowBalanceKey(provider: provider)
         case .reset, .reauthRequired, .rateLimited:
             nil
         }

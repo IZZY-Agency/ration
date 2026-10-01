@@ -14,17 +14,17 @@ final class SettingsViewCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(
             SettingsSectionTitle.all(locale: L10n.en),
             ["Accounts", "General", "Menu Bar", "Features", "Identity", "Automation", "Resets", "Billing",
-             "Session", "Quiet Hours", "Holidays", "Cursor Spend", "Plan Value"]
+             "Session", "Quiet Hours", "Holidays", "Cursor Spend", "Plan Value", "Usage Credits"]
         )
         XCTAssertEqual(
             SettingsSectionTitle.all(locale: L10n.fr),
             ["Comptes", "Général", "Barre des menus", "Fonctionnalités", "Identité", "Automatisation",
-             "Réinitialisations", "Facturation", "Session", "Heures calmes", "Jours fériés", "Dépenses Cursor", "Valeur du forfait"]
+             "Réinitialisations", "Facturation", "Session", "Heures calmes", "Jours fériés", "Dépenses Cursor", "Valeur du forfait", "Crédits d’utilisation"]
         )
         XCTAssertEqual(
             SettingsSectionTitle.all(locale: L10n.uk),
             ["Облікові записи", "Загальні", "Рядок меню", "Функції", "Ідентифікація", "Автоматизація",
-             "Скидання", "Оплата", "Сеанс", "Тихі години", "Вихідні дні", "Витрати Cursor", "Вартість плану"]
+             "Скидання", "Оплата", "Сеанс", "Тихі години", "Вихідні дні", "Витрати Cursor", "Вартість плану", "Кредити використання"]
         )
     }
 

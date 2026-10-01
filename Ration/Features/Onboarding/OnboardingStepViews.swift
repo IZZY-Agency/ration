@@ -38,6 +38,11 @@ struct OnboardingProviderGuide {
                 symbol: "cursorarrow.rays",
                 hint: LocalizedStringResource.onboardingHintCursor.string(in: locale)
             )
+        case .typeSafe:
+            return OnboardingProviderGuide(
+                symbol: "t.square",
+                hint: LocalizedStringResource.onboardingHintTypeSafe.string(in: locale)
+            )
         }
     }
 }
@@ -114,7 +119,7 @@ struct OnboardingConnectStep: View {
             let header = Self.header()
             OnboardingStepHeader(title: header.title, subtitle: header.subtitle)
 
-            ForEach(Provider.allCases) { provider in
+            ForEach(Provider.subscriptionCases) { provider in
                 let guide = OnboardingProviderGuide.guide(for: provider, warmUpEnabled: warmUpEnabled)
                 Button {
                     onSelect(provider)

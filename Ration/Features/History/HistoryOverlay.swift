@@ -265,6 +265,8 @@ enum HistoryOverlayPalette {
         case (.chatGPT, false): [0x0F7657, 0x2A8E6E, 0x0A5540, 0x2C7A66]
         case (.cursor, true): [0xB0A6EE, 0xD6D0F7, 0x8779D6, 0xC3BBF2]
         case (.cursor, false): [0x5A55B5, 0x7F7ACB, 0x3B3787, 0x6C67C2]
+        case (.typeSafe, true): [0xE8A0C8, 0xF3CDE2, 0xC9749F, 0xEDB6D4]
+        case (.typeSafe, false): [0x9B2F6E, 0xB5528A, 0x6E1F4E, 0xA6407C]
         }
     }
 

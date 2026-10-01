@@ -34,7 +34,8 @@ shows, from your own signed-in session, on your Mac.
   plans); ChatGPT / Codex 5-hour and weekly; Cursor's usage-based spend for the
   current billing period.
 - **Rings in the menu bar.** One ring per account, filled in the provider's
-  colour, with a green dot on the account you are using right now.
+  colour, with a green dot on the account you are using right now. The Ration
+  icon steps aside while rings show.
 - **Reset countdowns**, and a soonest-reset summary at the top of the popover.
 - **Alerts at your thresholds.** A warning and a critical percentage per
   window, dollar thresholds for Cursor. Each crossing goes to a notification,
@@ -45,6 +46,10 @@ shows, from your own signed-in session, on your Mac.
   their expiry, on each account card. An alert when one arrives and again a
   set number of days before it expires. Ration only shows them: you use them
   on the provider's own page.
+- **Credits.** A Claude account's usage credits (the money that pays for Claude
+  past a plan limit) on its card, marked off when claude.ai won't spend them,
+  with each grant and its expiry in Settings and a warning before one expires;
+  a ChatGPT account's Codex credits on its card.
 - **History.** Daily burn for one account or all of them overlaid, an
   hour-of-day heatmap, and a burn-rate projection.
 - **Billing-cycle utilisation.** How much of the plan you used since your
@@ -63,14 +68,16 @@ shows, from your own signed-in session, on your Mac.
 - **Focus layout.** One big number for the subscription you're using, what's
   nearly spent, and where to go next; switch from the popover header.
 - **API spend.** This month's spend for an Anthropic or OpenAI organization,
-  from its Admin key, with an optional monthly budget and alerts.
+  from its Admin key, with an optional monthly budget and alerts. Add API
+  Account asks for the vendor first, then its Admin key.
 - **Claude plan value** (off until you turn it on). What your Claude Code use
   would cost at Anthropic's API list prices, from its local session logs: the
   total for all your Claude accounts over the last 30 days, each account's
   share since Ration started tracking (the logs don't say which account did
   the work), a breakdown by model and tokens, and daily bars in History.
-- **Feature switches.** Resets, switch suggestions, Claude warm-up and in-use
-  detection can each be turned off in Settings; Claude plan value starts off.
+- **Feature switches.** Switch suggestions, Claude warm-up and in-use
+  detection can each be turned off in Settings, and credits, resets and token
+  burn can be shown or hidden per provider; Claude plan value starts off.
 - **English, French and Ukrainian.** Follows your macOS language, or pick one
   in Settings → General → Language.
 - **Light or dark.** Follows macOS, or pick Light or Dark in Settings. Every
@@ -83,7 +90,9 @@ Ration has no server, no telemetry and no account of its own.
 
 You sign in on the provider's own page inside the app. Each account gets its
 own isolated WebKit data store, and Ration reads the usage endpoints that the
-provider's usage page itself calls. Everything it keeps lives in the app's
+provider's usage page itself calls, plus each Claude account's usage-credit
+balance and grants and the credit figure in ChatGPT's usage response.
+Everything it keeps lives in the app's
 sandbox container at `~/Library/Containers/agency.izzy.ration/` and never
 leaves your Mac. Removing an account deletes its data store.
 

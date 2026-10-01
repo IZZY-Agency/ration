@@ -78,3 +78,22 @@ final class FormattersTests: XCTestCase {
         XCTAssertEqual(UsageWindowKind.weekly.spokenName(label: "Opus"), "weekly")
     }
 }
+
+extension FormattersTests {
+    /// Money in the account's own currency, in the app language (never the
+    /// region). The strings are what macOS produces; French and Ukrainian
+    /// spaces are U+00A0 because Ration's monospaced faces have no U+202F.
+    func testMoneyFormatsTheAccountsCurrencyInTheAppLanguage() throws {
+        let tenEuros = try XCTUnwrap(Money(minorUnits: 1000, currency: "EUR", exponent: 2))
+        let dollars = try XCTUnwrap(Money(minorUnits: 1_234_567, currency: "USD", exponent: 2))
+        let yen = try XCTUnwrap(Money(minorUnits: 100_000, currency: "JPY", exponent: 0))
+        XCTAssertEqual(UsageFormatters.money(tenEuros, locale: Locale(identifier: "en")), "€10.00")
+        XCTAssertEqual(UsageFormatters.money(tenEuros, locale: Locale(identifier: "en_FR")), "€10.00", "the region never changes English")
+        XCTAssertEqual(UsageFormatters.money(tenEuros, locale: Locale(identifier: "fr")), "10,00\u{00A0}€")
+        XCTAssertEqual(UsageFormatters.money(tenEuros, locale: Locale(identifier: "uk")), "10,00\u{00A0}EUR")
+        XCTAssertEqual(UsageFormatters.money(dollars, locale: Locale(identifier: "en")), "$12,345.67")
+        XCTAssertEqual(UsageFormatters.money(dollars, locale: Locale(identifier: "fr")), "12\u{00A0}345,67\u{00A0}$US")
+        XCTAssertEqual(UsageFormatters.money(yen, locale: Locale(identifier: "en")), "¥100,000")
+        XCTAssertFalse(UsageFormatters.money(dollars, locale: Locale(identifier: "fr")).contains("\u{202F}"))
+    }
+}

@@ -400,7 +400,7 @@ struct RationApp: App {
             // (LSUIElement) app, the menu bar — and this key equivalent — is
             // active whenever any Ration window is key.
             CommandGroup(replacing: .appSettings) {
-                SettingsMenuCommand()
+                SettingsMenuCommand(showInMenuBarController: showSettingsInMenuBarController)
             }
         }
 
@@ -462,6 +462,20 @@ struct RationApp: App {
     /// close Apple does not guarantee.
     ///
     /// The delegate is captured from the adaptor rather than looked up via
+    /// The app menu's Settings… opens the SAME window as the popover: the menu
+    /// bar controller's, which focuses an open one. ⌘, pressed twice fast
+    /// opened two (the popover's hotkey opened the controller's window and
+    /// activated the app, then the menu item opened the SwiftUI scene's).
+    /// false when there is no controller (UI testing): the scene opens instead.
+    private var showSettingsInMenuBarController: () -> Bool {
+        let delegate = appDelegate
+        return {
+            guard let controller = delegate.menuBarController else { return false }
+            controller.showSettings()
+            return true
+        }
+    }
+
     /// `NSApp.delegate`, which does NOT vend the adaptor instance back (a cast
     /// to `RationApplicationDelegate` returns nil — verified at runtime).
     private var openSetupGuide: () -> Void {
@@ -524,8 +538,9 @@ struct MenuBarContent: View {
             activeAccounts: settings.featureInUseEnabled
                 ? ActiveUsageMap.compute(accounts: model.visibleAccounts, history: history, now: .now)
                 : [:],
-            showsResetCredits: settings.featureResetsEnabled,
-            pausedCount: model.accounts.count - model.visibleAccounts.count,
+            providerShow: settings.providerShowSwitches,
+            // Paused by the user — not a switched-off provider's account.
+            pausedCount: model.accounts.filter { $0.isPaused && $0.provider.isOffered }.count,
             onOpen: {
                 if let appRefresh {
                     appRefresh.refreshWhenOpened()
@@ -584,6 +599,11 @@ struct MenuBarContent: View {
             resetLeadDaysByProvider: Dictionary(
                 uniqueKeysWithValues: Provider.allCases.map {
                     ($0, settings.data.resetExpiryLeadDays(provider: $0))
+                }
+            ),
+            lowBalanceCentsByProvider: Dictionary(
+                uniqueKeysWithValues: Provider.allCases.compactMap { provider in
+                    settings.data.lowBalanceCents(provider: provider).map { (provider, $0) }
                 }
             ),
             onOpenSetupGuide: onOpenSetupGuide,
@@ -820,9 +840,11 @@ private struct HistoryWindowContent: View {
 /// read `openWindow` from the environment inside the command builder.
 private struct SettingsMenuCommand: View {
     @Environment(\.openWindow) private var openWindow
+    let showInMenuBarController: () -> Bool
 
     var body: some View {
         Button("Settings…") {
+            if showInMenuBarController() { return }
             NSApplication.shared.activate()
             openWindow(id: "settings")
         }

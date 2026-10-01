@@ -22,8 +22,9 @@ struct MenuBarView: View {
     /// which publishes nothing, so a value captured at render time would freeze.
     var warmUpBanner: (Date) -> WarmUpBanner? = { _ in nil }
     let activeAccounts: [UUID: ActiveUsage]
-    /// The Resets feature switch: off hides each card's reset-credits line.
-    var showsResetCredits: Bool = true
+    /// Each provider's show switches (Settings → General → Features): a
+    /// card's reset and credit lines, the plan-value line and total.
+    var providerShow: ProviderShow = .allOn
     var pausedCount: Int = 0
     let onOpen: () -> Void
     let onAddAccount: () -> Void
@@ -45,6 +46,8 @@ struct MenuBarView: View {
     /// `orderingPinByProvider` — this view stays a pure presentation type with
     /// no direct model dependency.
     var resetLeadDaysByProvider: [Provider: Int] = [:]
+    /// Low-balance thresholds (TypeSafe), for the card's warning colour.
+    var lowBalanceCentsByProvider: [Provider: Int] = [:]
     /// Declared last and defaulted so the existing `MenuBarView(...)` call
     /// sites in tests keep compiling; app code always supplies a real action.
     var onOpenSetupGuide: () -> Void = {}
@@ -746,7 +749,8 @@ struct MenuBarView: View {
     private func cardList(api: APISpendModel?) -> some View {
         let now = pinnedNow ?? .now
         let apiPresentations = api?.presentations(now: now) ?? []
-        let order = api?.savedAccountOrder(subscriptions: presentations.map(\.account.id))
+        let order = api?.savedAccountOrder(subscriptions: presentations.map(\.account.id),
+                                           apiAccounts: SidebarAccountOrder.apiAccountIDs(presentations))
         let runs = PopoverRuns.make(order: order, presentations: presentations,
                                     apiIDs: apiPresentations.map(\.id), orderingPinByProvider: orderingPinByProvider)
         // Before a saved order, API cards sit below the cap as they always did.
@@ -758,7 +762,8 @@ struct MenuBarView: View {
                     case .provider(let provider):
                         sectionHeader(provider)
                         if provider == .claude, run.id == runs.first(where: { $0.kind == .provider(.claude) })?.id {
-                            if let tokenBurn, tokenBurn.isEnabled, tokenBurn.phase != .grantLost, let total = tokenBurn.total {
+                            if let tokenBurn, tokenBurn.isEnabled, providerShow.shows(.tokenBurn, for: .claude),
+                               tokenBurn.phase != .grantLost, let total = tokenBurn.total {
                                 TokenBurnTotalLineView(text: TokenBurnCopy.totalLine(total, choice: tokenBurn.period))
                             }
                             claudeCodeStatusLine(now: now)
@@ -768,15 +773,19 @@ struct MenuBarView: View {
                             if index < run.subscriptions.count - 1 { cardDivider }
                         }
                     case .api:
-                        if let api {
-                            APISpendSectionHeader()
-                            ForEach(Array(run.apiIDs.enumerated()), id: \.element) { index, id in
-                                if let presentation = apiPresentations.first(where: { $0.id == id }) {
+                        // TypeSafe cards (`.account`) need no API spend model.
+                        APISpendSectionHeader()
+                        ForEach(Array(run.apiEntries.enumerated()), id: \.element.id) { index, entry in
+                            switch entry {
+                            case .org(let id):
+                                if let api, let presentation = apiPresentations.first(where: { $0.id == id }) {
                                     APISpendCardView(presentation: presentation, thresholds: api.state.thresholds, now: now)
                                         .background(bottomReporter(id))
                                 }
-                                if index < run.apiIDs.count - 1 { cardDivider }
+                            case .account(let presentation):
+                                accountCard(presentation)
                             }
+                            if index < run.apiEntries.count - 1 { cardDivider }
                         }
                     }
                 }
@@ -803,9 +812,11 @@ struct MenuBarView: View {
             samples: { kind in samples(presentation.id, kind) },
             projection: { kind in projection(presentation.id, kind) },
             activeUsage: activeAccounts[presentation.id],
-            showsResetCredits: showsResetCredits,
+            showsResetCredits: providerShow.shows(.resets, for: presentation.account.provider),
+            showsUsageCredits: providerShow.shows(.credits, for: presentation.account.provider),
             now: pinnedNow ?? .now,
             resetLeadDays: resetLeadDaysByProvider[presentation.account.provider] ?? 1,
+            lowBalanceCents: lowBalanceCentsByProvider[presentation.account.provider],
             cursorHistory: cursorHistory(presentation.id),
             onProblem: onFreshnessAction,
             onProblemHover: { event in
@@ -817,6 +828,7 @@ struct MenuBarView: View {
                 Task { await claudeCode?.useInClaudeCode(accountID: presentation.id) }
             },
             planValue: presentation.account.provider == .claude && tokenBurn?.isEnabled == true
+                && providerShow.shows(.tokenBurn, for: .claude)
                 ? TokenBurnCardLine.make(tokenBurn?.values[presentation.id], trackingSince: tokenBurn?.trackingSince,
                                          grantLost: tokenBurn?.phase == .grantLost) : nil
         )

@@ -21,6 +21,7 @@ enum SettingsSectionTitle {
     static var holidays: String { holidays(locale: .current) }
     static var cursorSpend: String { cursorSpend(locale: .current) }
     static var planValue: String { planValue(locale: .current) }
+    static var usageCredits: String { usageCredits(locale: .current) }
 
     static var all: [String] { all(locale: .current) }
 
@@ -30,7 +31,7 @@ enum SettingsSectionTitle {
             features(locale: locale), identity(locale: locale), automation(locale: locale),
             resets(locale: locale), billing(locale: locale), session(locale: locale),
             quietHours(locale: locale), holidays(locale: locale), cursorSpend(locale: locale),
-            planValue(locale: locale),
+            planValue(locale: locale), usageCredits(locale: locale),
         ]
     }
 
@@ -47,4 +48,5 @@ enum SettingsSectionTitle {
     static func holidays(locale: Locale) -> String { LocalizedStringResource.settingsSectionHolidays.string(in: locale) }
     static func cursorSpend(locale: Locale) -> String { LocalizedStringResource.settingsSectionCursorSpend.string(in: locale) }
     static func planValue(locale: Locale) -> String { LocalizedStringResource.settingsSectionPlanValue.string(in: locale) }
+    static func usageCredits(locale: Locale) -> String { LocalizedStringResource.settingsSectionUsageCredits.string(in: locale) }
 }

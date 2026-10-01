@@ -13,15 +13,15 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
     func testFeatureSwitchTitlesInEveryLanguage() {
         XCTAssertEqual(
             FeatureSwitch.allCases.map { $0.title(locale: L10n.en) },
-            ["Resets", "Switch suggestions", "Claude warm-up", "In-use detection"]
+            ["Switch suggestions", "Claude warm-up", "In-use detection"]
         )
         XCTAssertEqual(
             FeatureSwitch.allCases.map { $0.title(locale: L10n.fr) },
-            ["Réinitialisations", "Suggestions de changement", "Préchauffage de Claude", "Détection du compte en cours"]
+            ["Suggestions de changement", "Préchauffage de Claude", "Détection du compte en cours"]
         )
         XCTAssertEqual(
             FeatureSwitch.allCases.map { $0.title(locale: L10n.uk) },
-            ["Скидання", "Поради щодо перемикання", "Розігрів Claude", "Визначення активного облікового запису"]
+            ["Поради щодо перемикання", "Розігрів Claude", "Визначення активного облікового запису"]
         )
     }
 
@@ -29,7 +29,6 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(
             FeatureSwitch.allCases.map { $0.summary(locale: L10n.en) },
             [
-                "Shows usage-limit resets on cards and in account settings, and alerts about them.",
                 "Suggests which account to move to when the one you're on nears its limit.",
                 "Starts Claude 5-hour windows automatically for accounts with Auto-start on.",
                 "Marks the account you're working in: IN USE tags, menu-bar dots, Focus hero.",
@@ -38,7 +37,6 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(
             FeatureSwitch.allCases.map { $0.summary(locale: L10n.fr) },
             [
-                "Affiche les réinitialisations de limite sur les cartes et dans les réglages du compte, et envoie des alertes à leur sujet.",
                 "Suggère le compte vers lequel passer quand celui que vous utilisez approche de sa limite.",
                 "Démarre automatiquement les fenêtres de 5\(nb)heures de Claude pour les comptes où le démarrage auto est activé.",
                 "Signale le compte sur lequel vous travaillez\(nb): étiquettes EN COURS, points dans la barre des menus, compte mis en avant dans Focus.",
@@ -47,12 +45,21 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(
             FeatureSwitch.allCases.map { $0.summary(locale: L10n.uk) },
             [
-                "Показує скидання лімітів на картках і в параметрах облікового запису та надсилає про них сповіщення.",
                 "Підказує, на який обліковий запис перейти, коли поточний наближається до ліміту.",
                 "Автоматично запускає 5-годинні вікна Claude для облікових записів з увімкненим автозапуском.",
                 "Позначає обліковий запис, з яким ви працюєте: мітки АКТИВНИЙ, крапки в рядку меню, головний блок у режимі «Фокус».",
             ]
         )
+    }
+
+    /// The Show per provider grid, in every shipped language.
+    func testProviderShowGridInEveryLanguage() {
+        XCTAssertEqual(ProviderShowItem.allCases.map { $0.title(locale: L10n.fr) }, ["Crédits", "Réinitialisations", "Consommation de jetons"])
+        XCTAssertEqual(ProviderShowItem.allCases.map { $0.title(locale: L10n.uk) }, ["Кредити", "Скидання", "Витрата токенів"])
+        XCTAssertEqual(LocalizedStringResource.providerShowTitle.string(in: L10n.fr), "Afficher par fournisseur")
+        XCTAssertEqual(LocalizedStringResource.providerShowCellLabel("Resets", "ChatGPT").string(in: L10n.en), "Show Resets for ChatGPT")
+        XCTAssertEqual(LocalizedStringResource.providerShowNone("Token burn", "ChatGPT").string(in: L10n.en), "ChatGPT has no Token burn")
+        XCTAssertTrue(LocalizedStringResource.providerShowNote.string(in: L10n.fr).contains("«\(nb)Valeur du forfait Claude\(nb)»"))
     }
 
     func testFeatureSwitchNotesInEveryLanguage() {

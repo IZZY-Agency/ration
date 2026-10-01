@@ -568,6 +568,11 @@ struct FocusView: View {
                 .font(Theme.display(12.5, .semibold))
                 .monospacedDigit()
                 .foregroundStyle(Theme.cream)
+        case let .balance(money):
+            Text(Self.balanceText(money))
+                .font(Theme.display(12.5, .semibold))
+                .monospacedDigit()
+                .foregroundStyle(Theme.cream)
         case .paused:
             Text(Self.pausedText())
                 .font(Theme.display(12.5))
@@ -579,6 +584,11 @@ struct FocusView: View {
         case .state:
             EmptyView()
         }
+    }
+
+    /// "$26.58 left": a TypeSafe balance.
+    static func balanceText(_ money: Money, locale: Locale = .current) -> String {
+        UsageFormatters.money(money, locale: locale) + " " + LocalizedStringResource.typeSafeCardLeft.string(in: locale)
     }
 
     /// `snapshot` supplies the binding window's own name (Fable's label).
@@ -594,6 +604,8 @@ struct FocusView: View {
             return limitLeftSpoken(headroom: headroom, kind: kind, label: label, locale: locale)
         case let .spent(cents):
             resource = .dropSpokenSpent(FocusModel.dollarsText(cents: cents, locale: locale))
+        case let .balance(money):
+            resource = .typeSafeSpokenBalance(UsageFormatters.money(money, locale: locale))
         case .paused:
             resource = .focusPaused
         case .noData:

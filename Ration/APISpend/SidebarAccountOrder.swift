@@ -23,21 +23,39 @@ enum SidebarAccountOrder {
     /// after the last subscription row, new API accounts go last, and ids
     /// that no longer exist drop out. An empty `saved` lists subscriptions,
     /// then API accounts.
-    static func merged(subscriptions: [UUID], apis: [UUID], saved: [UUID]) -> [Item] {
-        let subscriptionIDs = Set(subscriptions), apiIDs = Set(apis)
-        var subscriptionQueue = subscriptions[...], apiQueue = apis[...]
+    ///
+    /// `apiAccounts`: the subscription-store accounts that are APIs
+    /// (TypeSafe, `Provider.isAPIAccount`). They stay `.subscription` items —
+    /// their store owns their order and their drags — but sit with the API
+    /// accounts: their slots fill from their own queue, and a new one goes
+    /// last, after the API orgs, never among the subscriptions.
+    static func merged(subscriptions: [UUID], apis: [UUID], saved: [UUID], apiAccounts: Set<UUID> = []) -> [Item] {
+        let plain = subscriptions.filter { !apiAccounts.contains($0) }
+        let webAPIs = subscriptions.filter { apiAccounts.contains($0) }
+        let plainIDs = Set(plain), webAPIIDs = Set(webAPIs), apiIDs = Set(apis)
+        var plainQueue = plain[...], webAPIQueue = webAPIs[...], apiQueue = apis[...]
         var result: [Item] = []
         for id in saved {
-            if subscriptionIDs.contains(id), let next = subscriptionQueue.popFirst() {
+            if plainIDs.contains(id), let next = plainQueue.popFirst() {
+                result.append(.subscription(next))
+            } else if webAPIIDs.contains(id), let next = webAPIQueue.popFirst() {
                 result.append(.subscription(next))
             } else if apiIDs.contains(id), let next = apiQueue.popFirst() {
                 result.append(.api(next))
             }
         }
-        let insertAt = result.lastIndex(where: \.isSubscription).map { $0 + 1 } ?? 0
-        result.insert(contentsOf: subscriptionQueue.map(Item.subscription), at: insertAt)
+        let insertAt = result.lastIndex { item in
+            if case .subscription(let id) = item { plainIDs.contains(id) } else { false }
+        }.map { $0 + 1 } ?? 0
+        result.insert(contentsOf: plainQueue.map(Item.subscription), at: insertAt)
         result.append(contentsOf: apiQueue.map(Item.api))
+        result.append(contentsOf: webAPIQueue.map(Item.subscription))
         return result
+    }
+
+    /// The accounts `merged` places with the API accounts.
+    static func apiAccountIDs(_ presentations: [AccountPresentation]) -> Set<UUID> {
+        Set(presentations.filter { $0.account.provider.isAPIAccount }.map(\.account.id))
     }
 
     /// `List.onMove` semantics: `destination` is an index in the list before the move.
@@ -49,15 +67,33 @@ enum SidebarAccountOrder {
         return rest
     }
 
-    /// The one subscription whose relative order a drag changed, with its new
-    /// index among subscriptions (`AccountStore.move`'s final index) — nil
-    /// when the subscriptions' order is unchanged.
-    static func subscriptionMove(before: [Item], after: [Item]) -> (id: UUID, index: Int)? {
-        let old = before.filter(\.isSubscription).map(\.id)
-        let new = after.filter(\.isSubscription).map(\.id)
-        guard old != new else { return nil }
-        for (index, id) in new.enumerated() where old.filter({ $0 != id }) == new.filter({ $0 != id }) {
-            return (id, index)
+    /// The one subscription-store account whose relative order a drag
+    /// changed, with its destination in `store` (the account store's order,
+    /// `AccountStore.move`'s final index) — nil when no relative order did.
+    ///
+    /// Compared within each kind (`apiAccounts` or not), because `merged`
+    /// fills each kind's slots from its own queue: the list shows TypeSafe
+    /// after the API orgs while the store may keep it between subscriptions,
+    /// so a position among the LIST's subscriptions means nothing in the
+    /// store. The dragged account lands next to its same-kind neighbour.
+    static func subscriptionMove(
+        before: [Item], after: [Item], store: [UUID], apiAccounts: Set<UUID> = []
+    ) -> (id: UUID, index: Int)? {
+        for isAPI in [false, true] {
+            let old = before.filter(\.isSubscription).map(\.id).filter { apiAccounts.contains($0) == isAPI }
+            let new = after.filter(\.isSubscription).map(\.id).filter { apiAccounts.contains($0) == isAPI }
+            guard old != new else { continue }
+            guard let (position, id) = new.enumerated().first(where: { _, id in
+                old.filter { $0 != id } == new.filter { $0 != id }
+            }) else { return nil }
+            let rest = store.filter { $0 != id }
+            if position + 1 < new.count, let next = rest.firstIndex(of: new[position + 1]) {
+                return (id, next)
+            }
+            if position > 0, let previous = rest.firstIndex(of: new[position - 1]) {
+                return (id, previous + 1)
+            }
+            return nil
         }
         return nil
     }

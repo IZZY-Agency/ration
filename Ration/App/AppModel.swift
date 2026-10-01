@@ -157,6 +157,21 @@ private final class AccountSessionManager {
         }
     }
 
+    /// Claude usage credits' own read. Background and optional like the plan
+    /// read, so it YIELDS the view to a newer evaluation on timeout.
+    func fetchUsageCredits(
+        for account: AccountRecord,
+        snapshot: UsageSnapshot
+    ) async throws -> UsageCredits? {
+        let adapter = try adapterRegistry.adapter(for: account.provider)
+        return try await recycleWebViewOnTimeout(
+            profileID: account.webProfileID,
+            yieldsToNewerEvaluations: true
+        ) { webView in
+            try await adapter.fetchUsageCredits(for: snapshot, in: webView)
+        }
+    }
+
     /// Cursor's past-cycle read. Background and optional like the plan read,
     /// so it YIELDS the view to a newer evaluation (a usage poll) on timeout.
     func fetchCursorSpendHistory(
@@ -655,6 +670,9 @@ final class AppModel: ObservableObject {
     private var planRefreshTasks: [UUID: Task<Void, Never>] = [:]
     /// Background Cursor history reads in flight, one per account at most.
     private var cursorHistoryTasks: [UUID: Task<Void, Never>] = [:]
+    /// Background usage-credits reads in flight
+    /// (`refreshUsageCreditsInBackground`), one per account at most.
+    private var usageCreditsTasks: [UUID: Task<Void, Never>] = [:]
     /// Bumped per background plan read; a read applies only if still latest.
     private var planRequestRevision: [UUID: UInt64] = [:]
     /// Account IDs with a pause currently being persisted. Claimed
@@ -695,13 +713,14 @@ final class AppModel: ObservableObject {
     /// STARTING inside that window would otherwise capture the new generation
     /// and still read the switch as on.
     private var warmUpDisablesInFlight = 0
-    /// Same shape for the Resets switch: bumped synchronously on every
-    /// switch-off, captured when a reset notification is queued, and checked
-    /// when it runs — so an ON→OFF→ON flip while the post waits behind earlier
-    /// side effects cannot release it. `resetsDisablesInFlight` covers the
-    /// save window before `featureResetsEnabled` publishes.
-    private var resetsDeliveryGeneration: UInt64 = 0
-    private var resetsDisablesInFlight = 0
+    /// Same shape for each provider's show switches (`ProviderShowItem.key`,
+    /// "claude.resets"): bumped synchronously on every switch-off, captured
+    /// when a notification is queued, and checked when it runs — so an
+    /// ON→OFF→ON flip while the post waits behind earlier side effects cannot
+    /// release it. `showDisablesInFlight` covers the save window before the
+    /// switch publishes.
+    private var showDeliveryGeneration: [String: UInt64] = [:]
+    private var showDisablesInFlight: [String: Int] = [:]
     /// Authoritative in-memory alert-evaluation state for this session — NOT
     /// `alertStateStore`. Seeded from the store once in `load()`, then owned
     /// exclusively by `decideAlerts`, which commits to it SYNCHRONOUSLY (no
@@ -1190,6 +1209,7 @@ final class AppModel: ObservableObject {
                 at: snapshot.fetchedAt
             )
             self?.refreshPlanInBackground(account: account, snapshot: snapshot)
+            self?.refreshUsageCreditsInBackground(account: account, snapshot: snapshot)
             self?.refreshCursorHistoryInBackground(account: account, snapshot: snapshot)
             await self?.retryPendingCursorHistoryRemovals()
             await self?.handleAutoStart(account: account, snapshot: snapshot)
@@ -1674,6 +1694,68 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Claude usage credits have a request of their own (`prepaid/credits`);
+    /// it runs here after every successful usage fetch, apart from it, so a
+    /// slow or failing read never holds usage up or marks the account stale.
+    /// The store applies a reading only while the account's snapshot still
+    /// names the organization it was read for, and only if nothing newer is
+    /// there — which covers a workspace switch, a removal and a late read.
+    ///
+    /// It waits for the account's plan read to finish first. A hung plan read
+    /// recycles the web view on timeout only if no newer evaluation started
+    /// on it meanwhile; a credits read running beside it would be that newer
+    /// evaluation, and the hung call would never be torn down.
+    private func refreshUsageCreditsInBackground(account: AccountRecord, snapshot: UsageSnapshot) {
+        guard
+            account.provider == .claude,
+            let organizationID = snapshot.organizationID,
+            !hasOpenSignInSession(account)
+        else { return }
+        // One read at a time. A workspace switch during a read still gets its
+        // own read: the running one is refused by the store, and
+        // `usageCreditsReadFinished` then reads the organization the account
+        // is on by that time.
+        guard usageCreditsTasks[account.id] == nil else { return }
+        let planRead = planRefreshTasks[account.id]
+        usageCreditsTasks[account.id] = Task { @MainActor [weak self] in
+            defer { self?.usageCreditsReadFinished(accountID: account.id, readFor: organizationID) }
+            await planRead?.value
+            guard let self, !Task.isCancelled else { return }
+            // The task starts on a later turn: a sign-in window may have
+            // opened on this account's web view since it was scheduled.
+            guard !self.hasOpenSignInSession(account) else { return }
+            guard
+                let credits = try? await self.sessionManager.fetchUsageCredits(for: account, snapshot: snapshot),
+                !Task.isCancelled
+            else { return }
+            _ = try? await self.snapshotStore.applyUsageCredits(
+                credits,
+                accountID: account.id,
+                organizationID: organizationID
+            )
+        }
+    }
+
+    /// Ends a credits read and, if the account is now on ANOTHER organization
+    /// (a workspace switch or a re-sign-in landed meanwhile), reads that one.
+    /// Same organization: the read just done is current, and the next usage
+    /// fetch starts another. Nothing follows a cancelled read (`stop()`,
+    /// removal) or one for an account being removed, paused or gone.
+    private func usageCreditsReadFinished(accountID: UUID, readFor organizationID: String) {
+        usageCreditsTasks[accountID] = nil
+        guard
+            !Task.isCancelled,
+            !removingAccountIDs.contains(accountID),
+            !pausingAccountIDs.contains(accountID),
+            let account = accounts.first(where: { $0.id == accountID }),
+            !account.isPaused,
+            let current = snapshotStore.snapshot(for: accountID),
+            let currentOrganization = current.organizationID,
+            currentOrganization != organizationID
+        else { return }
+        refreshUsageCreditsInBackground(account: account, snapshot: current)
+    }
+
     /// Cursor's per-account history as last persisted (mirrors the store so
     /// views observing `AppModel` redraw when it changes).
     @Published private(set) var cursorSpendHistories: [UUID: CursorSpendHistory] = [:]
@@ -1876,6 +1958,14 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// TEST barrier: resolves once every background usage-credits read has
+    /// applied.
+    func flushUsageCreditsRefreshes() async {
+        while let pending = usageCreditsTasks.values.first {
+            await pending.value
+        }
+    }
+
     @MainActor
     func requestSetBillingRenewalDay(accountID: UUID, day: Int?) throws -> Task<Void, Error> {
         try claimAccountMutation(accountID)
@@ -1990,14 +2080,31 @@ final class AppModel: ObservableObject {
             try await appSettings.setFeature(feature, enabled: enabled)
             return
         }
-        if feature == .resets, !enabled {
-            resetsDeliveryGeneration &+= 1
-            resetsDisablesInFlight += 1
-            defer { resetsDisablesInFlight -= 1 }
-            try await appSettings.setFeature(feature, enabled: enabled)
+        try await appSettings.setFeature(feature, enabled: enabled)
+    }
+
+    /// One provider's show switch (Settings → General → Features). Switching
+    /// off kills that provider's queued notifications of that kind, like the
+    /// warm-up switch does.
+    func setShows(_ item: ProviderShowItem, for provider: Provider, _ enabled: Bool) async throws {
+        let key = ProviderShowItem.key(item, provider)
+        if !enabled {
+            showDeliveryGeneration[key, default: 0] &+= 1
+            showDisablesInFlight[key, default: 0] += 1
+            defer { showDisablesInFlight[key, default: 1] -= 1 }
+            try await appSettings.setShows(item, for: provider, enabled)
             return
         }
-        try await appSettings.setFeature(feature, enabled: enabled)
+        try await appSettings.setShows(item, for: provider, enabled)
+    }
+
+    /// Which show switch governs `event`, if any.
+    private static func showItem(for event: AlertEvent) -> ProviderShowItem? {
+        switch event {
+        case .resetCreditAvailable, .resetCreditExpiring: .resets
+        case .usageCreditExpiring, .lowBalance: .credits
+        default: nil
+        }
     }
 
     /// True while a warm-up attempt that captured `generation` may still send:
@@ -2056,6 +2163,42 @@ final class AppModel: ObservableObject {
         // Turning the drop ON for a cell already over its threshold should
         // show the panel now, not up to a minute later on the next tick.
         evaluateAlertsAfterThresholdChange()
+    }
+
+    /// nil turns the low-balance alert off (and re-arms it).
+    func setLowBalanceCents(_ cents: Int?, provider: Provider) async throws {
+        try await appSettings.setLowBalanceCents(cents, provider: provider)
+        // Off re-arms NOW, whether alerts are on or not: re-evaluation only
+        // runs while they are, and priming never touches this memory, so a
+        // latch kept through off-and-on would swallow the next low reading.
+        if appSettings.data.lowBalanceCents(provider: provider) == nil {
+            rearmLowBalance(provider: provider)
+        }
+        // A higher threshold can put a current balance below it right now.
+        evaluateAlertsAfterThresholdChange()
+    }
+
+    /// Clears the low-balance memory (latch and drop row) of `provider`'s
+    /// accounts, committed in memory and saved like any alert-state change.
+    private func rearmLowBalance(provider: Provider) {
+        for account in accounts where account.provider == provider && !alertTombstones.contains(account.id) {
+            guard var state = alertStates[account.id], state.lowBalance != LowBalanceAlertMemory() else { continue }
+            state.lowBalance = LowBalanceAlertMemory()
+            alertStates[account.id] = state
+            let accountID = account.id
+            alertSideEffectQueue.enqueue { [weak self] in
+                guard let self, !self.alertTombstones.contains(accountID) else { return }
+                try? await self.alertStateStore.save(state, for: accountID)
+            }
+        }
+    }
+
+    /// A queued low-balance alert still describes the present when it is
+    /// about to post: its latch still holds. A top-up re-arms it, and so does
+    /// turning the alert off (`setLowBalanceCents`). Other events pass.
+    private func eventStillHolds(_ event: AlertEvent, accountID: UUID) -> Bool {
+        guard case .lowBalance = event else { return true }
+        return alertStates[accountID]?.lowBalance.notified == true
     }
 
     func setResetExpiryLeadDays(_ days: Int, provider: Provider) async throws {
@@ -2542,13 +2685,29 @@ final class AppModel: ObservableObject {
             leadDays: settings.resetExpiryLeadDays(provider: provider),
             now: now()
         )
+        // Usage credits: the same never-while-priming rule; freshness is the
+        // reading's own age (see `UsageCreditPolicy.input`). The lead time is
+        // the Resets one.
+        let usageCreditsInput = prime ? nil : UsageCreditPolicy.input(
+            snapshot: snapshot,
+            leadDays: settings.resetExpiryLeadDays(provider: provider),
+            now: now()
+        )
+        // Low balance: never while priming either, and only for providers
+        // with the alert (a threshold of nil re-arms its memory).
+        let lowBalanceInput = prime || !provider.hasLowBalanceAlert ? nil : LowBalanceAlertInput(
+            balance: LowBalancePolicy.currentBalance(snapshot: snapshot, now: now()),
+            thresholdCents: settings.lowBalanceCents(provider: provider)
+        )
         let (events, next) = AlertPolicy.evaluate(
             previous: previous,
             snapshot: snapshot,
             state: state,
             thresholds: { window in settings.thresholds(provider: provider, window: window) },
             spendThresholds: settings.cursorSpend,
-            resetCredits: resetInput
+            resetCredits: resetInput,
+            usageCredits: usageCreditsInput,
+            lowBalance: lowBalanceInput
         )
         // Authoritative commit — synchronous, no suspension before or after
         // this line within this function.
@@ -2573,22 +2732,23 @@ final class AppModel: ObservableObject {
         return appSettings.data.channels(forKey: key).notification
     }
 
-    /// Reset-credit alerts are suppressed while the Resets feature is off.
-    private func featureAllowsDelivery(_ event: AlertEvent) -> Bool {
-        switch event {
-        case .resetCreditAvailable, .resetCreditExpiring:
-            appSettings.featureResetsEnabled && resetsDisablesInFlight == 0
-        default: true
-        }
+    /// Reset alerts are suppressed while the provider's Resets switch is off,
+    /// credit and low-balance warnings while its Credits switch is.
+    private func featureAllowsDelivery(_ event: AlertEvent, provider: Provider?) -> Bool {
+        guard let item = Self.showItem(for: event) else { return true }
+        guard let provider else { return false }
+        return appSettings.data.shows(item, for: provider)
+            && (showDisablesInFlight[ProviderShowItem.key(item, provider)] ?? 0) == 0
     }
 
-    /// A reset notification queued before a Resets switch-off is dead, even
-    /// if the switch has been turned back on since. Other events pass.
-    private func resetsGenerationAllows(_ event: AlertEvent, queuedAt generation: UInt64) -> Bool {
-        switch event {
-        case .resetCreditAvailable, .resetCreditExpiring: resetsDeliveryGeneration == generation
-        default: true
-        }
+    /// A reset or credit notification queued before its switch was turned off
+    /// is dead, even if the switch has been turned back on since. Other events
+    /// pass.
+    private func featureGenerationAllows(_ event: AlertEvent, provider: Provider?, queuedAt generations: [String: UInt64]) -> Bool {
+        guard let item = Self.showItem(for: event) else { return true }
+        guard let provider else { return false }
+        let key = ProviderShowItem.key(item, provider)
+        return (showDeliveryGeneration[key] ?? 0) == (generations[key] ?? 0)
     }
 
     // MARK: - Attention drop
@@ -2661,7 +2821,7 @@ final class AppModel: ObservableObject {
     }
 
     func snoozeAttentionDrop(_ rows: [AttentionRow]) {
-        dismissAttentionRows(rows.filter(\.isResetCredit))
+        dismissAttentionRows(rows.filter(\.isAcknowledgedPerRow))
         appSettings.setDropSnoozedInMemory(true)
         Task { [weak self] in
             try? await self?.appSettings.setDropSnoozed()
@@ -2688,13 +2848,22 @@ final class AppModel: ObservableObject {
         guard appSettings.data.dropSnoozed else { return }
         // A reset row that the Resets feature hides must not lift the snooze
         // either — the panel would come back with nothing new on it.
-        let resetCreditsDropOn = appSettings.featureResetsEnabled && appSettings.data.channels(
+        let resetCreditsDropOn = appSettings.data.shows(.resets, for: provider) && appSettings.data.channels(
             forKey: AppSettingsData.resetCreditsKey(provider: provider)
+        ).drop
+        // Same rule for usage-credit warnings and their own switch and cell.
+        let usageCreditsDropOn = appSettings.data.shows(.credits, for: provider) && appSettings.data.channels(
+            forKey: AppSettingsData.usageCreditsKey(provider: provider)
+        ).drop
+        let lowBalanceDropOn = appSettings.data.shows(.credits, for: provider) && appSettings.data.channels(
+            forKey: AppSettingsData.lowBalanceKey(provider: provider)
         ).drop
         let somethingNew = events.contains { event in
             switch event {
             case .reset: true
             case .resetCreditAvailable, .resetCreditExpiring: resetCreditsDropOn
+            case .usageCreditExpiring: usageCreditsDropOn
+            case .lowBalance: lowBalanceDropOn
             default: false
             }
         }
@@ -2745,6 +2914,17 @@ final class AppModel: ObservableObject {
                     }
                     state.resetCredits[creditID] = entry
                 }
+            case let .usageCredit(id):
+                // Grouped like reset rows: acknowledge every grant it shows.
+                let ids = row.resetCreditIDs.isEmpty ? [id] : row.resetCreditIDs
+                for grantID in ids {
+                    guard var entry = state.usageCredits[grantID] else { continue }
+                    entry.row = .dismissed
+                    state.usageCredits[grantID] = entry
+                }
+            case .lowBalance:
+                // Until a top-up re-arms it (see `LowBalancePolicy`).
+                if state.lowBalance.row == .active { state.lowBalance.row = .dismissed }
             }
             alertStates[accountID] = state
             touched.insert(accountID)
@@ -2844,10 +3024,11 @@ final class AppModel: ObservableObject {
         // that a later activation could release.
         guard alertsActive else { return }
         let activation = alertsActivationGeneration
-        let resetsGeneration = resetsDeliveryGeneration
+        let generations = showDeliveryGeneration
+        let provider = accounts.first(where: { $0.id == accountID })?.provider
         // A feature that is off right now never queues a post: re-enabling it
         // later must not release what was decided while it was off.
-        for event in events where featureAllowsDelivery(event) {
+        for event in events where featureAllowsDelivery(event, provider: provider) {
             let notificationID = AlertMessage.id(for: event, accountID: accountID)
             alertSideEffectQueue.enqueue { [weak self] in
                 guard
@@ -2863,9 +3044,11 @@ final class AppModel: ObservableObject {
                     // Global feature switches gate DELIVERY only; the event was
                     // still evaluated and recorded, so re-enabling a feature
                     // does not replay what happened while it was off.
-                    self.featureAllowsDelivery(event),
+                    self.featureAllowsDelivery(event, provider: provider),
                     // …and no switch-off since this was queued (ON→OFF→ON).
-                    self.resetsGenerationAllows(event, queuedAt: resetsGeneration),
+                    self.featureGenerationAllows(event, provider: provider, queuedAt: generations),
+                    // …and, for a low balance, no top-up or turn-off since.
+                    self.eventStillHolds(event, accountID: accountID),
                     !self.alertTombstones.contains(accountID),
                     !self.removingAccountIDs.contains(accountID),
                     !self.pausingAccountIDs.contains(accountID),
@@ -3557,6 +3740,7 @@ final class AppModel: ObservableObject {
     func stop() {
         refreshCoordinator.stopBackgroundRefresh()
         for task in planRefreshTasks.values { task.cancel() }
+        for task in usageCreditsTasks.values { task.cancel() }
         for task in cursorHistoryTasks.values { task.cancel() }
         systemPowerObserver.stop()
         switchAdviceTimer?.invalidate()
@@ -4269,6 +4453,7 @@ final class AppModel: ObservableObject {
         latestPlanDetections.removeValue(forKey: id)
         planRefreshTasks.removeValue(forKey: id)?.cancel()
         planRequestRevision.removeValue(forKey: id)
+        usageCreditsTasks.removeValue(forKey: id)?.cancel()
         // Its Fable verdict too; an in-flight hydration for it is discarded at
         // commit (the account is gone).
         if fableVerdicts.removeValue(forKey: id) != nil {

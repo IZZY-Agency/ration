@@ -354,11 +354,12 @@ final class APISpendModel: ObservableObject {
 
     /// The Settings list's order once the user has dragged it (nil before:
     /// the popover and menu bar keep their provider-grouped layout).
-    func savedAccountOrder(subscriptions: [UUID]) -> [SidebarAccountOrder.Item]? {
+    func savedAccountOrder(subscriptions: [UUID], apiAccounts: Set<UUID> = []) -> [SidebarAccountOrder.Item]? {
         guard !state.sidebarOrder.isEmpty else { return nil }
         return SidebarAccountOrder.merged(subscriptions: subscriptions,
                                           apis: state.orgs.sorted { $0.displayOrder < $1.displayOrder }.map(\.id),
-                                          saved: state.sidebarOrder)
+                                          saved: state.sidebarOrder,
+                                          apiAccounts: apiAccounts)
     }
 
     func orgGauges(displaysRemaining: Bool, now: Date) -> [(id: UUID, value: MenuBarGauge)] {

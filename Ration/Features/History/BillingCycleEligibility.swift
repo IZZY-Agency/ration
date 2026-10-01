@@ -20,7 +20,8 @@ enum BillingCycleEligibility {
     static func supports(_ provider: Provider) -> Bool {
         switch provider {
         case .claude, .chatGPT: true
-        case .cursor: false
+        // TypeSafe is prepaid spend with no usage windows.
+        case .cursor, .typeSafe: false
         }
     }
 

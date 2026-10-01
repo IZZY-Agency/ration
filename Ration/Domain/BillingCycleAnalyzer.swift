@@ -33,7 +33,7 @@ nonisolated enum WindowFamily: String, Equatable, Sendable {
         switch provider {
         case .claude: self = .rolling
         case .chatGPT: self = .fixed
-        case .cursor: return nil
+        case .cursor, .typeSafe: return nil
         }
     }
 }

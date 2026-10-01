@@ -75,6 +75,14 @@ struct AppSettingsData: Codable, Equatable, Sendable {
     /// Missing → 1; clamped so a hand-edited value can never disable or flood
     /// the alert.
     var resetExpiryLeadDays: [String: Int]
+    /// Show per provider (Settings → General → Features), keyed
+    /// `ProviderShowItem.key` ("claude.resets"). Missing → the global switch
+    /// it replaced, see `ProviderShow`; malformed entries drop alone.
+    var providerShow: [String: Bool]
+    /// Low-balance alert thresholds in cents, keyed by `Provider.rawValue`
+    /// (TypeSafe only today). Missing or non-positive → off: a prepaid
+    /// balance has no honest default to warn at, so the alert is opt-in.
+    var lowBalanceCents: [String: Int]
     /// Popover layout. Missing, unknown or malformed → `.standard`.
     var popoverLayout: PopoverLayout
     /// Global feature switches (Settings → General → Features). All default ON;
@@ -84,15 +92,23 @@ struct AppSettingsData: Codable, Equatable, Sendable {
     var featureSwitchAdviceEnabled: Bool
     var featureWarmUpEnabled: Bool
     var featureInUseEnabled: Bool
+    var featureUsageCreditsEnabled: Bool
 
-    /// The four global switches as one value, for pure gating code.
+    /// The global switches as one value, for pure gating code.
     var features: FeatureSwitches {
         FeatureSwitches(
             resets: featureResetsEnabled,
             switchAdvice: featureSwitchAdviceEnabled,
             warmUp: featureWarmUpEnabled,
-            inUse: featureInUseEnabled
+            inUse: featureInUseEnabled,
+            usageCredits: featureUsageCreditsEnabled
         )
+    }
+
+    /// Delivery-channel cell for a provider's usage-credit expiry warnings
+    /// (the Settings → Alerts "Usage credits" row). Claude only today.
+    static func usageCreditsKey(provider: Provider) -> String {
+        "\(provider.rawValue).usageCredits"
     }
 
     static let cellRange = 0...167
@@ -124,6 +140,26 @@ struct AppSettingsData: Codable, Equatable, Sendable {
 
     static let resetExpiryLeadDaysRange = 1...7
 
+    /// Delivery-channel cell for a provider's low-balance alert (the
+    /// Settings → Alerts "Low balance" row).
+    static func lowBalanceKey(provider: Provider) -> String {
+        "\(provider.rawValue).lowBalance"
+    }
+
+    /// Every provider's show switches as one value.
+    var providerShowSwitches: ProviderShow {
+        ProviderShow(choices: providerShow, legacyCredits: featureUsageCreditsEnabled, legacyResets: featureResetsEnabled)
+    }
+
+    func shows(_ item: ProviderShowItem, for provider: Provider) -> Bool {
+        providerShowSwitches.shows(item, for: provider)
+    }
+
+    /// The low-balance threshold in cents, nil when off.
+    func lowBalanceCents(provider: Provider) -> Int? {
+        lowBalanceCents[provider.rawValue].flatMap { $0 > 0 ? $0 : nil }
+    }
+
     /// Days before a reset expires to warn. Missing → 1; clamped so a
     /// hand-edited value can never disable or flood the alert.
     func resetExpiryLeadDays(provider: Provider) -> Int {
@@ -154,11 +190,14 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         alertChannels: [String: AlertChannels] = [:],
         cursorSpend: SpendThresholds = .off,
         resetExpiryLeadDays: [String: Int] = [:],
+        lowBalanceCents: [String: Int] = [:],
+        providerShow: [String: Bool] = [:],
         popoverLayout: PopoverLayout = .standard,
         featureResetsEnabled: Bool = true,
         featureSwitchAdviceEnabled: Bool = true,
         featureWarmUpEnabled: Bool = true,
-        featureInUseEnabled: Bool = true
+        featureInUseEnabled: Bool = true,
+        featureUsageCreditsEnabled: Bool = true
     ) {
         self.sortByWeeklyReset = sortByWeeklyReset
         self.usageAlertsEnabled = usageAlertsEnabled
@@ -174,11 +213,14 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         self.alertChannels = alertChannels
         self.cursorSpend = cursorSpend
         self.resetExpiryLeadDays = resetExpiryLeadDays
+        self.lowBalanceCents = lowBalanceCents
+        self.providerShow = providerShow
         self.popoverLayout = popoverLayout
         self.featureResetsEnabled = featureResetsEnabled
         self.featureSwitchAdviceEnabled = featureSwitchAdviceEnabled
         self.featureWarmUpEnabled = featureWarmUpEnabled
         self.featureInUseEnabled = featureInUseEnabled
+        self.featureUsageCreditsEnabled = featureUsageCreditsEnabled
     }
 
     static func canonical(_ cells: [Int]) -> [Int] {
@@ -200,11 +242,14 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         case alertChannels
         case cursorSpend
         case resetExpiryLeadDays
+        case lowBalanceCents
+        case providerShow
         case popoverLayout
         case featureResetsEnabled
         case featureSwitchAdviceEnabled
         case featureWarmUpEnabled
         case featureInUseEnabled
+        case featureUsageCreditsEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -251,6 +296,8 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         cursorSpend = (try? container.decodeIfPresent(SpendThresholds.self, forKey: .cursorSpend))
             ?? .off
         resetExpiryLeadDays = Self.lossyDecode(container, forKey: .resetExpiryLeadDays)
+        lowBalanceCents = Self.lossyDecode(container, forKey: .lowBalanceCents)
+        providerShow = Self.lossyDecode(container, forKey: .providerShow)
         // Lenient: a value from a newer build (or a hand edit) must not cost
         // the user every other setting — `load()` defaults ALL fields on a throw.
         let layout: PopoverLayout? = try? container.decodeIfPresent(PopoverLayout.self, forKey: .popoverLayout)
@@ -263,6 +310,7 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         featureSwitchAdviceEnabled = feature(.featureSwitchAdviceEnabled)
         featureWarmUpEnabled = feature(.featureWarmUpEnabled)
         featureInUseEnabled = feature(.featureInUseEnabled)
+        featureUsageCreditsEnabled = feature(.featureUsageCreditsEnabled)
     }
 
     /// Decodes a `[String: Value]` entry by entry, DROPPING malformed entries
@@ -307,11 +355,14 @@ final class AppSettings: ObservableObject {
     @Published private(set) var alertChannels: [String: AlertChannels] = [:]
     @Published private(set) var cursorSpend: SpendThresholds = .off
     @Published private(set) var resetExpiryLeadDays: [String: Int] = [:]
+    @Published private(set) var lowBalanceCents: [String: Int] = [:]
+    @Published private(set) var providerShow: [String: Bool] = [:]
     @Published private(set) var popoverLayout: PopoverLayout = .standard
     @Published private(set) var featureResetsEnabled: Bool = true
     @Published private(set) var featureSwitchAdviceEnabled: Bool = true
     @Published private(set) var featureWarmUpEnabled: Bool = true
     @Published private(set) var featureInUseEnabled: Bool = true
+    @Published private(set) var featureUsageCreditsEnabled: Bool = true
 
     var features: FeatureSwitches { data.features }
 
@@ -320,11 +371,25 @@ final class AppSettings: ObservableObject {
     /// come from the `@Published` projections, so they are the NEW values even
     /// though `@Published` emits from `willSet`.
     var featuresPublisher: AnyPublisher<FeatureSwitches, Never> {
-        Publishers.CombineLatest4($featureResetsEnabled, $featureSwitchAdviceEnabled, $featureWarmUpEnabled, $featureInUseEnabled)
-            .map { FeatureSwitches(resets: $0, switchAdvice: $1, warmUp: $2, inUse: $3) }
+        Publishers.CombineLatest(
+            Publishers.CombineLatest4($featureResetsEnabled, $featureSwitchAdviceEnabled, $featureWarmUpEnabled, $featureInUseEnabled),
+            $featureUsageCreditsEnabled
+        )
+            .map { FeatureSwitches(resets: $0.0, switchAdvice: $0.1, warmUp: $0.2, inUse: $0.3, usageCredits: $1) }
             .removeDuplicates()
             .eraseToAnyPublisher()
     }
+    var providerShowSwitches: ProviderShow { data.providerShowSwitches }
+
+    /// The show-per-provider switches as they change (current value first),
+    /// NEW values like `featuresPublisher`.
+    var providerShowPublisher: AnyPublisher<ProviderShow, Never> {
+        Publishers.CombineLatest3($providerShow, $featureUsageCreditsEnabled, $featureResetsEnabled)
+            .map { ProviderShow(choices: $0, legacyCredits: $1, legacyResets: $2) }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
     /// `true` when the persisted settings file failed to decode and defaults
     /// were substituted. Consumers that fail *closed* on unknown config (the
     /// warm-up inhibition schedule) read this to avoid trusting the empty
@@ -350,11 +415,14 @@ final class AppSettings: ObservableObject {
             alertChannels: alertChannels,
             cursorSpend: cursorSpend,
             resetExpiryLeadDays: resetExpiryLeadDays,
+            lowBalanceCents: lowBalanceCents,
+            providerShow: providerShow,
             popoverLayout: popoverLayout,
             featureResetsEnabled: featureResetsEnabled,
             featureSwitchAdviceEnabled: featureSwitchAdviceEnabled,
             featureWarmUpEnabled: featureWarmUpEnabled,
-            featureInUseEnabled: featureInUseEnabled
+            featureInUseEnabled: featureInUseEnabled,
+            featureUsageCreditsEnabled: featureUsageCreditsEnabled
         )
     }
 
@@ -402,7 +470,6 @@ final class AppSettings: ObservableObject {
 
     func setFeature(_ feature: FeatureSwitch, enabled value: Bool) async throws {
         switch feature {
-        case .resets: try await setFeatureResetsEnabled(value)
         case .switchAdvice: try await setFeatureSwitchAdviceEnabled(value)
         case .warmUp: try await setFeatureWarmUpEnabled(value)
         case .inUse: try await setFeatureInUseEnabled(value)
@@ -423,6 +490,10 @@ final class AppSettings: ObservableObject {
 
     func setFeatureInUseEnabled(_ value: Bool) async throws {
         try await mutate { $0.featureInUseEnabled = value }
+    }
+
+    func setFeatureUsageCreditsEnabled(_ value: Bool) async throws {
+        try await mutate { $0.featureUsageCreditsEnabled = value }
     }
 
     func setUsageAlertsEnabled(_ value: Bool) async throws {
@@ -566,6 +637,23 @@ final class AppSettings: ObservableObject {
     func setResetExpiryLeadDays(_ days: Int, provider: Provider) async throws {
         let clamped = min(max(days, AppSettingsData.resetExpiryLeadDaysRange.lowerBound), AppSettingsData.resetExpiryLeadDaysRange.upperBound)
         try await mutate { $0.resetExpiryLeadDays[provider.rawValue] = clamped }
+    }
+
+    /// One provider's show switch. Stored explicitly, so it no longer follows
+    /// the legacy global switch.
+    func setShows(_ item: ProviderShowItem, for provider: Provider, _ value: Bool) async throws {
+        try await mutate { $0.providerShow[ProviderShowItem.key(item, provider)] = value }
+    }
+
+    /// nil or a non-positive amount turns the alert off.
+    func setLowBalanceCents(_ cents: Int?, provider: Provider) async throws {
+        try await mutate { data in
+            if let cents, cents > 0 {
+                data.lowBalanceCents[provider.rawValue] = cents
+            } else {
+                data.lowBalanceCents[provider.rawValue] = nil
+            }
+        }
     }
 
     func setCursorSpend(_ value: SpendThresholds) async throws {
@@ -760,6 +848,12 @@ final class AppSettings: ObservableObject {
         if resetExpiryLeadDays != data.resetExpiryLeadDays {
             resetExpiryLeadDays = data.resetExpiryLeadDays
         }
+        if lowBalanceCents != data.lowBalanceCents {
+            lowBalanceCents = data.lowBalanceCents
+        }
+        if providerShow != data.providerShow {
+            providerShow = data.providerShow
+        }
         if popoverLayout != data.popoverLayout {
             popoverLayout = data.popoverLayout
         }
@@ -774,6 +868,9 @@ final class AppSettings: ObservableObject {
         }
         if featureInUseEnabled != data.featureInUseEnabled {
             featureInUseEnabled = data.featureInUseEnabled
+        }
+        if featureUsageCreditsEnabled != data.featureUsageCreditsEnabled {
+            featureUsageCreditsEnabled = data.featureUsageCreditsEnabled
         }
     }
 }

@@ -261,4 +261,46 @@ final class AlertMessageLocalizationTests: XCTestCase {
         default: XCTAssertEqual(composed.title, "Work: sign in again")
         }
     }
+
+    // MARK: Usage credits
+
+    private func creditExpiry(switchOff: Bool) -> AlertEvent {
+        .usageCreditExpiring(UsageCreditExpiry(
+            grantID: "promo-1", amount: Money(minorUnits: 1000, currency: "EUR", exponent: 2)!,
+            expiresAt: expiry, switchOff: switchOff, grantIDs: ["promo-1"]
+        ))
+    }
+
+    func testUsageCreditExpiringInEveryLanguage() {
+        let en = text(creditExpiry(switchOff: false), L10n.en)
+        XCTAssertEqual(en.title, "Work: credits expire soon")
+        XCTAssertEqual(en.body, "€10.00 of usage credits on Work expire \(AlertMessage.expiryText(expiry, locale: L10n.en)).")
+
+        let fr = text(creditExpiry(switchOff: true), L10n.fr)
+        XCTAssertEqual(fr.title, "Work\(nb): crédits expirant bientôt")
+        XCTAssertEqual(
+            fr.body,
+            "10,00\(nb)€ de crédits d’utilisation sur Work expirent le \(AlertMessage.expiryText(expiry, locale: L10n.fr)). Les crédits d’utilisation sont désactivés sur claude.ai\(nb): Claude ne les dépensera pas tant que vous ne les activerez pas."
+        )
+
+        let uk = text(creditExpiry(switchOff: false), L10n.uk)
+        XCTAssertEqual(uk.title, "Work: термін дії кредитів скоро спливає")
+        XCTAssertEqual(uk.body, "Термін дії кредитів використання на суму 10,00\(nb)EUR в обліковому записі Work спливає \(AlertMessage.expiryText(expiry, locale: L10n.uk)).")
+        XCTAssertFalse(uk.body.contains("акаунт"))
+    }
+
+    func testUsageCreditExpiringRedactedNamesNothing() {
+        for locale in [L10n.en, L10n.fr, L10n.uk] {
+            let redacted = text(creditExpiry(switchOff: true), locale, redacted: true)
+            XCTAssertEqual(redacted.title, "Ration")
+            XCTAssertFalse(redacted.body.contains("Work"))
+            XCTAssertFalse(redacted.body.contains("10"))
+        }
+    }
+
+    func testUsageCreditNotificationID() {
+        let id = UUID()
+        XCTAssertEqual(AlertMessage.id(for: creditExpiry(switchOff: false), accountID: id), "\(id.uuidString).usageCredit.promo-1.expiring")
+    }
 }
+

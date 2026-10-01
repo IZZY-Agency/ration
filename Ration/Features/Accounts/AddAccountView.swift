@@ -25,7 +25,8 @@ struct AddAccountView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            ForEach(Provider.allCases) { provider in
+            // TypeSafe is an API: Settings › Add API Account adds it.
+            ForEach(Provider.subscriptionCases) { provider in
                 Button {
                     beginSignIn(provider)
                 } label: {

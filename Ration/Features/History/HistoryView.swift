@@ -34,7 +34,13 @@ struct HistoryView: View {
     @State private var mode: Mode = .patterns
 
     /// Plan value's mode exists only while the feature is on.
-    private var showsPlanValue: Bool { model.tokenBurn?.isEnabled == true }
+    /// Mirrored from `AppSettings`, which `model` never republishes, so
+    /// turning Token burn off leaves Plan value mode at once.
+    @State private var providerShow: ProviderShow = .allOn
+
+    private var showsPlanValue: Bool {
+        model.tokenBurn?.isEnabled == true && providerShow.shows(.tokenBurn, for: .claude)
+    }
     private var effectiveMode: Mode { mode == .planValue && !showsPlanValue ? .patterns : mode }
 
     /// The scope actually in effect: the user's selection if its account still
@@ -112,6 +118,9 @@ struct HistoryView: View {
         return "\(historyRevision)|" + identity
     }
 
+    /// Accounts of providers switched on in this build (`Provider.isOffered`).
+    private var offeredAccounts: [AccountRecord] { model.accounts.filter(\.provider.isOffered) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -121,7 +130,7 @@ struct HistoryView: View {
             Group {
                 switch effectiveMode {
                 case .patterns:
-                    if model.accounts.isEmpty {
+                    if offeredAccounts.isEmpty {
                         emptyAccountsState
                     } else if effectiveKind == nil && cursorPresentations.isEmpty {
                         noRollingWindowState
@@ -147,6 +156,7 @@ struct HistoryView: View {
             await loadBuckets()
         }
         .onAppear { clock.start() }
+        .onReceive(model.settings.providerShowPublisher) { providerShow = $0 }
         .onDisappear { clock.stop() }
         .onChange(of: showsPlanValue) { _, shows in
             if !shows, mode == .planValue { mode = .patterns }
@@ -182,14 +192,14 @@ struct HistoryView: View {
 
             Spacer()
 
-            if effectiveMode == .patterns && !model.accounts.isEmpty {
+            if effectiveMode == .patterns && !offeredAccounts.isEmpty {
                 Picker(
                     "Account",
                     selection: Binding(get: { effectiveScope }, set: { scope = $0 })
                 ) {
                     Text("All accounts").tag(HistoryScope.all)
                     Divider()
-                    ForEach(model.accounts) { account in
+                    ForEach(offeredAccounts) { account in
                         Text(account.historyLabel).tag(HistoryScope.account(account.id))
                     }
                 }
@@ -369,7 +379,11 @@ struct HistoryView: View {
         ContentUnavailableView {
             Label("No rolling windows", systemImage: "chart.xyaxis.line")
         } description: {
-            Text("Cursor tracks usage-based spend rather than 5h or weekly windows — its spend and cycle reset show on its account card.")
+            if scopedPresentations.allSatisfy({ $0.account.provider == .cursor }) {
+                Text("Cursor tracks usage-based spend rather than 5h or weekly windows — its spend and cycle reset show on its account card.")
+            } else {
+                Text("These accounts track spend or a balance rather than 5h or weekly windows — their figures show on each account card.")
+            }
         }
         .background(Theme.ink)
     }

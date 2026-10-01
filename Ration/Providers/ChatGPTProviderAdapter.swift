@@ -43,8 +43,21 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
                 from: read.resetCredits,
                 fetchedAt: fetchedAt
             ),
-            planDetection: PlanDetection.chatGPT(planType: read.payload.planType)
+            planDetection: PlanDetection.chatGPT(planType: read.payload.planType),
+            codexCredits: Self.codexCredits(from: read.payload.credits, fetchedAt: fetchedAt)
         )
+    }
+
+    /// `nil` = not read (missing or unreadable block; the store carries the
+    /// previous one). `balance` arrives as a string ("0") or a number; an
+    /// unparseable or negative one is not read. Unlimited needs no balance.
+    static func codexCredits(from payload: ChatGPTCodexCreditsPayload?, fetchedAt: Date) -> CodexCredits? {
+        guard let payload else { return nil }
+        if payload.unlimited == true {
+            return CodexCredits(fetchedAt: fetchedAt, balance: 0, unlimited: true)
+        }
+        guard let balance = payload.balance, balance >= 0 else { return nil }
+        return CodexCredits(fetchedAt: fetchedAt, balance: balance, unlimited: false)
     }
 
     private func usageRead(
@@ -184,16 +197,55 @@ private struct ChatGPTUsagePayload: Decodable, Sendable {
     /// Live-verified 2026-09-24: `"prolite"` on a Pro 5x account. Lenient —
     /// a wrong shape reads as "not read", never a failed usage decode.
     let planType: String?
+    /// Codex credits; lenient like `planType`.
+    let credits: ChatGPTCodexCreditsPayload?
 
     enum CodingKeys: String, CodingKey {
         case rateLimit = "rate_limit"
         case planType = "plan_type"
+        case credits
     }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         rateLimit = try c.decodeIfPresent(ChatGPTRateLimitPayload.self, forKey: .rateLimit)
         planType = (try? c.decodeIfPresent(String.self, forKey: .planType)) ?? nil
+        credits = (try? c.decodeIfPresent(ChatGPTCodexCreditsPayload.self, forKey: .credits)) ?? nil
+    }
+}
+
+/// `wham/usage` → `credits` (verified live 2026-09-30):
+/// `{"has_credits": false, "unlimited": false, "overage_limit_reached": false,
+/// "balance": "0", "approx_local_messages": [0, 0], "approx_cloud_messages": [0, 0]}`.
+/// Only `unlimited` and `balance` are read.
+struct ChatGPTCodexCreditsPayload: Decodable, Sendable {
+    let unlimited: Bool?
+    /// A count of credits: a string in the verified response, a number
+    /// tolerated. nil when missing or not a number.
+    let balance: Decimal?
+
+    enum CodingKeys: String, CodingKey { case unlimited, balance }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        unlimited = (try? c.decodeIfPresent(Bool.self, forKey: .unlimited)) ?? nil
+        if let text = (try? c.decodeIfPresent(String.self, forKey: .balance)) ?? nil {
+            balance = Self.decimal(fromWholeString: text)
+        } else if let number = (try? c.decodeIfPresent(Decimal.self, forKey: .balance)) ?? nil {
+            // Straight to `Decimal`: no `Double` step to lose digits.
+            balance = number
+        } else {
+            balance = nil
+        }
+    }
+
+    /// A string that is wholly a plain decimal number ("0", "1250.5") —
+    /// never a numeric prefix: `Decimal(string:)` alone reads "12.3.4" as
+    /// 12.3 and "12abc" as 12.
+    static func decimal(fromWholeString text: String) -> Decimal? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard trimmed.range(of: #"^[0-9]+(\.[0-9]+)?$"#, options: .regularExpression) != nil else { return nil }
+        return Decimal(string: trimmed, locale: Locale(identifier: "en_US_POSIX"))
     }
 }
 

@@ -71,3 +71,22 @@ The current field names and duration-based classification were cross-checked
 against the installed official Codex CLI 0.144.2 and the matching OpenAI Codex
 source. The browser contract, not CLI bearer-token behavior, is authoritative
 for this app.
+
+## Codex credits (live-verified 2026-09-30)
+
+The usage response (`wham/usage`, the call Ration already makes) carries
+`credits: {has_credits, unlimited, overage_limit_reached, balance,
+approx_local_messages: [min, max], approx_cloud_messages: [min, max]}`.
+`balance` is a string ("0" on the verified Pro 5x account, which had no
+credits); a number is tolerated. It counts Codex credits, not money, and
+carries no expiry.
+
+- Read: `unlimited` and `balance` only, leniently: a missing or changed block,
+  or a balance that is not wholly a non-negative number, reads as "not read"
+  and never fails the usage fetch.
+- Kept (in the account's snapshot): the balance, the unlimited flag and the
+  fetch time. The card shows "Credits 120" or "Credits unlimited" only when
+  there is something to show; Settings shows the balance.
+- Not read: `has_credits`, `overage_limit_reached`, the approximate message
+  counts, `spend_control` (business workspaces).
+

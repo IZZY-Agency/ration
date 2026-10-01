@@ -740,11 +740,13 @@ final class MenuBarController: NSObject {
             )
             let apiGauges = apiSpend?.orgGauges(displaysRemaining: displaysRemaining, now: at) ?? []
             // The Settings list's order once dragged; before, provider-grouped with API last.
-            if let order = apiSpend?.savedAccountOrder(subscriptions: model.presentations.map(\.account.id)) {
+            if let order = apiSpend?.savedAccountOrder(
+                subscriptions: model.presentations.map(\.account.id),
+                apiAccounts: SidebarAccountOrder.apiAccountIDs(model.presentations)
+            ) {
                 gauges = SidebarAccountOrder.ordered(accountGauges + apiGauges, by: order)
             } else {
-                gauges = Provider.allCases.flatMap { provider in accountGauges.map(\.value).filter { $0.provider == provider } }
-                    + apiGauges.map(\.value)
+                gauges = MenuBarGaugeState.grouped(accountGauges.map(\.value), apiOrgs: apiGauges.map(\.value))
             }
         } else {
             gauges = []

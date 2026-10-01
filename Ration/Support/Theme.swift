@@ -119,6 +119,10 @@ enum Theme {
     /// a ChatGPT mark or rail never reads as a state. (It was `calm`, which made a ChatGPT card look
     /// permanently "fine".)
     static let chatGPTGreenNS = dynamic(dark: 0x5CC79F, light: 0x0F7657)
+    /// TypeSafe's accent: a rose, identity only. Clear of every other
+    /// identity (gold, green, iris) and of every state colour (calm slate,
+    /// warn orange, crit red, reset blue, active green).
+    static let typeSafeRoseNS = dynamic(dark: 0xE8A0C8, light: 0x9B2F6E)
 
     // Semantic usage tiers
     /// Low usage: a quiet slate, so teal and green (ChatGPT, `active`) never
@@ -144,6 +148,7 @@ enum Theme {
     static let gold = Color(nsColor: goldNS)
     static let iris = Color(nsColor: irisNS)
     static let chatGPTGreen = Color(nsColor: chatGPTGreenNS)
+    static let typeSafeRose = Color(nsColor: typeSafeRoseNS)
     static let calm = Color(nsColor: calmNS)
     static let warn = Color(nsColor: warnNS)
     static let crit = Color(nsColor: critNS)

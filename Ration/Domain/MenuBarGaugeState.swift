@@ -14,6 +14,9 @@ struct MenuBarGauge: Equatable {
     let inUse: Bool
     /// API budget gauges only: the unrounded percent spent and whether it is a lower bound.
     var budget: BudgetGaugeFacts? = nil
+    /// Prepaid API accounts (TypeSafe) only: the balance and the credit it is
+    /// a share of.
+    var credit: CreditGaugeFacts? = nil
 
     var provider: Provider? { if case .subscription(let provider) = source { provider } else { nil } }
 }
@@ -28,6 +31,41 @@ struct BudgetGaugeFacts: Equatable, Sendable {
     /// Unrounded percent of budget spent.
     let exactPercent: Decimal
     let isLowerBound: Bool
+}
+
+/// A prepaid balance's gauge: the balance as a
+/// share of the credit held, every unexpired grant's original amount. It
+/// drains as the balance is spent; a top-up or a new free credit fills it.
+struct CreditGaugeFacts: Equatable, Sendable {
+    let balance: Money
+    let granted: Money
+
+    /// Share left, 0…1. A balance above the grants' total (money no grant
+    /// accounts for) reads full.
+    var leftFraction: Double {
+        guard granted.minorUnits > 0 else { return 0 }
+        return min(max(Double(balance.minorUnits) / Double(granted.minorUnits), 0), 1)
+    }
+
+    /// What has been spent of the credit held; zero when the balance exceeds it.
+    var used: Money? {
+        Money(minorUnits: max(granted.minorUnits - balance.minorUnits, 0), currency: granted.currency, exponent: granted.exponent)
+    }
+
+    /// nil unless the reading is current (`UsageEvidence.maxAge`), lists
+    /// every grant (`complete`), and its unexpired grants — spent ones
+    /// included, so spending a grant down never shrinks the whole — each say
+    /// what they granted, adding up to a positive amount in the balance's
+    /// currency. A guess would draw a falsely full square.
+    static func make(_ credits: UsageCredits?, now: Date) -> CreditGaugeFacts? {
+        guard let credits, credits.complete, UsageCreditPolicy.isCurrent(credits, now: now) else { return nil }
+        let held = (credits.grants + credits.spentGrants).filter { grant in grant.expiresAt.map { $0 > now } ?? true }
+        let amounts = held.compactMap(\.granted)
+        guard amounts.count == held.count, let granted = Money.sum(amounts), granted.minorUnits > 0,
+              granted.currency == credits.balance.currency, granted.exponent == credits.balance.exponent
+        else { return nil }
+        return CreditGaugeFacts(balance: credits.balance, granted: granted)
+    }
 }
 
 /// The menu bar shows a usage ring for EVERY visible account that reports a
@@ -68,7 +106,16 @@ enum MenuBarGaugeState {
     ) -> [MenuBarGauge] {
         let entries = accountGauges(accounts: accounts, activeUsage: activeUsage, snapshots: snapshots,
                                     windowKind: windowKind, displaysRemaining: displaysRemaining, now: now)
-        return Provider.allCases.flatMap { provider in entries.map(\.value).filter { $0.provider == provider } }
+        return grouped(entries.map(\.value))
+    }
+
+    /// Canonical order without a saved one: subscriptions by provider, then
+    /// `apiOrgs`, then API-type accounts (TypeSafe) — the popover's order.
+    static func grouped(_ accountGauges: [MenuBarGauge], apiOrgs: [MenuBarGauge] = []) -> [MenuBarGauge] {
+        func byProvider(_ providers: [Provider]) -> [MenuBarGauge] {
+            providers.flatMap { provider in accountGauges.filter { $0.provider == provider } }
+        }
+        return byProvider(Provider.subscriptionCases) + apiOrgs + byProvider(Provider.allCases.filter(\.isAPIAccount))
     }
 
     /// One gauge per account that has one, in `accounts` order, with its
@@ -82,9 +129,18 @@ enum MenuBarGaugeState {
         now: Date
     ) -> [(id: UUID, value: MenuBarGauge)] {
         accounts.compactMap { account in
-            guard let snapshot = snapshots(account.id),
-                  let window = window(in: snapshot, preferring: windowKind(account.provider))
-            else { return nil }
+            guard let snapshot = snapshots(account.id) else { return nil }
+            // A prepaid API account has no rate window: its square is the
+            // balance left of the credit held.
+            if account.provider.isAPIAccount {
+                guard let credit = CreditGaugeFacts.make(snapshot.usageCredits, now: now) else { return nil }
+                return (account.id, MenuBarGauge(
+                    source: .subscription(account.provider), label: account.label,
+                    fraction: displaysRemaining ? credit.leftFraction : 1 - credit.leftFraction,
+                    windowKind: nil, inUse: false, credit: credit
+                ))
+            }
+            guard let window = window(in: snapshot, preferring: windowKind(account.provider)) else { return nil }
 
             let inUse = if case .inUse = InUsePhase.classify(activeUsage[account.id], now: now) {
                 true

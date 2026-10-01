@@ -8,8 +8,12 @@ struct AccountCardView: View {
     var activeUsage: ActiveUsage? = nil
     /// The Resets feature switch (Settings → General → Features).
     var showsResetCredits: Bool = true
+    /// The Usage credits feature switch: the credits line on Claude cards.
+    var showsUsageCredits: Bool = true
     var now: Date = .now
     var resetLeadDays: Int = 1
+    /// TypeSafe: the low-balance threshold (Settings › Alerts), nil when off.
+    var lowBalanceCents: Int? = nil
     /// Cursor only: the account's stored closed cycles, oldest first.
     var cursorHistory: [CursorSpendCycle] = []
     /// A click on a problem badge — the header's STALE click
@@ -140,6 +144,16 @@ struct AccountCardView: View {
                 let trend = CursorSpendTrend.card(closed: cursorHistory, current: spend)
                 CursorSpendRowView(spend: spend, now: currentDate, trend: trend)
                 CursorSpendTrendLine(trend: trend)
+            } else if presentation.account.provider == .typeSafe {
+                // Balance first; the expiry line
+                // follows the Usage credits switch and the account's lead time.
+                TypeSafeCardView(card: TypeSafeCard.make(
+                    snapshot: presentation.snapshot,
+                    leadDays: resetLeadDays,
+                    showsExpiry: showsUsageCredits,
+                    now: currentDate,
+                    lowBalanceCents: lowBalanceCents
+                ))
             } else {
                 let kinds = AccountLimitLayout.kinds(
                     for: presentation.account.provider,
@@ -187,6 +201,22 @@ struct AccountCardView: View {
                     now: currentDate
                 ) {
                     ResetCreditsLineView(summary: summary, now: currentDate)
+                }
+                // Claude only; the lead time is Claude's Resets one.
+                if showsUsageCredits, presentation.account.provider == .claude,
+                   let summary = UsageCreditsSummary.make(
+                    credits: presentation.snapshot?.usageCredits,
+                    enabled: presentation.snapshot?.usageCreditsEnabled,
+                    leadDays: resetLeadDays,
+                    now: currentDate,
+                    verified: presentation.snapshot?.usageCreditsVerified ?? false
+                   ) {
+                    UsageCreditsLineView(summary: summary, now: currentDate)
+                }
+                if showsUsageCredits, presentation.account.provider == .chatGPT,
+                   let codex = presentation.snapshot?.codexCredits,
+                   CodexCreditsCopy.shows(codex, now: currentDate) {
+                    CodexCreditsLineView(credits: codex)
                 }
                 if let planValue {
                     TokenBurnCardLineView(line: planValue)
@@ -250,9 +280,9 @@ enum AccountLimitLayout {
             let available: [UsageWindowKind] = [.fiveHour, .weekly]
                 .filter { snapshot.window(for: $0) != nil }
             return available.isEmpty ? [.weekly] : available
-        case .cursor:
-            // Cursor's dollars-based card path is introduced in a later task;
-            // until then it contributes no rolling-window columns.
+        case .cursor, .typeSafe:
+            // Dollars-based cards (Cursor's spend row, TypeSafe's balance):
+            // no rolling-window columns.
             return []
         }
     }

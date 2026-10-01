@@ -15,6 +15,8 @@ struct GeneralDetailView: View {
     let onSetMenuBarDisplaysRemaining: (Bool) -> Void
     let onSetPopoverLayout: (PopoverLayout) -> Void
     var onSetFeature: (FeatureSwitch, Bool) -> Void = { _, _ in }
+    /// One cell of the Show per provider grid.
+    var onSetProviderShow: (ProviderShowItem, Provider, Bool) -> Void = { _, _, _ in }
     let onOpenSetupGuide: () -> Void
     let onAllowNotifications: () -> Void
     /// Relaunch after a language change; the shared instance the app
@@ -188,6 +190,7 @@ struct GeneralDetailView: View {
                 if let tokenBurn {
                     TokenBurnFeatureRow(model: tokenBurn)
                 }
+                ProviderShowGrid(settings: settings, onSet: onSetProviderShow)
             }
 
             Section(SettingsSectionTitle.menuBar) {
@@ -202,7 +205,7 @@ struct GeneralDetailView: View {
                 )
                 .accessibilityIdentifier("showInUseInMenuBarToggle")
 
-                Text("A ring per account, next to the menu bar icon, filled by the window below; accounts currently in use get a green center dot. Hover for exact values. Cursor has no rate windows and never shows.")
+                Text("A ring per account, filled by the window below, in place of the menu bar icon (it comes back when nothing shows); accounts currently in use get a green center dot. API accounts with a monthly budget show a square. Hover for exact values. Cursor has no rate windows and never shows.")
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
 
@@ -285,5 +288,63 @@ struct GeneralDetailView: View {
                 onSet(layout)
             }
         )
+    }
+}
+
+/// Settings → General → Features → Show per provider: a row per item, a column per provider, a checkbox where the
+/// provider has that item and a dash where it has none.
+struct ProviderShowGrid: View {
+    @ObservedObject var settings: AppSettings
+    let onSet: (ProviderShowItem, Provider, Bool) -> Void
+
+    static let columnWidth: CGFloat = 76
+
+    var body: some View {
+        let columns = ProviderShowItem.columns
+        let show = settings.providerShowSwitches
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 0) {
+                Text(LocalizedStringResource.providerShowTitle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(columns) { provider in
+                    Text(verbatim: provider.displayName)
+                        .font(Theme.mono(11))
+                        .foregroundStyle(Theme.creamDim)
+                        .frame(width: Self.columnWidth)
+                }
+            }
+            ForEach(ProviderShowItem.allCases, id: \.self) { item in
+                HStack(spacing: 0) {
+                    Text(item.title())
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(columns) { provider in
+                        cell(item, provider, show: show)
+                            .frame(width: Self.columnWidth)
+                    }
+                }
+            }
+            Text(LocalizedStringResource.providerShowNote)
+                .font(Theme.mono(12))
+                .foregroundStyle(Theme.creamDim)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func cell(_ item: ProviderShowItem, _ provider: Provider, show: ProviderShow) -> some View {
+        if item.applies(to: provider) {
+            Toggle(isOn: Binding(
+                get: { show.shows(item, for: provider) },
+                set: { onSet(item, provider, $0) }
+            )) { EmptyView() }
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+                .accessibilityLabel(Text(LocalizedStringResource.providerShowCellLabel(item.title(), provider.displayName)))
+                .accessibilityIdentifier("providerShow-\(provider.rawValue)-\(item.rawValue)")
+        } else {
+            Text(verbatim: "—")
+                .foregroundStyle(Theme.creamFaint)
+                .accessibilityLabel(Text(LocalizedStringResource.providerShowNone(item.title(), provider.displayName)))
+        }
     }
 }

@@ -191,4 +191,46 @@ final class FocusAndDropCopyLocalizationTests: XCTestCase {
             )
         }
     }
+
+    // MARK: Usage-credit rows
+
+    private func creditRow() -> AttentionRow {
+        var row = row(subject: .usageCredit(id: "promo-1"), tier: .warning, used: nil, resetsIn: 2 * 86_400, resetCount: nil)
+        row.creditAmount = Money(minorUnits: 1000, currency: "EUR", exponent: 2)
+        return row
+    }
+
+    func testDropCreditRowSpoken() {
+        XCTAssertEqual(
+            AttentionDropView.rowAccessibilityLabel(creditRow(), now: now, locale: L10n.en),
+            "Work, usage credits worth €10.00 expiring, expires in 2 days"
+        )
+        XCTAssertEqual(
+            AttentionDropView.rowAccessibilityLabel(creditRow(), now: now, locale: L10n.fr),
+            "Work, crédits d’utilisation de 10,00\(nb)€ sur le point d’expirer, expire dans 2 jours"
+        )
+        XCTAssertEqual(
+            AttentionDropView.rowAccessibilityLabel(creditRow(), now: now, locale: L10n.uk),
+            "Work, термін дії кредитів використання на суму 10,00\(nb)EUR скоро спливає, термін дії спливає через 2 дні"
+        )
+    }
+
+    func testDropCreditHeaderAndSubject() {
+        XCTAssertEqual(AttentionDropView.headerTitle(hasLimitRows: false, hasResetRows: false, locale: L10n.en), "CREDITS")
+        XCTAssertEqual(AttentionDropView.headerTitle(hasLimitRows: false, hasResetRows: false, locale: L10n.fr), "CRÉDITS")
+        XCTAssertEqual(AttentionDropView.headerTitle(hasLimitRows: false, hasResetRows: true, locale: L10n.en), "RESETS")
+        XCTAssertEqual(AttentionDropView.subjectLabel(.usageCredit(id: "x"), locale: L10n.uk), "КРЕДИТИ")
+        XCTAssertEqual(AttentionDropView.creditCountText(2, locale: L10n.en), "2 CREDIT")
+        XCTAssertEqual(AttentionDropView.headerAccessibilityLabel(rows: [creditRow()], locale: L10n.en), "Usage credits")
+        let limit = row(subject: .window(.weekly), tier: .critical, used: 95, resetsIn: 3600, resetCount: nil)
+        XCTAssertEqual(
+            AttentionDropView.headerAccessibilityLabel(rows: [limit, creditRow()], locale: L10n.en),
+            "Nearing limits, 1 critical, 1 expiring credit"
+        )
+        XCTAssertEqual(
+            AttentionDropView.headerAccessibilityLabel(rows: [limit, creditRow(), creditRow()], locale: L10n.uk).hasSuffix("2 кредити, що спливають"),
+            true
+        )
+    }
 }
+

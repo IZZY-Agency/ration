@@ -39,6 +39,8 @@ struct SettingsView: View {
     /// republishes — mirrored here so a switch flipped in General redraws the
     /// sidebar's IN USE pills and the account pane at once.
     @State private var features: FeatureSwitches = .allOn
+    /// Mirrored like `features`: the account pane's per-provider sections.
+    @State private var providerShow: ProviderShow = .allOn
     @State private var errorMessage: String?
     @State private var addingAPIAccount = false
 
@@ -61,7 +63,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationSplitView {
             SettingsSidebar(
-                presentations: model.presentations,
+                presentations: AccountVisibility.offered(model.presentations),
                 activeUsage: activeUsage,
                 selection: $selection,
                 canReorder: !model.settings.sortByWeeklyReset,
@@ -94,17 +96,18 @@ struct SettingsView: View {
             applySelectionRequest(request)
         }
         .onReceive(model.settings.featuresPublisher) { features = $0 }
+        .onReceive(model.settings.providerShowPublisher) { providerShow = $0 }
         // Anchored here, outside the sidebar List: a sheet inside the List is
         // torn down and rebuilt on every row change (the add inserts one).
         .sheet(isPresented: $addingAPIAccount) {
             if let apiSpend {
-                AddAPIOrgSheet(model: apiSpend) { addingAPIAccount = false }
+                AddAPIOrgSheet(model: apiSpend, onSignIn: beginSignIn) { addingAPIAccount = false }
             }
         }
         .onChange(of: model.accounts.map(\.id)) { _, _ in ensureSelection() }
         .onReceive(apiOrgIDs) { ids in
             // `$state` fires on willSet: use the published IDs, not a re-read.
-            selection = SettingsSelection.normalized(selection, accounts: model.accounts, apiOrgIDs: ids)
+            selection = SettingsSelection.normalized(selection, accounts: offeredAccounts, apiOrgIDs: ids)
         }
         .alert(
             "Remove account?",
@@ -135,13 +138,15 @@ struct SettingsView: View {
                     .id(id)
             }
         case let .account(id):
-            if let presentation = model.presentations.first(where: { $0.account.id == id }) {
+            if let presentation = AccountVisibility.offered(model.presentations).first(where: { $0.account.id == id }) {
                 AccountDetailView(
                     presentation: presentation,
                     activeUsage: activeUsage[id],
                     features: features,
+                    providerShow: providerShow,
                     attentionContext: model.presentations,
                     tokenBurn: model.tokenBurn,
+                    usageCreditsLeadDays: model.settings.data.resetExpiryLeadDays(provider: presentation.account.provider),
                     // Awaited so `LabelAutosave` can serialize saves, retry a
                     // busy account and keep a failed edit. It does not clear
                     // the banner per attempt: busy retries would wipe other
@@ -244,6 +249,9 @@ struct SettingsView: View {
                 onSetFeature: { feature, enabled in
                     perform { try await model.setFeature(feature, enabled: enabled) }
                 },
+                onSetProviderShow: { item, provider, enabled in
+                    perform { try await model.setShows(item, for: provider, enabled) }
+                },
                 onOpenSetupGuide: onOpenSetupGuide,
                 onAllowNotifications: { model.requestNotificationPermission() },
                 tokenBurn: model.tokenBurn
@@ -255,7 +263,7 @@ struct SettingsView: View {
         case .alerts:
             AlertsDetailView(
                 settings: model.settings,
-                providers: model.accounts.map(\.provider),
+                providers: offeredAccounts.map(\.provider),
                 notificationPermission: model.notificationPermission,
                 onAllowNotifications: { model.requestNotificationPermission() },
                 pendingEdits: model.pendingEdits,
@@ -271,16 +279,23 @@ struct SettingsView: View {
                     try await model.setResetExpiryLeadDays(days, provider: provider)
                 },
                 onError: { errorMessage = $0.localizedDescription },
-                apiSpend: apiSpend
+                apiSpend: apiSpend,
+                onSetLowBalance: { cents, provider in
+                    try await model.setLowBalanceCents(cents, provider: provider)
+                }
             )
         case nil:
             placeholder
         }
     }
 
+    /// Accounts of providers switched on in this build (`Provider.isOffered`):
+    /// a switched-off provider's account keeps its data but is not listed.
+    private var offeredAccounts: [AccountRecord] { model.accounts.filter(\.provider.isOffered) }
+
     @ViewBuilder
     private var placeholder: some View {
-        if model.accounts.isEmpty {
+        if offeredAccounts.isEmpty {
             ContentUnavailableView {
                 Label("No accounts", systemImage: "person.crop.circle.badge.plus")
             } description: {
@@ -312,7 +327,7 @@ struct SettingsView: View {
     }
 
     private func ensureSelection() {
-        selection = SettingsSelection.normalized(selection, accounts: model.accounts, apiOrgIDs: currentAPIOrgIDs)
+        selection = SettingsSelection.normalized(selection, accounts: offeredAccounts, apiOrgIDs: currentAPIOrgIDs)
     }
 
     private var currentAPIOrgIDs: [UUID] { apiSpend?.state.orgs.map(\.id) ?? [] }
@@ -336,7 +351,7 @@ struct SettingsView: View {
         let resolved = SettingsSelectionRequest.resolve(
             request,
             appliedSerial: appliedRequestSerial,
-            accounts: model.accounts,
+            accounts: offeredAccounts,
             apiOrgIDs: currentAPIOrgIDs
         )
         guard let resolved else { return }
@@ -359,7 +374,10 @@ struct SettingsView: View {
     /// order goes to the account store, which owns it.
     private func moveMerged(before: [SidebarAccountOrder.Item], after: [SidebarAccountOrder.Item]) {
         apiSpend?.setSidebarOrder(after)
-        if let move = SidebarAccountOrder.subscriptionMove(before: before, after: after) {
+        if let move = SidebarAccountOrder.subscriptionMove(
+            before: before, after: after, store: model.accounts.map(\.id),
+            apiAccounts: Set(model.accounts.filter(\.provider.isAPIAccount).map(\.id))
+        ) {
             perform { try await model.moveAccount(id: move.id, to: move.index) }
         }
     }
@@ -371,6 +389,17 @@ struct SettingsView: View {
         let target = destination > source ? destination - 1 : destination
         let id = accounts[source].id
         perform { try await model.moveAccount(id: id, to: target) }
+    }
+
+    /// Add API Account's TypeSafe step: a new account through the sign-in
+    /// window, as Add Account starts one for a subscription.
+    private func beginSignIn(_ provider: Provider) {
+        do {
+            let sessionID = try model.beginSignIn(provider: provider)
+            onOpenSignIn(sessionID)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func beginReauthentication(_ accountID: UUID) {

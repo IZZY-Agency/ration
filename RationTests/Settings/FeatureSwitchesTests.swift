@@ -47,6 +47,60 @@ final class FeatureSwitchesTests: XCTestCase {
         XCTAssertEqual(decoded.features, FeatureSwitches(resets: false, switchAdvice: false, warmUp: false, inUse: false))
     }
 
+    /// Every file written before 1.10 lacks the key: usage credits start on.
+    func testUsageCreditsSwitchDefaultsOnAndDecodesOff() throws {
+        let legacy = try JSONDecoder().decode(AppSettingsData.self, from: Data(#"{"featureResetsEnabled":false}"#.utf8))
+        XCTAssertTrue(legacy.featureUsageCreditsEnabled)
+        let malformed = try JSONDecoder().decode(AppSettingsData.self, from: Data(#"{"featureUsageCreditsEnabled":"no"}"#.utf8))
+        XCTAssertTrue(malformed.featureUsageCreditsEnabled)
+        let off = try JSONDecoder().decode(AppSettingsData.self, from: Data(#"{"featureUsageCreditsEnabled":false}"#.utf8))
+        XCTAssertFalse(off.features.usageCredits)
+        XCTAssertTrue(off.features.resets)
+    }
+
+    /// Credits and resets are per provider now: the old global values only
+    /// supply the default for a provider with no choice of its own.
+    func testTheOldGlobalSwitchesAreEachProvidersDefault() throws {
+        let legacy = try JSONDecoder().decode(AppSettingsData.self, from: Data(#"{"featureUsageCreditsEnabled":false}"#.utf8))
+        XCTAssertFalse(legacy.shows(.credits, for: .claude))
+        XCTAssertFalse(legacy.shows(.credits, for: .chatGPT))
+        XCTAssertTrue(legacy.shows(.resets, for: .claude))
+        XCTAssertTrue(legacy.shows(.tokenBurn, for: .claude), "new with the grid: on")
+        let chosen = try JSONDecoder().decode(AppSettingsData.self, from: Data(#"{"featureUsageCreditsEnabled":false,"providerShow":{"chatgpt.credits":true,"claude.resets":false,"x":"y"}}"#.utf8))
+        XCTAssertTrue(chosen.shows(.credits, for: .chatGPT), "a provider's own choice wins")
+        XCTAssertFalse(chosen.shows(.credits, for: .claude), "the rest keep the old default")
+        XCTAssertFalse(chosen.shows(.resets, for: .claude))
+        XCTAssertTrue(chosen.shows(.resets, for: .chatGPT))
+        XCTAssertTrue(AppSettingsData().shows(.credits, for: .claude), "on by default")
+    }
+
+    func testProviderShowPersistsPerProviderAndPublishes() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = AppSettings(fileURL: directory.appending(path: "settings.json"))
+        try await store.load()
+        var received: [ProviderShow] = []
+        let cancellable = store.providerShowPublisher.sink { received.append($0) }
+        defer { cancellable.cancel() }
+
+        try await store.setShows(.resets, for: .chatGPT, false)
+
+        XCTAssertEqual(received.count, 2)
+        XCTAssertTrue(received.last?.shows(.resets, for: .claude) == true)
+        XCTAssertTrue(received.last?.shows(.resets, for: .chatGPT) == false)
+        let reloaded = AppSettings(fileURL: directory.appending(path: "settings.json"))
+        try await reloaded.load()
+        XCTAssertFalse(reloaded.data.shows(.resets, for: .chatGPT))
+        XCTAssertTrue(reloaded.data.shows(.resets, for: .claude))
+    }
+
+    func testTheGridHasAColumnPerProviderWithItems() {
+        XCTAssertEqual(ProviderShowItem.columns, [.claude, .chatGPT], "Cursor has none; TypeSafe is switched off")
+        XCTAssertEqual(ProviderShowItem.allCases.map { $0.title(locale: L10n.en) }, ["Credits", "Resets", "Token burn"])
+        XCTAssertFalse(ProviderShowItem.tokenBurn.applies(to: .chatGPT))
+        XCTAssertTrue(ProviderShowItem.credits.applies(to: .chatGPT))
+    }
+
     func testDataRoundTrip() throws {
         var data = AppSettingsData()
         data.featureResetsEnabled = false
@@ -114,7 +168,7 @@ final class FeatureSwitchesTests: XCTestCase {
 
     func testFeaturesSectionTitleAndCopy() {
         XCTAssertTrue(SettingsSectionTitle.all.contains("Features"))
-        XCTAssertEqual(FeatureSwitch.allCases.map(\.title), ["Resets", "Switch suggestions", "Claude warm-up", "In-use detection"])
+        XCTAssertEqual(FeatureSwitch.allCases.map(\.title), ["Switch suggestions", "Claude warm-up", "In-use detection"])
         for feature in FeatureSwitch.allCases {
             XCTAssertFalse(feature.summary.isEmpty)
             XCTAssertFalse(feature.summary.contains("\n"), "one line")
@@ -132,9 +186,9 @@ final class FeatureSwitchesTests: XCTestCase {
         var written: [(FeatureSwitch, Bool)] = []
 
         let warmUp = GeneralDetailView.featureBinding(.warmUp, settings: store) { written.append(($0, $1)) }
-        let resets = GeneralDetailView.featureBinding(.resets, settings: store) { written.append(($0, $1)) }
+        let inUse = GeneralDetailView.featureBinding(.inUse, settings: store) { written.append(($0, $1)) }
         XCTAssertFalse(warmUp.wrappedValue)
-        XCTAssertTrue(resets.wrappedValue)
+        XCTAssertTrue(inUse.wrappedValue)
         warmUp.wrappedValue = true
 
         XCTAssertEqual(written.map(\.0), [.warmUp])

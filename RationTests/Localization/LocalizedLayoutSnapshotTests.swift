@@ -1083,6 +1083,10 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             try write(await renderHosted(split(.alerts, alerts), width: width, height: 900, scheme), dir, "settings-alerts-api-\(suffix).png")
             try write(await renderHosted(AddAPIOrgSheet(model: model, onDone: {}), width: 480, height: 420, scheme),
                       dir, "settings-api-add-\(suffix).png")
+            try write(await renderHosted(AddAPIOrgSheet(model: model, initialChoice: .adminKey(.anthropic), onDone: {}), width: 480, height: 420, scheme),
+                      dir, "settings-api-add-key-\(suffix).png")
+            try write(await renderHosted(AddAPIOrgSheet(model: model, initialChoice: .signIn(.typeSafe), onDone: {}), width: 480, height: 300, scheme),
+                      dir, "settings-api-add-typesafe-\(suffix).png")
             try write(await renderHosted(ReplaceAPIKeySheet(model: model, orgID: api.anthropicID, onDone: {}), width: 440, height: 260, scheme),
                       dir, "settings-api-replace-\(suffix).png")
         }
@@ -1265,6 +1269,122 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             try write(await renderHosted(history, width: 700, height: 480, scheme), dir, "history-plan-value-\(suffix).png")
         }
         await model.stop()
+    }
+
+    /// Usage credits: the card line (switch off; part of the balance
+    /// expiring) and the account's Settings section.
+    func testUsageCredits() async throws {
+        let dir = try directory
+        func euros(_ cents: Int64) -> Money { Money(minorUnits: cents, currency: "EUR", exponent: 2)! }
+        func withCredits(_ presentation: AccountPresentation, _ grants: [UsageCreditGrant], enabled: Bool?) -> AccountPresentation {
+            let balance = euros(grants.reduce(0) { $0 + $1.remaining.minorUnits })
+            // Read this session for the snapshot's own organization, so the
+            // card may show the expiry (see `usageCreditsVerified`).
+            let credits = UsageCredits(fetchedAt: now.addingTimeInterval(-30), balance: balance, grants: grants, complete: true, organizationID: "org-1")
+            let base = presentation.snapshot!
+            let snapshot = UsageSnapshot(
+                accountID: base.accountID, fetchedAt: base.fetchedAt, fiveHour: base.fiveHour, weekly: base.weekly,
+                modelWeekly: base.modelWeekly, organizationID: "org-1", resetCredits: base.resetCredits,
+                usageCredits: credits, usageCreditsEnabled: enabled
+            )
+            return AccountPresentation(account: presentation.account, snapshot: snapshot, state: presentation.state)
+        }
+        let samples = sampleAccounts()
+        let off = withCredits(samples[0], [
+            UsageCreditGrant(id: "p", kind: .promotional, remaining: euros(1000), granted: euros(1000), expiresAt: now.addingTimeInterval(200 * 86_400)),
+        ], enabled: false)
+        let expiring = withCredits(samples[1], [
+            UsageCreditGrant(id: "a", kind: .promotional, remaining: euros(400), granted: euros(500), expiresAt: now.addingTimeInterval(18 * 3600)),
+            UsageCreditGrant(id: "b", kind: .purchased, remaining: euros(123_456), granted: euros(200_000), expiresAt: nil),
+        ], enabled: true)
+        let chatGPT = samples[3]
+        let codex = AccountPresentation(
+            account: chatGPT.account,
+            snapshot: chatGPT.snapshot!.replacingCodexCredits(CodexCredits(fetchedAt: now.addingTimeInterval(-60), balance: 1250, unlimited: false)),
+            state: chatGPT.state
+        )
+        let cards = VStack(alignment: .leading, spacing: 0) {
+            AccountCardView(presentation: off, onReauthenticate: {}, now: now)
+            AccountCardView(presentation: expiring, onReauthenticate: {}, now: now)
+            AccountCardView(presentation: codex, onReauthenticate: {}, now: now)
+        }
+        .frame(width: 540).padding(.vertical, 8).background(Theme.ink)
+        let section = AccountDetailView(
+            presentation: expiring, now: now,
+            onRename: { _ in }, onRenameError: { _ in }, onReauthenticate: {}, onRemove: {},
+            onSetAutoStart: { _ in }, onSetBillingRenewalDay: { _ in }, onSetPlan: { _ in },
+            onSetPaused: { _ in }, onDebugSend: {}
+        )
+        .background(Theme.ink)
+        for (scheme, suffix) in Self.schemes {
+            try write(render(cards, scheme), dir, "usage-credits-cards-\(suffix).png")
+            try write(await renderHosted(section, width: SettingsView.minimumWindowWidth, height: 1500, scheme), dir, "settings-usage-credits-\(suffix).png")
+        }
+    }
+
+    /// TypeSafe: the balance-first card (one grant near its expiry) and the
+    /// account's Settings page, with live figures.
+    func testTypeSafe() async throws {
+        let dir = try directory
+        func usd(_ cents: Int64) -> Money { Money(minorUnits: cents, currency: "USD", exponent: 2)! }
+        order += 1
+        let id = UUID()
+        let record = AccountRecord(
+            id: id, provider: .typeSafe, label: "IZZY Agency", webProfileID: UUID(), displayOrder: order,
+            createdAt: now.addingTimeInterval(-10 * 86_400), billingRenewalDay: nil
+        )
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let today = calendar.startOfDay(for: now)
+        let inputs = [7816034, 4187890, 5870021, 3437157, 6562920, 3895772, 5362713, 8476215, 5360650, 14721310, 3807107, 3426547, 4384478, 5713112]
+        let days = inputs.enumerated().map { index, input in
+            TypeSafeDay(day: calendar.date(byAdding: .day, value: index - inputs.count + 1, to: today)!, inputTokens: input, outputTokens: input / 16, requests: input / 1100)
+        }
+        let grants = [
+            UsageCreditGrant(id: "free", kind: .free, remaining: usd(158), granted: usd(500), expiresAt: now.addingTimeInterval(18 * 3600)),
+            UsageCreditGrant(id: "bought", kind: .purchased, remaining: usd(2500), granted: usd(2500), expiresAt: now.addingTimeInterval(364 * 86_400)),
+        ]
+        let snapshot = UsageSnapshot(
+            accountID: id, fetchedAt: now.addingTimeInterval(-60), fiveHour: nil, weekly: nil,
+            usageCredits: UsageCredits(fetchedAt: now.addingTimeInterval(-60), balance: usd(2658), grants: grants, complete: true, readThisSession: true),
+            typeSafeSpend: TypeSafeSpend(fetchedAt: now.addingTimeInterval(-60), cycleSpent: usd(341), cycleLabel: "September 2026",
+                                         resetsAt: calendar.date(byAdding: .day, value: 1, to: today), autoRecharge: false),
+            typeSafeDailyUsage: TypeSafeDailyUsage(fetchedAt: now.addingTimeInterval(-60), days: days)
+        )
+        let presentation = AccountPresentation(account: record, snapshot: snapshot, state: .current)
+        let card = AccountCardView(presentation: presentation, onReauthenticate: {}, now: now)
+            .frame(width: 540).padding(.vertical, 8).background(Theme.ink)
+        // Below a $30 low-balance threshold: the balance in the warning colour.
+        let lowCard = AccountCardView(presentation: presentation, onReauthenticate: {}, now: now, lowBalanceCents: 3_000)
+            .frame(width: 540).padding(.vertical, 8).background(Theme.ink)
+        // TypeSafe is an API: its card sits under the API header.
+        let withTypeSafe = popover(Array(sampleAccounts().filter { !$0.account.isPaused }.prefix(2)) + [presentation], layout: .standard)
+        let settingsDirectory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: settingsDirectory) }
+        let alertSettings = AppSettings(fileURL: settingsDirectory.appending(path: "app-settings.json"))
+        try await alertSettings.setUsageAlertsEnabled(true)
+        try await alertSettings.setLowBalanceCents(500, provider: .typeSafe)
+        let alerts = AlertsDetailView(
+            settings: alertSettings, providers: [.claude, .typeSafe], notificationPermission: .allowed,
+            onSetThresholds: { _, _, _, _ in .default }, onSetCursorSpend: { _, _ in .off },
+            onSetDropEnabled: { _, _ in }, onSetNotificationEnabled: { _, _ in },
+            onSetResetLeadDays: { _, _ in }, onError: { _ in }
+        )
+        let settings = AccountDetailView(
+            presentation: presentation, now: now,
+            onRename: { _ in }, onRenameError: { _ in }, onReauthenticate: {}, onRemove: {},
+            onSetAutoStart: { _ in }, onSetBillingRenewalDay: { _ in }, onSetPlan: { _ in },
+            onSetPaused: { _ in }, onDebugSend: {}
+        )
+        .background(Theme.ink)
+        for (scheme, suffix) in Self.schemes {
+            try write(render(card, scheme), dir, "typesafe-card-\(suffix).png")
+            try write(render(lowCard, scheme), dir, "typesafe-card-low-\(suffix).png")
+            try write(await renderHosted(withTypeSafe, width: 540, height: 1150, scheme), dir, "popover-typesafe-api-\(suffix).png")
+            try write(await renderHosted(alerts, width: SettingsView.minimumWindowWidth - SettingsSidebar.idealColumnWidth, height: 900, scheme),
+                      dir, "settings-alerts-typesafe-\(suffix).png")
+            try write(await renderHosted(settings, width: SettingsView.minimumWindowWidth, height: 1300, scheme), dir, "settings-typesafe-\(suffix).png")
+        }
     }
 
     /// Plan value: the consent sheet, and the Settings row after a real pass

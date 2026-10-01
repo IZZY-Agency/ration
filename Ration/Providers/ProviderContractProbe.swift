@@ -57,6 +57,8 @@ struct ProviderContractProbeAdapter: ProviderAdapter {
             URL(string: "https://chatgpt.com/codex/settings/usage")!
         case .cursor:
             URL(string: "https://cursor.com/dashboard")!
+        case .typeSafe:
+            URL(string: "https://console.typesafe.ai/settings/billing")!
         }
     }
 
@@ -246,6 +248,9 @@ private enum ProviderContractSanitizer {
         }
         if Provider.cursor.matchesAppHost(host) {
             return .cursor
+        }
+        if Provider.typeSafe.matchesAppHost(host) {
+            return .typeSafe
         }
         return nil
     }

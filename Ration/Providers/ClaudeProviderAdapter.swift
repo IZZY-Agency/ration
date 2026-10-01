@@ -18,7 +18,8 @@ enum LiveProviderAdapters {
             [
                 ClaudeProviderAdapter(client: client, organizationResolver: resolver),
                 ChatGPTProviderAdapter(),
-                CursorProviderAdapter()
+                CursorProviderAdapter(),
+                TypeSafeProviderAdapter()
             ],
             ClaudeMessageSender(client: client, organizationResolver: resolver)
         )
@@ -34,8 +35,8 @@ struct ClaudeProviderAdapter: ProviderAdapter {
     let provider = Provider.claude
     let signInURL = URL(string: "https://claude.ai/settings/usage")!
 
-    private let client: WebUsageClient
-    private let now: @MainActor () -> Date
+    let client: WebUsageClient
+    let now: @MainActor () -> Date
     private let prepareWebView: PrepareWebView
     private let organizationResolver: ClaudeOrganizationResolver
 
@@ -95,7 +96,8 @@ struct ClaudeProviderAdapter: ProviderAdapter {
             modelWeekly: modelWeekly,
             organizationID: organizationID,
             resetCredits: Self.resetCredits(from: payload, fetchedAt: fetchedAt),
-            planDetection: planDetection
+            planDetection: planDetection,
+            usageCreditsEnabled: Self.usageCreditsEnabled(from: payload)
         )
     }
 
@@ -305,17 +307,6 @@ struct ClaudeProviderAdapter: ProviderAdapter {
         return ResetCredits(fetchedAt: fetchedAt, items: items, complete: complete)
     }
 
-    private static func parseISO8601(_ value: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: value) {
-            return date
-        }
-
-        let wholeSeconds = ISO8601DateFormatter()
-        wholeSeconds.formatOptions = [.withInternetDateTime]
-        return wholeSeconds.date(from: value)
-    }
 }
 
 /// Decodes to nil instead of throwing when a single element is malformed, so one
@@ -367,12 +358,18 @@ struct ClaudeUsagePayload: Decodable, Sendable {
     let sevenDay: ClaudeUsageWindowPayload?
     let limits: [ClaudeLimitPayload]?
     let cedarEmber: ClaudeCedarEmberPayload?
+    /// Usage credits switch, newer and older shapes. See
+    /// `ClaudeProviderAdapter.usageCreditsEnabled(from:)`.
+    let spend: ClaudeSpendPayload?
+    let extraUsage: ClaudeExtraUsagePayload?
 
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
         case limits
         case cedarEmber = "cedar_ember"
+        case spend
+        case extraUsage = "extra_usage"
     }
 
     init(from decoder: any Decoder) throws {
@@ -391,6 +388,9 @@ struct ClaudeUsagePayload: Decodable, Sendable {
         // Lenient: resets are a side channel — a wrong shape means "not read",
         // never a failed usage decode.
         cedarEmber = (try? c.decodeIfPresent(ClaudeCedarEmberPayload.self, forKey: .cedarEmber)) ?? nil
+        // Lenient like resets: the switch is a side channel.
+        spend = (try? c.decodeIfPresent(ClaudeSpendPayload.self, forKey: .spend)) ?? nil
+        extraUsage = (try? c.decodeIfPresent(ClaudeExtraUsagePayload.self, forKey: .extraUsage)) ?? nil
     }
 }
 

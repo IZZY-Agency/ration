@@ -9,6 +9,7 @@ extension Provider {
         // "C" belongs to Claude, so Cursor takes a two-letter mark rather than
         // a colliding initial (ChatGPT already uses "G" for the same reason).
         case .cursor: "Cu"
+        case .typeSafe: "T"
         }
     }
 
@@ -18,6 +19,7 @@ extension Provider {
         case .claude: Theme.gold
         case .chatGPT: Theme.chatGPTGreen
         case .cursor: Theme.iris
+        case .typeSafe: Theme.typeSafeRose
         }
     }
 

@@ -41,6 +41,33 @@ final class PopoverRunsTests: XCTestCase {
         XCTAssertEqual(PopoverRuns.cardIDs(runs), [b.id, a.id, api])
     }
 
+    /// TypeSafe is an API: its card is in the API section, with no
+    /// "TypeSafe" section of its own — even with no API org at all.
+    func testATypeSafeCardSitsInTheAPISection() {
+        let claude = pres(0, .claude), typeSafe = pres(1, .typeSafe), api = UUID()
+        let runs = PopoverRuns.make(order: nil, presentations: [claude, typeSafe], apiIDs: [api], orderingPinByProvider: [:])
+        XCTAssertEqual(runs.map(\.kind), [.provider(.claude), .api])
+        XCTAssertEqual(PopoverRuns.cardIDs(runs), [claude.id, api, typeSafe.id])
+        XCTAssertEqual(runs.last?.apiIDs, [api], "only orgs are API spend presentations")
+
+        let alone = PopoverRuns.make(order: nil, presentations: [typeSafe], apiIDs: [], orderingPinByProvider: [:])
+        XCTAssertEqual(alone.map(\.kind), [.api])
+        XCTAssertEqual(alone.first?.apiEntries, [.account(typeSafe)])
+    }
+
+    /// With a saved order, a TypeSafe item joins the API run it sits in.
+    func testASavedOrderPutsTypeSafeIntoTheAdjacentAPIRun() {
+        let claude = pres(0, .claude), typeSafe = pres(1, .typeSafe), api = UUID()
+        let order: [Item] = [.subscription(claude.id), .api(api), .subscription(typeSafe.id)]
+        let runs = PopoverRuns.make(order: order, presentations: [claude, typeSafe], apiIDs: [api], orderingPinByProvider: [:])
+        XCTAssertEqual(runs.map(\.kind), [.provider(.claude), .api])
+        XCTAssertEqual(runs.last?.apiEntries, [.org(api), .account(typeSafe)])
+
+        let first: [Item] = [.subscription(typeSafe.id), .subscription(claude.id), .api(api)]
+        let split = PopoverRuns.make(order: first, presentations: [claude, typeSafe], apiIDs: [api], orderingPinByProvider: [:])
+        XCTAssertEqual(split.map(\.kind), [.api, .provider(.claude), .api], "a header wherever the kind changes")
+    }
+
     func testGaugesFollowTheSavedOrder() {
         let s1 = UUID(), s2 = UUID(), a1 = UUID()
         let gauge = { (label: String) in MenuBarGauge(provider: .claude, label: label, fraction: 0.5, windowKind: .fiveHour, inUse: false) }

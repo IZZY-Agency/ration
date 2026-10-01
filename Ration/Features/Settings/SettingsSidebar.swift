@@ -204,7 +204,8 @@ private struct MergedAccountRows<Row: View>: View {
         let items = SidebarAccountOrder.merged(
             subscriptions: presentations.map(\.account.id),
             apis: model.state.orgs.sorted { $0.displayOrder < $1.displayOrder }.map(\.id),
-            saved: model.state.sidebarOrder
+            saved: model.state.sidebarOrder,
+            apiAccounts: SidebarAccountOrder.apiAccountIDs(presentations)
         )
         ForEach(items, id: \.self) { item in
             switch item {

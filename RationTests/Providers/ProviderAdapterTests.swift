@@ -7,10 +7,10 @@ final class ProviderAdapterTests: XCTestCase {
     /// Every shipped provider has a live adapter, in the display order the
     /// app relies on.
     @MainActor
-    func testLiveProviderAdaptersAreClaudeChatGPTAndCursorInOrder() {
+    func testLiveProviderAdaptersAreClaudeChatGPTCursorAndTypeSafeInOrder() {
         XCTAssertEqual(
             LiveProviderAdapters.all.map(\.provider),
-            [.claude, .chatGPT, .cursor]
+            [.claude, .chatGPT, .cursor, .typeSafe]
         )
     }
 

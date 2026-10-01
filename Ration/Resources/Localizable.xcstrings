@@ -47,25 +47,25 @@
         }
       }
     },
-    "A ring per account, next to the menu bar icon, filled by the window below; accounts currently in use get a green center dot. Hover for exact values. Cursor has no rate windows and never shows." : {
+    "A ring per account, filled by the window below, in place of the menu bar icon (it comes back when nothing shows); accounts currently in use get a green center dot. API accounts with a monthly budget show a square. Hover for exact values. Cursor has no rate windows and never shows." : {
       "comment" : "Settings › General note under the menu bar rings toggle. Cursor is a brand.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A ring per account, next to the menu bar icon, filled by the window below; accounts currently in use get a green center dot. Hover for exact values. Cursor has no rate windows and never shows."
+            "value" : "A ring per account, filled by the window below, in place of the menu bar icon (it comes back when nothing shows); accounts currently in use get a green center dot. API accounts with a monthly budget show a square. Hover for exact values. Cursor has no rate windows and never shows."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un anneau par compte, à côté de l’icône de la barre des menus, rempli selon la fenêtre ci-dessous ; les comptes en cours d’utilisation ont un point vert au centre. Survolez-les pour voir les valeurs exactes. Cursor n’a pas de fenêtre de limite et n’apparaît jamais."
+            "value" : "Un anneau par compte, rempli selon la fenêtre ci-dessous, à la place de l’icône de la barre des menus (elle revient quand rien ne s’affiche) ; les comptes en cours d’utilisation ont un point vert au centre. Les comptes API avec un budget mensuel affichent un carré. Survolez-les pour voir les valeurs exactes. Cursor n’a pas de fenêtre de limite et n’apparaît jamais."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "По кільцю на кожен обліковий запис біля значка в рядку меню, заповненому за вікном, вибраним нижче; активні облікові записи мають зелену крапку в центрі. Наведіть курсор, щоб побачити точні значення. Cursor не має вікон лімітів і ніколи не показується."
+            "value" : "По кільцю на кожен обліковий запис замість значка в рядку меню (він повертається, коли нічого не показується), заповненому за вікном, вибраним нижче; активні облікові записи мають зелену крапку в центрі. Облікові записи API з місячним бюджетом показують квадрат. Наведіть курсор, щоб побачити точні значення. Cursor не має вікон лімітів і ніколи не показується."
           }
         }
       }
@@ -3313,6 +3313,30 @@
         }
       }
     },
+    "These accounts track spend or a balance rather than 5h or weekly windows — their figures show on each account card." : {
+      "comment" : "History window when the only accounts are ones without usage windows (Cursor, TypeSafe).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These accounts track spend or a balance rather than 5h or weekly windows — their figures show on each account card."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ces comptes suivent des dépenses ou un solde plutôt que des fenêtres de 5 h ou hebdomadaires — leurs chiffres figurent sur la carte de chaque compte."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ці облікові записи відстежують витрати або залишок, а не 5-годинні чи тижневі вікна — їхні дані показано на картці кожного облікового запису."
+          }
+        }
+      }
+    },
     "This browser profile belongs only to this account." : {
       "comment" : "Sign-in window subtitle.",
       "localizations" : {
@@ -3871,6 +3895,54 @@
         }
       }
     },
+    "account.codexCredits.footnote" : {
+      "comment" : "Account settings (ChatGPT), Usage Credits section footnote.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy Codex credits on chatgpt.com. Ration only shows them."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Achetez des crédits Codex sur chatgpt.com. Ration se contente de les afficher."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Придбайте кредити Codex на chatgpt.com. Ration лише показує їх."
+          }
+        }
+      }
+    },
+    "account.codexCredits.unlimited" : {
+      "comment" : "Account settings (ChatGPT), Usage Credits section: the balance is unlimited.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlimited"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Illimités"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Без обмежень"
+          }
+        }
+      }
+    },
     "account.error.commitRollbackFailed" : {
       "comment" : "Error: a newly signed-in account was saved but its first limits could not be stored.",
       "extractionState" : "manual",
@@ -4155,6 +4227,534 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "можна використати зараз"
+          }
+        }
+      }
+    },
+    "account.typeSafe.autoRecharge" : {
+      "comment" : "Account settings (TypeSafe), Spend section: row label for automatic top-ups.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-recharge"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recharge automatique"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Автопоповнення"
+          }
+        }
+      }
+    },
+    "account.typeSafe.autoRechargeOff" : {
+      "comment" : "Account settings (TypeSafe): auto-recharge is off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вимкнено"
+          }
+        }
+      }
+    },
+    "account.typeSafe.autoRechargeOn" : {
+      "comment" : "Account settings (TypeSafe): auto-recharge is on.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Увімкнено"
+          }
+        }
+      }
+    },
+    "account.typeSafe.creditsFootnote" : {
+      "comment" : "Account settings (TypeSafe), Usage Credits section footnote.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add funds or turn on auto-recharge on console.typesafe.ai. Ration only shows them."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoutez des fonds ou activez la recharge automatique sur console.typesafe.ai. Ration se contente de les afficher."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поповніть рахунок або ввімкніть автопоповнення на console.typesafe.ai. Ration лише показує їх."
+          }
+        }
+      }
+    },
+    "account.typeSafe.estimateNote" : {
+      "comment" : "Account settings (TypeSafe) footnote. %@ = price, e.g. '$0.042'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estimated at %@ per million input tokens, as TypeSafe's console does; output is free."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estimation à %@ par million de jetons d’entrée, comme dans la console TypeSafe ; la sortie est gratuite."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оцінка за ціною %@ за мільйон вхідних токенів, як у консолі TypeSafe; вихідні токени безкоштовні."
+          }
+        }
+      }
+    },
+    "account.typeSafe.last30Days" : {
+      "comment" : "Account settings (TypeSafe), Spend section: row label for the last 30 days of usage.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last 30 days"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 derniers jours"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Останні 30 днів"
+          }
+        }
+      }
+    },
+    "account.typeSafe.last30DaysValue" : {
+      "comment" : "Account settings (TypeSafe): %1$@ = input tokens (compact, e.g. '88.6M'), %2$@ = requests, %3$@ = estimated dollars.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ input tokens · %2$@ requests · ≈ %3$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ jetons d’entrée · %2$@ requêtes · ≈ %3$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ вхідних токенів · %2$@ запитів · ≈ %3$@"
+          }
+        }
+      }
+    },
+    "account.typeSafe.thisCycle" : {
+      "comment" : "Account settings (TypeSafe), Spend section: row label for the current billing cycle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This cycle"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce cycle"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей цикл"
+          }
+        }
+      }
+    },
+    "account.usageCredits.balance" : {
+      "comment" : "Account settings, Usage Credits section: row label for the balance.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Balance"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solde"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Залишок"
+          }
+        }
+      }
+    },
+    "account.usageCredits.footnote" : {
+      "comment" : "Account settings, Usage Credits section footnote.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn usage credits on, or buy more, on claude.ai. Ration only shows them."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activez les crédits d’utilisation ou achetez-en sur claude.ai. Ration se contente de les afficher."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Увімкніть кредити використання або придбайте більше на claude.ai. Ration лише показує їх."
+          }
+        }
+      }
+    },
+    "account.usageCredits.grantLine" : {
+      "comment" : "Account settings, Usage Credits section: one grant. %1$@ = amount left, %2$@ = amount granted, %3$@ = expiry date and time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ left of %2$@ · expires %3$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ restants sur %2$@ · expire le %3$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ з %2$@ залишилося · діє до %3$@"
+          }
+        }
+      }
+    },
+    "account.usageCredits.grantLineLeft" : {
+      "comment" : "Account settings, Usage Credits section: one grant whose original amount claude.ai did not give. %1$@ = amount left, %2$@ = expiry date and time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ left · expires %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ restants · expire le %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ залишилося · діє до %2$@"
+          }
+        }
+      }
+    },
+    "account.usageCredits.grantLineNoExpiry" : {
+      "comment" : "Account settings, Usage Credits section: one grant that does not expire. %1$@ = amount left, %2$@ = amount granted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ left of %2$@ · no expiry"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ restants sur %2$@ · sans expiration"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ з %2$@ залишилося · без терміну дії"
+          }
+        }
+      }
+    },
+    "account.usageCredits.grantLineNoExpiryLeft" : {
+      "comment" : "Account settings, Usage Credits section: one grant that does not expire and whose original amount claude.ai did not give. %@ = amount left.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ left · no expiry"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ restants · sans expiration"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ залишилося · без терміну дії"
+          }
+        }
+      }
+    },
+    "account.usageCredits.kind.free" : {
+      "comment" : "Account settings, Usage Credits section: a free credit grant that recurs (TypeSafe's monthly credit).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free credit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crédit gratuit"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Безкоштовний кредит"
+          }
+        }
+      }
+    },
+    "account.usageCredits.kind.promotional" : {
+      "comment" : "Account settings, Usage Credits section: a credit grant given for free (a promotion).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Promotional"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Promotionnel"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Акційний"
+          }
+        }
+      }
+    },
+    "account.usageCredits.kind.purchased" : {
+      "comment" : "Account settings, Usage Credits section: a credit grant the user bought.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purchased"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acheté"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Придбаний"
+          }
+        }
+      }
+    },
+    "account.usageCredits.partial" : {
+      "comment" : "Account settings, Usage Credits section: some grants in claude.ai's answer could not be read.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some credits could not be read."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certains crédits n’ont pas pu être lus."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Деякі кредити не вдалося прочитати."
+          }
+        }
+      }
+    },
+    "account.usageCredits.read" : {
+      "comment" : "Account settings, Usage Credits section: when the balance was read. %@ = relative time, e.g. '3 minutes ago'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu %@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Прочитано %@."
+          }
+        }
+      }
+    },
+    "account.usageCredits.switchLabel" : {
+      "comment" : "Account settings, Usage Credits section: row label for claude.ai's switch that spends credits once a plan limit is hit.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used when you hit a plan limit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisés quand vous atteignez une limite du forfait"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Використовуються, коли ви досягаєте ліміту плану"
+          }
+        }
+      }
+    },
+    "account.usageCredits.switchOff" : {
+      "comment" : "Account settings, Usage Credits section: the switch is off on claude.ai.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off on claude.ai"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivés sur claude.ai"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вимкнено на claude.ai"
+          }
+        }
+      }
+    },
+    "account.usageCredits.switchOn" : {
+      "comment" : "Account settings, Usage Credits section: the switch is on.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activés"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Увімкнено"
           }
         }
       }
@@ -4951,6 +5551,54 @@
         }
       }
     },
+    "alert.lowBalance.body" : {
+      "comment" : "Notification body: a prepaid API balance fell below the user's threshold. %1$@ = balance with currency (e.g. '$4.12'), %2$@ = account label, %3$@ = the threshold (e.g. '$5').",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ left on %2$@, below your %3$@ alert. API calls stop when the balance runs out."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il reste %1$@ sur %2$@, sous votre seuil d’alerte de %3$@. Les appels d’API s’arrêtent quand le solde est épuisé."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В обліковому записі %2$@ залишилося %1$@ — менше за ваш поріг сповіщення %3$@. Коли кошти закінчаться, виклики API зупиняться."
+          }
+        }
+      }
+    },
+    "alert.lowBalance.title" : {
+      "comment" : "Notification title: a prepaid API balance (TypeSafe) fell below the user's alert threshold. %@ = account label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: balance low"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ : solde bas"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: низький залишок"
+          }
+        }
+      }
+    },
     "alert.rateLimited.body" : {
       "comment" : "Notification body: the provider (Claude, ChatGPT, Cursor) is rate-limiting usage checks. %@ = account label.",
       "extractionState" : "manual",
@@ -5067,6 +5715,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Бюджет API перейшов поріг сповіщення."
+          }
+        }
+      }
+    },
+    "alert.redacted.lowBalance" : {
+      "comment" : "Privacy-mode notification body: must not name the account or give any amount.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An account's balance is low."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le solde d’un compte est bas."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Залишок коштів облікового запису низький."
           }
         }
       }
@@ -5235,6 +5907,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Обліковий запис наближається до ліміту використання."
+          }
+        }
+      }
+    },
+    "alert.redacted.usageCreditExpiring" : {
+      "comment" : "Privacy-mode notification body: must not name the account or give any amount.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An account's usage credits expire soon."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les crédits d’utilisation d’un compte expirent bientôt."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Термін дії кредитів використання облікового запису скоро спливає."
           }
         }
       }
@@ -6223,6 +6919,78 @@
         }
       }
     },
+    "alert.usageCredit.expiring.body" : {
+      "comment" : "Notification body: usage credits expire soon. %1$@ = amount with currency (e.g. '€10.00'), %2$@ = account label, %3$@ = expiry date and time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of usage credits on %2$@ expire %3$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ de crédits d’utilisation sur %2$@ expirent le %3$@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Термін дії кредитів використання на суму %1$@ в обліковому записі %2$@ спливає %3$@."
+          }
+        }
+      }
+    },
+    "alert.usageCredit.expiring.body.switchOff" : {
+      "comment" : "Notification body when claude.ai's usage-credits switch is off. %1$@ = amount with currency, %2$@ = account label, %3$@ = expiry date and time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ of usage credits on %2$@ expire %3$@. Usage credits are off on claude.ai, so Claude won't spend them unless you turn them on."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ de crédits d’utilisation sur %2$@ expirent le %3$@. Les crédits d’utilisation sont désactivés sur claude.ai : Claude ne les dépensera pas tant que vous ne les activerez pas."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Термін дії кредитів використання на суму %1$@ в обліковому записі %2$@ спливає %3$@. Кредити використання вимкнено на claude.ai, тож Claude не витратить їх, доки ви їх не ввімкнете."
+          }
+        }
+      }
+    },
+    "alert.usageCredit.expiring.title" : {
+      "comment" : "Notification title: Claude usage credits (money that pays for Claude past a plan limit) expire soon. %@ = account label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: credits expire soon"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ : crédits expirant bientôt"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: термін дії кредитів скоро спливає"
+          }
+        }
+      }
+    },
     "alerts.expiryWarning" : {
       "comment" : "Settings › Alerts › Resets stepper: how many days before a reset expires to warn. %lld = days.",
       "extractionState" : "manual",
@@ -6373,6 +7141,78 @@
         }
       }
     },
+    "alerts.lowBalance.below" : {
+      "comment" : "Settings › Alerts, Low balance row: the word before the amount field ('Below [5] USD').",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Below"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sous"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нижче"
+          }
+        }
+      }
+    },
+    "alerts.lowBalance.fieldLabel" : {
+      "comment" : "VoiceOver: the Low balance row's amount field.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warn when the balance falls below this amount, in US dollars. Empty turns the alert off."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prévenir quand le solde passe sous ce montant, en dollars US. Vide désactive l’alerte."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Попереджати, коли залишок стане меншим за цю суму в доларах США. Порожнє поле вимикає сповіщення."
+          }
+        }
+      }
+    },
+    "alerts.lowBalance.off" : {
+      "comment" : "Settings › Alerts, Low balance row: placeholder of the empty amount field, meaning the alert is off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "off"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "désactivé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "вимк."
+          }
+        }
+      }
+    },
     "alerts.notifyHelp" : {
       "comment" : "Settings › Alerts tooltip on the Notify checkbox.",
       "extractionState" : "manual",
@@ -6393,6 +7233,222 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Надсилати системне сповіщення, коли цей поріг перетнуто"
+          }
+        }
+      }
+    },
+    "alerts.row.lowBalance" : {
+      "comment" : "Settings › Alerts, TypeSafe section: the row that warns when the prepaid balance falls below an amount.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low balance"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solde bas"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Низький залишок"
+          }
+        }
+      }
+    },
+    "alerts.row.usageCredits" : {
+      "comment" : "Settings › Alerts row (Claude): warnings before Claude usage credits (money that pays for Claude past a plan limit) expire.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage credits"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crédits d’utilisation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кредити використання"
+          }
+        }
+      }
+    },
+    "alerts.usageCredits.leadNote" : {
+      "comment" : "Settings › Alerts, Usage credits row: how early the warning comes; it follows the Resets row's setting. %@ = that setting, e.g. 'Expiry warning: 1 day'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, as for resets"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, comme pour les réinitialisations"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, як для скидань"
+          }
+        }
+      }
+    },
+    "apiAccount.back" : {
+      "comment" : "Add API Account sheet, second step: back to the provider list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retour"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Назад"
+          }
+        }
+      }
+    },
+    "apiAccount.method.adminKey" : {
+      "comment" : "Add API Account sheet, provider row: how this provider connects. %@ = where the key is created (brand: 'Claude Console' / 'OpenAI Platform').",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Admin key from the %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clé administrateur depuis %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ключ адміністратора з %@"
+          }
+        }
+      }
+    },
+    "apiAccount.method.signIn" : {
+      "comment" : "Add API Account sheet, TypeSafe row: it connects through a sign-in window, not a key.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to the console"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connexion à la console"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вхід у консоль"
+          }
+        }
+      }
+    },
+    "apiAccount.pick.subtitle" : {
+      "comment" : "Add API Account sheet, first step: subtitle under the title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pay-as-you-go APIs. Pick the provider."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API payées à l’usage. Choisissez le fournisseur."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API з оплатою за використання. Виберіть постачальника."
+          }
+        }
+      }
+    },
+    "apiAccount.signIn" : {
+      "comment" : "Add API Account sheet, TypeSafe step: opens the sign-in window.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign In…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se connecter…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Увійти…"
+          }
+        }
+      }
+    },
+    "apiAccount.signInNote.typeSafe" : {
+      "comment" : "Add API Account sheet, TypeSafe step. TypeSafe is a pay-as-you-go AI API (brand, never translated).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TypeSafe's API keys can't read usage or the balance, so Ration signs in to the TypeSafe console instead. Sign in with the code TypeSafe e-mails you: Google sign-in doesn't work in that window. The card shows your prepaid balance, this cycle's spend and daily usage."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les clés API de TypeSafe ne donnent accès ni à l’utilisation ni au solde : Ration se connecte donc à la console TypeSafe. Connectez-vous avec le code que TypeSafe vous envoie par e-mail : la connexion Google ne fonctionne pas dans cette fenêtre. La carte affiche votre solde prépayé, les dépenses du cycle et l’utilisation par jour."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ключі API TypeSafe не дають доступу ні до використання, ні до залишку, тож Ration входить у консоль TypeSafe. Увійдіть за кодом, який TypeSafe надсилає електронною поштою: вхід через Google у цьому вікні не працює. Картка показує передплачений залишок, витрати цього циклу й використання за днями."
           }
         }
       }
@@ -6801,6 +7857,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Це не схоже на ключ адміністратора."
+          }
+        }
+      }
+    },
+    "apiSpend.error.otherVendor" : {
+      "comment" : "Add API Account sheet: the pasted Admin key belongs to the other platform than the one picked. %@ = that platform (brand: 'OpenAI API' / 'Anthropic API').",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is an Admin key for %@. Go back and pick it instead."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il s’agit d’une clé administrateur pour %@. Revenez en arrière et choisissez-la."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Це ключ адміністратора для %@. Поверніться й виберіть його."
           }
         }
       }
@@ -10921,6 +12001,78 @@
         }
       }
     },
+    "codexCredits.line.unlimited" : {
+      "comment" : "Account card line (ChatGPT): the account has unlimited Codex credits. Monospaced, keep short.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credits unlimited"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crédits illimités"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кредити без обмежень"
+          }
+        }
+      }
+    },
+    "codexCredits.spoken.balance" : {
+      "comment" : "VoiceOver: the ChatGPT Codex credits card line. %@ = number of credits.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex credits: %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crédits Codex : %@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кредити Codex: %@."
+          }
+        }
+      }
+    },
+    "codexCredits.spoken.unlimited" : {
+      "comment" : "VoiceOver: the ChatGPT account has unlimited Codex credits.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex credits: unlimited."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crédits Codex : illimités."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кредити Codex: без обмежень."
+          }
+        }
+      }
+    },
     "common.system" : {
       "comment" : "Language picker option that follows the macOS language order instead of forcing one language.",
       "extractionState" : "manual",
@@ -11616,6 +12768,30 @@
         }
       }
     },
+    "drop.count.credit" : {
+      "comment" : "Drop panel header count, uppercase monospaced abbreviation, as short as possible. %lld = number of usage-credit rows.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld CREDIT"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld CRÉD"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld КРЕД"
+          }
+        }
+      }
+    },
     "drop.count.critical" : {
       "comment" : "Drop panel header count, uppercase monospaced abbreviation, as short as possible. %lld = number of rows. Rows at the critical tier. Glossary: critical.",
       "extractionState" : "manual",
@@ -11684,6 +12860,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld ПОПЕР"
+          }
+        }
+      }
+    },
+    "drop.header.credits" : {
+      "comment" : "Drop panel header, uppercase monospaced, one line in a 320 pt panel: keep it short. Shown when the panel only lists usage credits about to expire.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CREDITS"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CRÉDITS"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "КРЕДИТИ"
           }
         }
       }
@@ -11804,6 +13004,132 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "щонайменше %1$lld відсотків, щонайменше %2$@ з %3$@"
+          }
+        }
+      }
+    },
+    "drop.spoken.creditCount" : {
+      "comment" : "VoiceOver: number of usage-credit rows (credits about to expire) in the drop panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld expiring credit"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld expiring credits"
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld crédits sur le point d’expirer"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld crédit sur le point d’expirer"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld crédits sur le point d’expirer"
+                }
+              }
+            }
+          }
+        },
+        "uk" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld кредити, що спливають"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld кредитів, що спливають"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld кредит, що спливає"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld кредиту, що спливає"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "drop.spoken.creditRow" : {
+      "comment" : "VoiceOver: a drop row for Claude usage credits about to expire. %1$@ = account label, %2$@ = amount with currency.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, usage credits worth %2$@ expiring"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, crédits d’utilisation de %2$@ sur le point d’expirer"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, термін дії кредитів використання на суму %2$@ скоро спливає"
+          }
+        }
+      }
+    },
+    "drop.spoken.credits" : {
+      "comment" : "VoiceOver: drop panel title when it only lists usage credits about to expire.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage credits"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crédits d’utilisation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кредити використання"
           }
         }
       }
@@ -11930,6 +13256,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : ", термін дії спливає зараз"
+          }
+        }
+      }
+    },
+    "drop.spoken.lowBalanceRow" : {
+      "comment" : "VoiceOver: a drop row for a prepaid API balance below the user's threshold. %1$@ = account label, %2$@ = balance with currency, %3$@ = threshold.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, balance %2$@, below your %3$@ alert"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, solde de %2$@, sous votre seuil d’alerte de %3$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, залишок %2$@, менше за ваш поріг %3$@"
           }
         }
       }
@@ -12576,6 +13926,30 @@
         }
       }
     },
+    "drop.subject.balance" : {
+      "comment" : "Drop row subject, uppercase monospaced tag-like word, as short as possible. A row of a prepaid API balance below the user's threshold.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "BALANCE"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SOLDE"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ЗАЛИШОК"
+          }
+        }
+      }
+    },
     "drop.subject.budget" : {
       "comment" : "Attention-drop row subject for an API org's monthly budget. Uppercase like the other drop subjects.",
       "extractionState" : "manual",
@@ -12596,6 +13970,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "БЮДЖЕТ"
+          }
+        }
+      }
+    },
+    "drop.subject.credits" : {
+      "comment" : "Drop row subject, uppercase monospaced tag-like word, as short as possible. A row of Claude usage credits about to expire.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CREDITS"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CRÉDITS"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "КРЕДИТИ"
           }
         }
       }
@@ -12744,30 +14142,6 @@
         }
       }
     },
-    "featureSwitch.summary.resets" : {
-      "comment" : "One-line explanation under the Resets feature switch.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Shows usage-limit resets on cards and in account settings, and alerts about them."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Affiche les réinitialisations de limite sur les cartes et dans les réglages du compte, et envoie des alertes à leur sujet."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Показує скидання лімітів на картках і в параметрах облікового запису та надсилає про них сповіщення."
-          }
-        }
-      }
-    },
     "featureSwitch.summary.switchAdvice" : {
       "comment" : "One-line explanation under the Switch suggestions feature switch.",
       "extractionState" : "manual",
@@ -12836,30 +14210,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Визначення активного облікового запису"
-          }
-        }
-      }
-    },
-    "featureSwitch.title.resets" : {
-      "comment" : "Settings → General → Features: title of the switch that shows usage-limit resets.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Resets"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Réinitialisations"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Скидання"
           }
         }
       }
@@ -15579,6 +16929,30 @@
         }
       }
     },
+    "onboarding.hint.typeSafe" : {
+      "comment" : "Setup guide, TypeSafe row hint. TypeSafe is a pay-as-you-go AI API (a brand name, not translated).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with the code TypeSafe e-mails you: Google sign-in doesn't work in this window. The card shows your prepaid balance and this cycle's spend."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectez-vous avec le code que TypeSafe vous envoie par e-mail : la connexion Google ne fonctionne pas dans cette fenêtre. La carte affiche votre solde prépayé et les dépenses du cycle."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Увійдіть за кодом, який TypeSafe надсилає електронною поштою: вхід через Google у цьому вікні не працює. Картка показує передплачений залишок і витрати цього циклу."
+          }
+        }
+      }
+    },
     "onboarding.launch.subtitle" : {
       "comment" : "Setup guide › launch-at-login step subtitle.",
       "extractionState" : "manual",
@@ -16175,6 +17549,174 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Привіт, %@"
+          }
+        }
+      }
+    },
+    "provider.show.cellLabel" : {
+      "comment" : "VoiceOver: one checkbox of the per-provider grid. %1$@ = item (Credits, Resets, Token burn), %2$@ = provider name (brand).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show %1$@ for %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher %1$@ pour %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показувати «%1$@» для %2$@"
+          }
+        }
+      }
+    },
+    "provider.show.credits" : {
+      "comment" : "Settings › General › Features, 'Show per provider' grid row: usage credits / Codex credits on cards and in account settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credits"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crédits"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кредити"
+          }
+        }
+      }
+    },
+    "provider.show.none" : {
+      "comment" : "VoiceOver: an empty cell of the per-provider grid. %1$@ = item, %2$@ = provider name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ has no %1$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ n’a pas de %1$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ не має «%1$@»"
+          }
+        }
+      }
+    },
+    "provider.show.note" : {
+      "comment" : "Settings › General › Features, under the per-provider grid.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off hides it on that provider's cards and in its account settings, and silences its alerts. Token burn counts only while Claude plan value is on."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivé, il est masqué sur les cartes de ce fournisseur et dans les réglages de ses comptes, et ses alertes se taisent. La consommation de jetons n’est comptée que si « Valeur du forfait Claude » est activé."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вимкнене приховується на картках цього постачальника й у параметрах його облікових записів, а його сповіщення замовкають. Витрата токенів рахується, лише коли ввімкнено «Вартість плану Claude»."
+          }
+        }
+      }
+    },
+    "provider.show.resets" : {
+      "comment" : "Settings › General › Features, 'Show per provider' grid row: usage-limit resets on cards, in account settings and their alerts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resets"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réinitialisations"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скидання"
+          }
+        }
+      }
+    },
+    "provider.show.title" : {
+      "comment" : "Settings › General › Features: heading of the grid of per-provider show switches.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show per provider"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher par fournisseur"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показувати за постачальником"
+          }
+        }
+      }
+    },
+    "provider.show.tokenBurn" : {
+      "comment" : "Settings › General › Features, 'Show per provider' grid row: Claude plan value worked out from Claude Code logs (token burn).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token burn"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Consommation de jetons"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Витрата токенів"
           }
         }
       }
@@ -17618,6 +19160,54 @@
         }
       }
     },
+    "settings.section.typeSafeSpend" : {
+      "comment" : "Settings section header (Title Case in English, sentence case in French and Ukrainian): a TypeSafe account's spend.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spend"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dépenses"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Витрати"
+          }
+        }
+      }
+    },
+    "settings.section.usageCredits" : {
+      "comment" : "Settings section header (Title Case in English, sentence case in French and Ukrainian): a Claude account's usage credits, money that pays for Claude past a plan limit.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage Credits"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crédits d’utilisation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кредити використання"
+          }
+        }
+      }
+    },
     "settings.sidebar.addSubscriptionAccount" : {
       "comment" : "Settings sidebar, under the accounts: opens the window that adds a Claude, ChatGPT or Cursor subscription account.",
       "extractionState" : "manual",
@@ -18118,6 +19708,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@: витрачено щонайменше %2$lld%% місячного бюджету"
+          }
+        }
+      }
+    },
+    "statusItem.tooltip.creditLeft" : {
+      "comment" : "Menu-bar tooltip for a prepaid API account's square (TypeSafe). %1$@ = provider + account label (e.g. 'TypeSafe Lab'), %2$@ = balance with currency, %3$@ = the credit it is a share of (every unexpired grant's original amount).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ of %3$@ credit left"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : %2$@ sur %3$@ de crédit restant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: залишилося %2$@ з %3$@ кредиту"
+          }
+        }
+      }
+    },
+    "statusItem.tooltip.creditUsed" : {
+      "comment" : "Same, in 'used' mode. %2$@ = amount spent of the credit held.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ of %3$@ credit used"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : %2$@ sur %3$@ de crédit utilisé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: використано %2$@ з %3$@ кредиту"
           }
         }
       }
@@ -20414,6 +22052,174 @@
         }
       }
     },
+    "typeSafe.card.expiresIn" : {
+      "comment" : "TypeSafe card warning line: a credit grant expires soon. %1$@ = amount, %2$@ = compact countdown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ expires in %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ expirent dans %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ спливає через %2$@"
+          }
+        }
+      }
+    },
+    "typeSafe.card.expiresNow" : {
+      "comment" : "TypeSafe card warning line: a credit grant expires this moment. %@ = amount.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ expires now"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ expirent maintenant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ спливає зараз"
+          }
+        }
+      }
+    },
+    "typeSafe.card.left" : {
+      "comment" : "TypeSafe card, next to the balance headline (e.g. '$26.58 left'). Monospaced, keep short.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "left"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "restants"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "залишилося"
+          }
+        }
+      }
+    },
+    "typeSafe.card.resetsIn" : {
+      "comment" : "Appended to the TypeSafe caption. Starts with ' · '. %@ = compact countdown (e.g. '1d').",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · resets in %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · réinitialisation dans %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · скидання через %@"
+          }
+        }
+      }
+    },
+    "typeSafe.card.spent" : {
+      "comment" : "TypeSafe card caption: what this billing cycle has cost so far. %@ = amount, e.g. '$3.41'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ spent this cycle"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ dépensés ce cycle"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ витрачено за цей цикл"
+          }
+        }
+      }
+    },
+    "typeSafe.spoken.balance" : {
+      "comment" : "VoiceOver: TypeSafe card balance. %@ = amount.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TypeSafe balance: %@ left."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solde TypeSafe : %@ restants."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Залишок TypeSafe: %@."
+          }
+        }
+      }
+    },
+    "typeSafe.spoken.low" : {
+      "comment" : "VoiceOver, TypeSafe card: the balance is below the user's low-balance alert. %@ = the threshold (e.g. '$5').",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Below your %@ alert."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sous votre seuil d’alerte de %@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Менше за ваш поріг сповіщення %@."
+          }
+        }
+      }
+    },
     "unit.days.short" : {
       "comment" : "Compact countdown in the menu-bar popover, drawn in a narrow monospaced column: keep it as short as possible. %lld is a whole number of days (e.g. \"7d\").",
       "extractionState" : "manual",
@@ -20884,6 +22690,318 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "менше ніж хвилину"
+          }
+        }
+      }
+    },
+    "usageCredits.line.balance" : {
+      "comment" : "Account card line (Claude): the usage credits balance, money that pays for Claude past a plan limit. Monospaced, keep short. %@ = amount with currency, e.g. '€10.00'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credits %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crédits %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кредити %@"
+          }
+        }
+      }
+    },
+    "usageCredits.line.expiresIn" : {
+      "comment" : "Appended to the usage credits card line: the whole balance expires soon. Starts with ' · '. %@ = compact countdown (e.g. '18h').",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · expires in %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · expirent dans %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · спливають через %@"
+          }
+        }
+      }
+    },
+    "usageCredits.line.expiresNow" : {
+      "comment" : "Appended to the usage credits card line: the whole balance expires this moment. Starts with ' · '.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · expires now"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · expirent maintenant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · спливають зараз"
+          }
+        }
+      }
+    },
+    "usageCredits.line.off" : {
+      "comment" : "Appended to the usage credits card line when claude.ai's switch that spends credits past a limit is off. Starts with ' · '. Monospaced, keep short.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · off"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · désactivés"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · вимкнено"
+          }
+        }
+      }
+    },
+    "usageCredits.line.partExpiresIn" : {
+      "comment" : "Appended to the usage credits card line: part of the balance expires soon. Starts with ' · '. %1$@ = that amount with currency, %2$@ = compact countdown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · %1$@ expires in %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · %1$@ expirent dans %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · %1$@ спливає через %2$@"
+          }
+        }
+      }
+    },
+    "usageCredits.line.partExpiresNow" : {
+      "comment" : "Appended to the usage credits card line: part of the balance expires this moment. Starts with ' · '. %@ = that amount with currency.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · %@ expires now"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · %@ expirent maintenant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " · %@ спливає зараз"
+          }
+        }
+      }
+    },
+    "usageCredits.spoken.balance" : {
+      "comment" : "VoiceOver: the usage credits card line. %@ = amount with currency.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage credits: %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crédits d’utilisation : %@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кредити використання: %@."
+          }
+        }
+      }
+    },
+    "usageCredits.spoken.expiresIn" : {
+      "comment" : "VoiceOver, appended: the whole balance expires soon. Starts with a space. %@ = spoken duration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " They expire in %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " Ils expirent dans %@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " Вони спливають через %@."
+          }
+        }
+      }
+    },
+    "usageCredits.spoken.expiresNow" : {
+      "comment" : "VoiceOver, appended: the whole balance expires this moment. Starts with a space.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " They expire now."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " Ils expirent maintenant."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " Вони спливають зараз."
+          }
+        }
+      }
+    },
+    "usageCredits.spoken.lastRead" : {
+      "comment" : "VoiceOver, appended when the balance was read a while ago. Starts with a space. %@ = time of day.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " Last read at %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " Dernière lecture à %@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " Востаннє прочитано о %@."
+          }
+        }
+      }
+    },
+    "usageCredits.spoken.off" : {
+      "comment" : "VoiceOver, appended to the usage credits line: claude.ai's switch that spends them past a limit is off. Starts with a space.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " Off on claude.ai."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " Désactivés sur claude.ai."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " Вимкнено на claude.ai."
+          }
+        }
+      }
+    },
+    "usageCredits.spoken.partExpiresIn" : {
+      "comment" : "VoiceOver, appended: part of the balance expires soon. Starts with a space. %1$@ = amount, %2$@ = spoken duration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %1$@ of them expire in %2$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %1$@ expirent dans %2$@."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %1$@ з них спливає через %2$@."
+          }
+        }
+      }
+    },
+    "usageCredits.spoken.partExpiresNow" : {
+      "comment" : "VoiceOver, appended: part of the balance expires this moment. Starts with a space. %@ = amount.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ of them expire now."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ expirent maintenant."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %@ з них спливає зараз."
           }
         }
       }

@@ -27,15 +27,21 @@ struct AccountDetailPauseState {
 struct AccountDetailView: View {
     let presentation: AccountPresentation
     var activeUsage: ActiveUsage? = nil
-    /// Global feature switches: Resets hides the Resets section; Claude
-    /// warm-up off locks the Auto-start toggle (its stored value is kept).
+    /// Global feature switches: Claude warm-up off locks the Auto-start
+    /// toggle (its stored value is kept).
     var features: FeatureSwitches = .allOn
+    /// This provider's show switches: Credits, Resets and Token burn hide
+    /// their sections.
+    var providerShow: ProviderShow = .allOn
     var now: Date = .now
     /// The accounts the popover header judges with this one, so an account
     /// the header counts as OFFLINE gets connection guidance.
     var attentionContext: [AccountPresentation] = []
     /// Plan value: its section on Claude accounts while the feature is on.
     var tokenBurn: TokenBurnModel? = nil
+    /// Claude's expiry-warning lead time (the Resets one): grant rows inside
+    /// it are drawn in the warning colour.
+    var usageCreditsLeadDays: Int = 1
     let onReauthenticate: () -> Void
     /// The attention banner's "Refresh now": `refreshAll(reason: .manual)`.
     let onRefreshNow: () -> Void
@@ -58,9 +64,11 @@ struct AccountDetailView: View {
         presentation: AccountPresentation,
         activeUsage: ActiveUsage? = nil,
         features: FeatureSwitches = .allOn,
+        providerShow: ProviderShow = .allOn,
         now: Date = .now,
         attentionContext: [AccountPresentation] = [],
         tokenBurn: TokenBurnModel? = nil,
+        usageCreditsLeadDays: Int = 1,
         onRename: @escaping @MainActor (String) async throws -> Void,
         onRenameError: @escaping @MainActor (Error?) -> Void,
         pendingEdits: PendingEditRegistry? = nil,
@@ -76,9 +84,11 @@ struct AccountDetailView: View {
         self.presentation = presentation
         self.activeUsage = activeUsage
         self.features = features
+        self.providerShow = providerShow
         self.now = now
         self.attentionContext = attentionContext
         self.tokenBurn = tokenBurn
+        self.usageCreditsLeadDays = usageCreditsLeadDays
         self.onReauthenticate = onReauthenticate
         self.onRefreshNow = onRefreshNow
         self.onRemove = onRemove
@@ -174,7 +184,7 @@ struct AccountDetailView: View {
                 }
             }
 
-            if features.resets,
+            if providerShow.shows(.resets, for: account.provider),
                account.provider != .cursor,
                let items = presentation.snapshot?.resetCredits?.unexpired(at: now), !items.isEmpty {
                 Section(SettingsSectionTitle.resets) {
@@ -195,6 +205,35 @@ struct AccountDetailView: View {
                     Text("Use a reset on the provider's usage page. Ration only shows them.")
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
+                }
+            }
+
+            if providerShow.shows(.credits, for: account.provider),
+               account.provider == .claude || account.provider == .typeSafe,
+               let credits = presentation.snapshot?.usageCredits {
+                usageCreditsSection(credits, enabled: presentation.snapshot?.usageCreditsEnabled)
+            }
+
+            if account.provider == .typeSafe,
+               presentation.snapshot?.typeSafeSpend != nil || presentation.snapshot?.typeSafeDailyUsage != nil {
+                typeSafeSpendSection(presentation.snapshot?.typeSafeSpend, usage: presentation.snapshot?.typeSafeDailyUsage)
+            }
+
+            if providerShow.shows(.credits, for: account.provider),
+               account.provider == .chatGPT,
+               let codex = presentation.snapshot?.codexCredits {
+                Section(SettingsSectionTitle.usageCredits) {
+                    LabeledContent(SettingsCopy.usageCreditsBalanceLabel()) {
+                        Text(CodexCreditsCopy.settingsValue(codex))
+                            .font(Theme.mono(12))
+                            .monospacedDigit()
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(CodexCreditsCopy.footnote())
+                        Text(SettingsCopy.usageCreditsRead(codex.fetchedAt, now: bannerNow))
+                    }
+                    .font(Theme.mono(12))
+                    .foregroundStyle(Theme.creamDim)
                 }
             }
 
@@ -242,7 +281,7 @@ struct AccountDetailView: View {
             }
             }
 
-            if account.provider == .claude, let tokenBurn {
+            if account.provider == .claude, providerShow.shows(.tokenBurn, for: .claude), let tokenBurn {
                 TokenBurnPlanValueSection(model: tokenBurn, accountID: account.id,
                                           planName: account.effectivePlan?.displayName)
             }
@@ -286,6 +325,75 @@ struct AccountDetailView: View {
 
     /// The account's last warm-up outcomes, newest first — the only
     /// place a refused keep-alive stays visible after the popover row goes.
+    /// Usage Credits (Claude): the balance, whether claude.ai spends it past a
+    /// plan limit, and one row per grant with money left.
+    /// TypeSafe's Spend section: this cycle, auto-recharge, the last 30 days.
+    private func typeSafeSpendSection(_ spend: TypeSafeSpend?, usage: TypeSafeDailyUsage?) -> some View {
+        Section(TypeSafeSettingsCopy.sectionTitle()) {
+            if let spend {
+                LabeledContent(TypeSafeSettingsCopy.thisCycleLabel()) {
+                    Text(TypeSafeSettingsCopy.thisCycle(spend, now: bannerNow))
+                        .font(Theme.mono(12))
+                        .monospacedDigit()
+                }
+            }
+            if let autoRecharge = spend?.autoRecharge {
+                LabeledContent(TypeSafeSettingsCopy.autoRechargeLabel()) {
+                    Text(TypeSafeSettingsCopy.autoRecharge(autoRecharge))
+                        .font(Theme.mono(12))
+                }
+            }
+            if let days = usage?.days, !days.isEmpty {
+                LabeledContent(TypeSafeSettingsCopy.last30DaysLabel()) {
+                    Text(TypeSafeSettingsCopy.last30Days(days))
+                        .font(Theme.mono(12))
+                        .monospacedDigit()
+                }
+            }
+            Text(TypeSafeSettingsCopy.estimateNote())
+                .font(Theme.mono(12))
+                .foregroundStyle(Theme.creamDim)
+        }
+    }
+
+    private func usageCreditsSection(_ credits: UsageCredits, enabled: Bool?) -> some View {
+        Section(SettingsSectionTitle.usageCredits) {
+            LabeledContent(SettingsCopy.usageCreditsBalanceLabel()) {
+                Text(UsageFormatters.money(credits.balance))
+                    .font(Theme.mono(12))
+                    .monospacedDigit()
+            }
+            if let enabled {
+                LabeledContent(SettingsCopy.usageCreditsSwitchLabel()) {
+                    Text(SettingsCopy.usageCreditsSwitch(enabled))
+                        .font(Theme.mono(12))
+                        .foregroundStyle(enabled ? Theme.cream : Theme.creamDim)
+                }
+            }
+            ForEach(credits.grants(unexpiredAt: bannerNow), id: \.id) { grant in
+                LabeledContent(SettingsCopy.usageCreditsKind(grant.kind)) {
+                    Text(SettingsCopy.usageCreditsGrantLine(grant))
+                        .font(Theme.mono(12))
+                        .monospacedDigit()
+                        .foregroundStyle(
+                            presentation.snapshot?.usageCreditsVerified == true
+                                && UsageCreditPolicy.isWithinLeadWindow(grant, leadDays: usageCreditsLeadDays, now: bannerNow)
+                                ? Theme.warn : Theme.cream
+                        )
+                }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account.provider == .typeSafe ? TypeSafeSettingsCopy.creditsFootnote() : SettingsCopy.usageCreditsFootnote())
+                if !credits.complete {
+                    Text(SettingsCopy.usageCreditsPartial())
+                }
+                Text(SettingsCopy.usageCreditsRead(credits.fetchedAt, now: bannerNow))
+            }
+            .font(Theme.mono(12))
+            .foregroundStyle(Theme.creamDim)
+        }
+    }
+
     private var recentWarmUps: some View {
         let lines = WarmUpOutcomeCopy.lines(account.warmUpOutcomes, now: bannerNow)
         return VStack(alignment: .leading, spacing: 3) {
@@ -335,6 +443,14 @@ struct AccountDetailView: View {
                         spend: presentation.snapshot?.cursorSpend,
                         now: context.date
                     )
+                    .padding(.top, 6)
+                } else if account.provider == .typeSafe {
+                    TypeSafeCardView(card: TypeSafeCard.make(
+                        snapshot: presentation.snapshot,
+                        leadDays: usageCreditsLeadDays,
+                        showsExpiry: providerShow.shows(.credits, for: account.provider),
+                        now: context.date
+                    ))
                     .padding(.top, 6)
                 } else {
                     HStack(alignment: .top, spacing: 14) {

@@ -21,6 +21,8 @@ struct FocusModel: Equatable {
         case headroom(Double, UsageWindowKind)
         /// Cursor's spend this cycle.
         case spent(cents: Int)
+        /// TypeSafe's prepaid balance.
+        case balance(Money)
         case paused
         /// A state the user may need to act on — drawn with the existing
         /// badge text (and the Sign In button for re-authentication).
@@ -356,6 +358,10 @@ struct FocusModel: Equatable {
         if presentation.account.provider == .cursor {
             guard let spend = snapshot.cursorSpend else { return .noData }
             return .spent(cents: spend.spentCents)
+        }
+        if presentation.account.provider == .typeSafe {
+            guard let credits = snapshot.usageCredits else { return .noData }
+            return .balance(credits.balance)
         }
         let kinds: [UsageWindowKind] = UsageHeadroom.consideredKinds(
             includeFable: fableCounts(presentation.id)

@@ -40,7 +40,7 @@ final class AppModelResetCreditsTests: XCTestCase {
         let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         let account = try await signedInWithAlerts(fixture)
-        try await fixture.model.setFeature(.resets, enabled: false)
+        try await fixture.model.setShows(.resets, for: .claude, false)
 
         try await fixture.snapshots.save(creditSnapshot(account.id, [credit()]))
         await fixture.model.flushAlertEvaluations()
@@ -54,11 +54,62 @@ final class AppModelResetCreditsTests: XCTestCase {
         )
     }
 
+    /// Per provider: ChatGPT's Resets off silences only
+    /// ChatGPT; Claude's resets still alert and show.
+    func testResetsAreSwitchedPerProvider() async throws {
+        let fixture = try makeAlertsFixture()
+        defer { fixture.removeFiles() }
+        let claude = try await signedInWithAlerts(fixture)
+        let sessionID = try fixture.model.beginSignIn(provider: .chatGPT)
+        try await fixture.model.completeSignIn(sessionID: sessionID, label: "Codex")
+        let chatGPT = try XCTUnwrap(fixture.model.accounts.first { $0.provider == .chatGPT })
+        try await fixture.model.setShows(.resets, for: .chatGPT, false)
+
+        try await fixture.snapshots.save(creditSnapshot(claude.id, [credit("claude-1")]))
+        try await fixture.snapshots.save(creditSnapshot(chatGPT.id, [credit("codex-1")]))
+        await fixture.model.flushAlertEvaluations()
+
+        let ids = await fixture.scheduler.posts.map(\.id).filter { $0.contains(".resetCredit.") }
+        XCTAssertEqual(ids, ["\(claude.id.uuidString).resetCredit.claude-1.available"], "only Claude's: \(ids)")
+        let rows = fixture.model.attentionRows(now: now)
+        XCTAssertEqual(rows.compactMap(\.accountID), [claude.id], "only Claude's reset row")
+    }
+
+    /// A Claude reset alert queued before Claude's switch-off is dead; a
+    /// ChatGPT switch-off in between leaves it alone.
+    func testAQueuedResetAlertDiesOnlyWithItsOwnProvidersSwitch() async throws {
+        let gate = ResetSaveGate()
+        let directory = try makeTempDirectory()
+        let store = AlertStateStore(fileURL: directory.appending(path: "alert-state.json"), saveStates: { _ in await gate.pass() })
+        let fixture = try makeAlertsFixture(directory: directory, alertStateStore: store)
+        defer { fixture.removeFiles() }
+        let claude = try await signedInWithAlerts(fixture)
+
+        gate.arm()
+        try await fixture.snapshots.save(creditSnapshot(claude.id, [credit("claude-1")]))
+        await gate.waitUntilHeld()
+        try await fixture.model.setShows(.resets, for: .chatGPT, false)
+        gate.release()
+        await fixture.model.flushAlertEvaluations()
+        var ids = await fixture.scheduler.posts.map(\.id).filter { $0.contains(".resetCredit.") }
+        XCTAssertEqual(ids.count, 1, "another provider's switch does not touch it")
+
+        gate.arm()
+        try await fixture.snapshots.save(creditSnapshot(claude.id, [credit("claude-1"), credit("claude-2")], fetchedAt: now.addingTimeInterval(-10)))
+        await gate.waitUntilHeld()
+        try await fixture.model.setShows(.resets, for: .claude, false)
+        try await fixture.model.setShows(.resets, for: .claude, true)
+        gate.release()
+        await fixture.model.flushAlertEvaluations()
+        ids = await fixture.scheduler.posts.map(\.id).filter { $0.contains(".resetCredit.") }
+        XCTAssertEqual(ids.count, 1, "its own provider's off-on flip kills it")
+    }
+
     func testResetsOffDoesNotLiftTheSnooze() async throws {
         let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         let account = try await signedInWithAlerts(fixture)
-        try await fixture.model.setFeature(.resets, enabled: false)
+        try await fixture.model.setShows(.resets, for: .claude, false)
         fixture.model.snoozeAttentionDrop([])
 
         try await fixture.snapshots.save(creditSnapshot(account.id, [credit()]))
@@ -71,11 +122,11 @@ final class AppModelResetCreditsTests: XCTestCase {
         let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
         let account = try await signedInWithAlerts(fixture)
-        try await fixture.model.setFeature(.resets, enabled: false)
+        try await fixture.model.setShows(.resets, for: .claude, false)
         try await fixture.snapshots.save(creditSnapshot(account.id, [credit("c1")]))
         await fixture.model.flushAlertEvaluations()
 
-        try await fixture.model.setFeature(.resets, enabled: true)
+        try await fixture.model.setShows(.resets, for: .claude, true)
         // Same credit, read afresh: already handled while off — silent.
         try await fixture.snapshots.save(creditSnapshot(account.id, [credit("c1")], fetchedAt: now.addingTimeInterval(-10)))
         await fixture.model.flushAlertEvaluations()
@@ -115,12 +166,12 @@ final class AppModelResetCreditsTests: XCTestCase {
         let gate = ResetsSaveGate()
         let (fixture, account) = try await heldQueueFixture(gate)
         defer { fixture.removeFiles() }
-        try await fixture.model.setFeature(.resets, enabled: false)
+        try await fixture.model.setShows(.resets, for: .claude, false)
 
         gate.arm()
         try await fixture.snapshots.save(creditSnapshot(account.id, [credit()]))
         await gate.waitUntilHeld()
-        try await fixture.model.setFeature(.resets, enabled: true)
+        try await fixture.model.setShows(.resets, for: .claude, true)
         gate.release()
         await fixture.model.flushAlertEvaluations()
 
@@ -141,8 +192,8 @@ final class AppModelResetCreditsTests: XCTestCase {
         gate.arm()
         try await fixture.snapshots.save(creditSnapshot(account.id, [credit()]))
         await gate.waitUntilHeld()
-        try await fixture.model.setFeature(.resets, enabled: false)
-        try await fixture.model.setFeature(.resets, enabled: true)
+        try await fixture.model.setShows(.resets, for: .claude, false)
+        try await fixture.model.setShows(.resets, for: .claude, true)
         gate.release()
         await fixture.model.flushAlertEvaluations()
 
@@ -174,10 +225,10 @@ final class AppModelResetCreditsTests: XCTestCase {
         await fixture.model.flushAlertEvaluations()
         XCTAssertEqual(fixture.model.attentionRows(now: now).map(\.subject), [.resetCredit(id: "c1", kind: .available)])
 
-        try await fixture.model.setFeature(.resets, enabled: false)
+        try await fixture.model.setShows(.resets, for: .claude, false)
         XCTAssertEqual(fixture.model.attentionRows(now: now), [])
 
-        try await fixture.model.setFeature(.resets, enabled: true)
+        try await fixture.model.setShows(.resets, for: .claude, true)
         XCTAssertEqual(fixture.model.attentionRows(now: now).map(\.subject), [.resetCredit(id: "c1", kind: .available)])
     }
 
@@ -475,6 +526,35 @@ final class AppModelResetCreditsTests: XCTestCase {
 /// Holds the next armed alert-state save until released.
 @MainActor
 private final class ResetsSaveGate {
+    private var armed = false
+    private var held: CheckedContinuation<Void, Never>?
+    private var heldSignal: CheckedContinuation<Void, Never>?
+
+    func arm() { armed = true }
+
+    func pass() async {
+        guard armed else { return }
+        armed = false
+        await withCheckedContinuation { continuation in
+            held = continuation
+            heldSignal?.resume()
+            heldSignal = nil
+        }
+    }
+
+    func waitUntilHeld() async {
+        if held != nil { return }
+        await withCheckedContinuation { heldSignal = $0 }
+    }
+
+    func release() {
+        held?.resume()
+        held = nil
+    }
+}
+
+@MainActor
+private final class ResetSaveGate {
     private var armed = false
     private var held: CheckedContinuation<Void, Never>?
     private var heldSignal: CheckedContinuation<Void, Never>?

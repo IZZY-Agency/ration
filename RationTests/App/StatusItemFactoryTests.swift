@@ -68,7 +68,9 @@ final class StatusItemFactoryTests: XCTestCase {
                 "ring \(index) has no image"
             )
         }
-        XCTAssertEqual(button.imagePosition, .imageLeft)
+        // The rings say it is Ration's item: the icon steps aside, and comes back when there are none.
+        XCTAssertEqual(button.imagePosition, .noImage)
+        XCTAssertNotNil(button.image, "kept on the button for when the rings go")
         // Kern trails every ring but the last, so spacing scales to any count
         // while the item stays flush on the right.
         for index in 0...2 {
@@ -304,5 +306,20 @@ final class StatusItemFactoryTests: XCTestCase {
             XCTAssertEqual(resolvedHex(provider.markAccentNS, .darkAqua), dark, "\(provider) dark")
             XCTAssertEqual(resolvedHex(provider.markAccentNS, .aqua), light, "\(provider) light")
         }
+    }
+
+    /// A prepaid square says the money, not a percentage.
+    func testTypeSafeTooltipSaysTheMoney() {
+        let credit = CreditGaugeFacts(
+            balance: Money(minorUnits: 2658, currency: "USD", exponent: 2)!,
+            granted: Money(minorUnits: 3000, currency: "USD", exponent: 2)!
+        )
+        let gauge = MenuBarGauge(source: .subscription(.typeSafe), label: "Lab", fraction: 0.886, windowKind: nil, inUse: false, credit: credit)
+        XCTAssertEqual(StatusItemFactory.toolTip(for: [gauge], displaysRemaining: true, locale: Locale(identifier: "en")),
+                       "Ration — TypeSafe Lab $26.58 of $30.00 credit left")
+        XCTAssertEqual(StatusItemFactory.toolTip(for: [gauge], displaysRemaining: false, locale: Locale(identifier: "en")),
+                       "Ration — TypeSafe Lab $3.42 of $30.00 credit used")
+        XCTAssertEqual(StatusItemFactory.toolTip(for: [gauge], displaysRemaining: true, locale: Locale(identifier: "fr")),
+                       "Ration — TypeSafe Lab\u{00A0}: 26,58\u{00A0}$US sur 30,00\u{00A0}$US de crédit restant")
     }
 }

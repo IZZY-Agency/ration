@@ -18,6 +18,10 @@ struct AttentionRow: Equatable, Identifiable, Sendable {
         case window(UsageWindowKind)
         case cursorSpend
         case resetCredit(id: String, kind: ResetCreditRowKind)
+        /// Claude usage credits about to expire; `id` is the soonest grant.
+        case usageCredit(id: String)
+        /// A prepaid balance (TypeSafe) below the user's threshold.
+        case lowBalance
         case apiBudget
     }
 
@@ -57,9 +61,21 @@ struct AttentionRow: Equatable, Identifiable, Sendable {
     var budgetCents: Int? = nil
     /// API Priority Tier `.present`: figures are floored lower bounds.
     var isLowerBound: Bool = false
+    /// Usage-credit rows: the money that expires (the grants' sum). Low-
+    /// balance rows: the balance.
+    var creditAmount: Money? = nil
 
     var id: ID { ID(owner: owner, subject: subject) }
     var isResetCredit: Bool { if case .resetCredit = subject { true } else { false } }
+    var isUsageCredit: Bool { if case .usageCredit = subject { true } else { false } }
+    var isLowBalance: Bool { subject == .lowBalance }
+    /// Counted as a warning or a critical in the header: everything but the
+    /// informational rows (resets, usage credits), which carry no limit tier.
+    var isLimitRow: Bool { !isResetCredit && !isUsageCredit }
+    /// The ✕ acknowledges these one by one instead of leaving them to the
+    /// global snooze (see `AppModel.snoozeAttentionDrop`): the informational
+    /// rows, and a low balance, which no window reset changes — only a top-up.
+    var isAcknowledgedPerRow: Bool { isResetCredit || isUsageCredit || isLowBalance }
     /// The subscription account, for account-only callers; nil for API rows.
     var accountID: UUID? { if case .account(let id) = owner { id } else { nil } }
     var provider: Provider? { if case .subscription(let provider) = source { provider } else { nil } }
@@ -223,7 +239,7 @@ enum AttentionDropModel {
             // leaving a stale member behind. `.expiring` before `.available`
             // matches the loop order below and the ordering this function's
             // doc promises.
-            if settings.featureResetsEnabled,
+            if settings.shows(.resets, for: account.provider),
                settings.channels(forKey: AppSettingsData.resetCreditsKey(provider: account.provider)).drop {
                 let unexpired = snapshot.resetCredits?.unexpired(at: now) ?? []
                 for kind in [ResetCreditRowKind.expiring, .available] {
@@ -247,6 +263,72 @@ enum AttentionDropModel {
                         resetCreditIDs: active.map(\.id)
                     ))
                 }
+            }
+
+            // Usage-credit rows, one per account: every grant whose expiry
+            // warning is active and still unexpired, summed. Like reset
+            // rows, not gated on `UsageEvidence` (a carried reading is still
+            // the best knowledge) and only ever ACTIVATED from fresh evidence
+            // (see `UsageCreditPolicy`). `resetCreditIDs` carries the grant
+            // ids so a dismissal acknowledges them all.
+            // Only a reading verified for this organization this session: a
+            // restored or carried one must not revive another org's row.
+            if settings.shows(.credits, for: account.provider),
+               settings.channels(forKey: AppSettingsData.usageCreditsKey(provider: account.provider)).drop,
+               snapshot.usageCreditsVerified,
+               let credits = snapshot.usageCredits {
+                let active = credits.grants(unexpiredAt: now).filter { grant in
+                    grant.expiresAt != nil && memory.usageCredits[grant.id]?.row == .active
+                }
+                if let soonest = active.min(by: { ($0.expiresAt ?? .distantFuture) < ($1.expiresAt ?? .distantFuture) }) {
+                    let amount = Money.sum(active.map(\.remaining)) ?? soonest.remaining
+                    var row = AttentionRow(
+                        accountID: account.id,
+                        accountLabel: account.label,
+                        provider: account.provider,
+                        subject: .usageCredit(id: soonest.id),
+                        tier: .warning,   // not a limit tier; header/tint ignore it
+                        usedPercent: nil,
+                        spentCents: nil,
+                        thresholdPercent: nil,
+                        thresholdCents: nil,
+                        resetsAt: soonest.expiresAt,
+                        resetCount: nil,
+                        resetCreditIDs: active.map(\.id)
+                    )
+                    row.creditAmount = amount
+                    resetRows.append(row)
+                }
+            }
+
+            // Low balance: from the alert that activated it until the user
+            // clicks it away or a reading shows the balance back at or above
+            // the threshold (which re-arms the alert).
+            if account.provider.hasLowBalanceAlert,
+               settings.shows(.credits, for: account.provider),
+               settings.channels(forKey: AppSettingsData.lowBalanceKey(provider: account.provider)).drop,
+               let thresholdCents = settings.lowBalanceCents(provider: account.provider),
+               memory.lowBalance.row == .active,
+               // The alert's own evidence rule: verified this session AND
+               // current, so a long fetch failure never keeps an old balance up.
+               let balance = LowBalancePolicy.currentBalance(snapshot: snapshot, now: now),
+               LowBalancePolicy.isBelow(balance, thresholdCents: thresholdCents) {
+                var row = AttentionRow(
+                    accountID: account.id,
+                    accountLabel: account.label,
+                    provider: account.provider,
+                    subject: .lowBalance,
+                    tier: .warning,
+                    usedPercent: nil,
+                    spentCents: nil,
+                    thresholdPercent: nil,
+                    thresholdCents: thresholdCents,
+                    resetsAt: nil,
+                    resetCount: nil,
+                    resetCreditIDs: []
+                )
+                row.creditAmount = balance
+                rows.append(row)
             }
         }
 

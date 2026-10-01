@@ -4,6 +4,7 @@ enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
     case claude
     case chatGPT = "chatgpt"
     case cursor
+    case typeSafe = "typesafe"
 
     var id: String { rawValue }
 
@@ -15,6 +16,8 @@ enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
             "ChatGPT"
         case .cursor:
             "Cursor"
+        case .typeSafe:
+            "TypeSafe"
         }
     }
 
@@ -28,8 +31,35 @@ enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
             "chatgpt.com"
         case .cursor:
             "cursor.com"
+        // The console host, not typesafe.ai: `matchesAppHost` accepts
+        // subdomains, and login.typesafe.ai must never count as "on the
+        // provider page" (it would enable Verify mid-login).
+        case .typeSafe:
+            "console.typesafe.ai"
         }
     }
+
+    /// Added from Add API Account and listed with the API accounts, not
+    /// with the subscriptions: TypeSafe is a pay-as-you-go API. It still
+    /// signs in through a web session, because its API keys read nothing
+    /// but the model.
+    var isAPIAccount: Bool { self == .typeSafe }
+
+    /// Switched on in this build. TypeSafe is OFF until
+    /// TypeSafe exposes a key-readable balance and usage API: its console sits
+    /// behind Cloudflare's bot check, which a background read cannot pass once
+    /// the pass from the visible sign-in expires. Its code and an existing
+    /// account's saved data and sign-in stay; remove it from `switchedOff` to
+    /// restore it. Tests clear the set so the dormant code stays covered.
+    nonisolated(unsafe) static var switchedOff: Set<Provider> = [.typeSafe]
+
+    var isOffered: Bool { !Self.switchedOff.contains(self) }
+
+    /// The providers Add Account and the setup guide offer.
+    static var subscriptionCases: [Provider] { allCases.filter { !$0.isAPIAccount && $0.isOffered } }
+
+    /// A prepaid balance with a low-balance alert (Settings › Alerts).
+    var hasLowBalanceAlert: Bool { self == .typeSafe }
 
     func matchesAppHost(_ host: String?) -> Bool {
         guard let host = host?.lowercased() else { return false }
@@ -48,6 +78,8 @@ enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
             "https://chatgpt.com"
         case .cursor:
             "https://cursor.com"
+        case .typeSafe:
+            "https://console.typesafe.ai"
         }
     }
 }

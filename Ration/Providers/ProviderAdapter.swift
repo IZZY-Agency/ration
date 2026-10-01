@@ -17,6 +17,12 @@ protocol ProviderAdapter {
         for snapshot: UsageSnapshot,
         in webView: WKWebView
     ) async throws -> PlanDetection?
+    /// Usage credits (Claude): a separate read after the usage fetch, run in
+    /// the background. nil = no reading. Timeouts propagate. Default: none.
+    func fetchUsageCredits(
+        for snapshot: UsageSnapshot,
+        in webView: WKWebView
+    ) async throws -> UsageCredits?
     /// Cursor's past-cycle totals: a separate, heavier read than the usage
     /// fetch, run in the background. nil = the provider has none. Default: none.
     /// `mayDispatch` runs at the last native moment before the read reaches
@@ -29,6 +35,11 @@ protocol ProviderAdapter {
 }
 
 extension ProviderAdapter {
+    func fetchUsageCredits(
+        for snapshot: UsageSnapshot,
+        in webView: WKWebView
+    ) async throws -> UsageCredits? { nil }
+
     func refreshPlanDetection(
         for snapshot: UsageSnapshot,
         in webView: WKWebView

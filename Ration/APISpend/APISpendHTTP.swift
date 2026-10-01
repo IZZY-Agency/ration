@@ -51,7 +51,15 @@ final class APISpendHTTP: Sendable {
         }
         if recorder.refused { throw APISpendError.redirectRefused }
         guard let data, let http = response as? HTTPURLResponse else { throw APISpendError.transport }
-        if let failure = Self.map(status: http.statusCode, headers: http.allHeaderFields, now: now()) { throw failure }
+        if let failure = Self.map(status: http.statusCode, headers: http.allHeaderFields, now: now()) {
+            if case .integrationChanged = failure {
+                // The status and the vendor's own error text, so an answer
+                // Ration does not expect can be diagnosed. Never the key or
+                // the query: only the path and what the vendor said.
+                Self.log.error("api-spend unexpected status=\(http.statusCode, privacy: .public) vendor=\(vendor.rawValue, privacy: .public) path=\(path, privacy: .public) message=\(Self.errorMessage(data), privacy: .public)")
+            }
+            throw failure
+        }
         // A captive portal or proxy answers 200 with HTML: "couldn't reach", not "integration changed".
         let type = http.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
         guard type.contains("json") else { throw APISpendError.transport }
@@ -72,6 +80,27 @@ final class APISpendHTTP: Sendable {
             task.delegate = delegate
             task.resume()
         }
+    }
+
+    private static let log = Logger(subsystem: "agency.izzy.ration", category: "api-spend")
+
+    /// The vendor's error message (`error.type: error.message`, Anthropic and
+    /// OpenAI) for the log: at most 300 characters of letters, digits, spaces
+    /// and `_:.,'()-`, with anything key-like (`sk-…`) and any run of 20+
+    /// token characters holding a digit (an id or a token) replaced by "…", so no credential or id can reach a
+    /// public log even if a vendor echoed one. "" when the body is not that shape.
+    static func errorMessage(_ data: Data?) -> String {
+        struct Body: Decodable {
+            struct Inner: Decodable { let type: String?; let message: String? }
+            let error: Inner?
+        }
+        guard let data, let body = try? JSONDecoder().decode(Body.self, from: data), let error = body.error else { return "" }
+        var text = [error.type, error.message].compactMap { $0 }.joined(separator: ": ")
+        text = text.replacingOccurrences(of: #"sk-[A-Za-z0-9_\-]*"#, with: "…", options: .regularExpression)
+        // Words like "invalid_request_error" stay; ids and tokens carry digits.
+        text = text.replacingOccurrences(of: #"(?=[A-Za-z0-9_\-]*[0-9])[A-Za-z0-9_\-]{20,}"#, with: "…", options: .regularExpression)
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _:.,'()-…")
+        return String(text.prefix(300).filter { allowed.contains($0) })
     }
 
     static func map(status: Int, headers: [AnyHashable: Any], now: Date) -> APISpendError? {

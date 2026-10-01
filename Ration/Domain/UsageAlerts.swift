@@ -61,6 +61,10 @@ enum AlertEvent: Equatable, Sendable {
     // the lead window, so this one alert also carries the expiry.
     case resetCreditAvailable(credit: ResetCredit, expiringSoon: Bool)
     case resetCreditExpiring(credit: ResetCredit)
+    // Claude usage credits about to expire (see `UsageCreditPolicy`).
+    case usageCreditExpiring(UsageCreditExpiry)
+    // A prepaid balance (TypeSafe) fell below the user's threshold.
+    case lowBalance(LowBalanceAlert)
 }
 
 /// Per-window edge-trigger memory. `hasObserved` guards against firing `reset`
@@ -169,6 +173,11 @@ struct AccountAlertState: Codable, Equatable, Sendable {
     /// Per-credit alert memory, keyed by the provider's credit id. See
     /// `ResetCreditAlertMemory`.
     var resetCredits: [String: ResetCreditAlertMemory] = [:]
+    /// Per-grant usage-credit expiry memory, keyed by the grant id. See
+    /// `UsageCreditAlertMemory`.
+    var usageCredits: [String: UsageCreditAlertMemory] = [:]
+    /// The low-balance alert. See `LowBalanceAlertMemory`.
+    var lowBalance = LowBalanceAlertMemory()
     init() {}
 
     // Backward-compatible decode: older persisted files predate `modelWeekly`
@@ -202,6 +211,9 @@ struct AccountAlertState: Codable, Equatable, Sendable {
         // reload. `FailableDecodable` re-decodes with the CALLER's decoder
         // (and so its date strategy) instead.
         resetCredits = (try? c.decodeIfPresent([String: FailableDecodable<ResetCreditAlertMemory>].self, forKey: .resetCredits))?.compactMapValues(\.value) ?? [:]
+        // Same per-entry lossy decode, with the caller's date strategy.
+        usageCredits = (try? c.decodeIfPresent([String: FailableDecodable<UsageCreditAlertMemory>].self, forKey: .usageCredits))?.compactMapValues(\.value) ?? [:]
+        lowBalance = ((try? c.decodeIfPresent(LowBalanceAlertMemory.self, forKey: .lowBalance)) ?? nil) ?? LowBalanceAlertMemory()
     }
 }
 
@@ -223,7 +235,9 @@ enum AlertPolicy {
         state: AccountViewState,
         thresholds: (UsageWindowKind) -> ThresholdPair,
         spendThresholds: SpendThresholds,
-        resetCredits: ResetCreditAlertInput? = nil
+        resetCredits: ResetCreditAlertInput? = nil,
+        usageCredits: UsageCreditAlertInput? = nil,
+        lowBalance: LowBalanceAlertInput? = nil
     ) -> (events: [AlertEvent], next: AccountAlertState) {
         var next = previous
         var events: [AlertEvent] = []
@@ -251,6 +265,19 @@ enum AlertPolicy {
         // handled without the user having been told.
         if let resetCredits {
             ResetCreditPolicy.evaluate(resetCredits, memory: &next.resetCredits, events: &events)
+        }
+        // Same rule: the caller passes nil while priming.
+        if let usageCredits {
+            UsageCreditPolicy.evaluate(usageCredits, memory: &next.usageCredits, events: &events)
+        }
+        // And again: nil while priming, and for providers without the alert.
+        if let lowBalance {
+            LowBalancePolicy.evaluate(
+                balance: lowBalance.balance,
+                thresholdCents: lowBalance.thresholdCents,
+                memory: &next.lowBalance,
+                events: &events
+            )
         }
 
         return (events, next)

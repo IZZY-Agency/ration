@@ -17,7 +17,7 @@ enum AlertsGridModel {
         switch provider {
         case .claude: [.fiveHour, .weekly, .modelWeekly]
         case .chatGPT: [.fiveHour, .weekly]
-        case .cursor: []
+        case .cursor, .typeSafe: []
         }
     }
 
@@ -76,6 +76,8 @@ struct AlertsDetailView: View {
     /// API spend: one global warning/critical pair for every
     /// organization with a budget. nil — previews, snapshots — hides it.
     var apiSpend: APISpendModel? = nil
+    /// The TypeSafe "Low balance" row's threshold (nil: off).
+    var onSetLowBalance: (Int?, Provider) async throws -> Void = { _, _ in }
 
     private var rowsByProvider: [(Provider, [AlertsGridRow])] {
         let rows = AlertsGridModel.rows(for: providers)
@@ -140,13 +142,25 @@ struct AlertsDetailView: View {
                         .id(row.id)
                     }
 
-                    if provider != .cursor, settings.featureResetsEnabled {
+                    if provider != .cursor, settings.data.shows(.resets, for: provider) {
                         ResetCreditsSettingsRow(
                             provider: provider,
                             leadDays: settings.data.resetExpiryLeadDays(provider: provider),
                             channels: settings.data.channels(forKey: AppSettingsData.resetCreditsKey(provider: provider)),
                             notifyBlockedNote: notifyBlockedNote,
                             onSetLeadDays: onSetResetLeadDays,
+                            onSetDropEnabled: onSetDropEnabled,
+                            onSetNotificationEnabled: onSetNotificationEnabled,
+                            onError: onError
+                        )
+                    }
+
+                    if provider == .claude, settings.data.shows(.credits, for: provider) {
+                        UsageCreditsSettingsRow(
+                            provider: provider,
+                            leadDays: settings.data.resetExpiryLeadDays(provider: provider),
+                            channels: settings.data.channels(forKey: AppSettingsData.usageCreditsKey(provider: provider)),
+                            notifyBlockedNote: notifyBlockedNote,
                             onSetDropEnabled: onSetDropEnabled,
                             onSetNotificationEnabled: onSetNotificationEnabled,
                             onError: onError
@@ -166,6 +180,33 @@ struct AlertsDetailView: View {
                     onSetNotificationEnabled: onSetNotificationEnabled,
                     onError: onError
                 )
+            }
+
+            // TypeSafe is an API: its section sits with API budgets.
+            if providers.contains(.typeSafe), settings.data.shows(.credits, for: .typeSafe) {
+                Section(Provider.typeSafe.displayName) {
+                    UsageCreditsSettingsRow(
+                        provider: .typeSafe,
+                        leadDays: settings.data.resetExpiryLeadDays(provider: .typeSafe),
+                        channels: settings.data.channels(forKey: AppSettingsData.usageCreditsKey(provider: .typeSafe)),
+                        notifyBlockedNote: notifyBlockedNote,
+                        onSetLeadDays: onSetResetLeadDays,
+                        onSetDropEnabled: onSetDropEnabled,
+                        onSetNotificationEnabled: onSetNotificationEnabled,
+                        onError: onError
+                    )
+                    LowBalanceSettingsRow(
+                        provider: .typeSafe,
+                        thresholdCents: settings.data.lowBalanceCents(provider: .typeSafe),
+                        channels: settings.data.channels(forKey: AppSettingsData.lowBalanceKey(provider: .typeSafe)),
+                        notifyBlockedNote: notifyBlockedNote,
+                        pendingEdits: pendingEdits,
+                        onSetThreshold: onSetLowBalance,
+                        onSetDropEnabled: onSetDropEnabled,
+                        onSetNotificationEnabled: onSetNotificationEnabled,
+                        onError: onError
+                    )
+                }
             }
 
             if let apiSpend {
@@ -458,6 +499,164 @@ private struct ResetCreditsSettingsRow: View {
                 )
             }
         }
+    }
+}
+
+/// "Usage credits" row (Claude): channels for the expiry warning. Its lead
+/// time is the Resets row's, shown here rather than given a second stepper.
+private struct UsageCreditsSettingsRow: View {
+    let provider: Provider
+    let leadDays: Int
+    let channels: AlertChannels
+    let notifyBlockedNote: String?
+    /// Set when the provider has no Resets row whose lead time this row
+    /// would share (TypeSafe): the row then carries the stepper itself.
+    var onSetLeadDays: ((Int, Provider) async throws -> Void)? = nil
+    let onSetDropEnabled: (Bool, String) async throws -> Void
+    let onSetNotificationEnabled: (Bool, String) async throws -> Void
+    let onError: (Error) -> Void
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: 4) {
+                if let onSetLeadDays {
+                    Stepper(
+                        ResetExpiryCopy.stepperLabel(leadDays: leadDays),
+                        value: Binding(
+                            get: { leadDays },
+                            set: { value in Task { do { try await onSetLeadDays(value, provider) } catch { onError(error) } } }
+                        ),
+                        in: AppSettingsData.resetExpiryLeadDaysRange
+                    )
+                    .font(Theme.mono(12))
+                    .accessibilityIdentifier("usageCreditsLeadDaysStepper.\(provider.rawValue)")
+                } else {
+                    Text(UsageCreditsAlertsCopy.leadNote(leadDays: leadDays))
+                        .font(Theme.mono(12))
+                        .foregroundStyle(Theme.creamDim)
+                        .lineLimit(1)
+                }
+                ChannelToggles(
+                    channels: channels,
+                    notifyBlockedNote: notifyBlockedNote,
+                    key: AppSettingsData.usageCreditsKey(provider: provider),
+                    onSetDropEnabled: onSetDropEnabled,
+                    onSetNotificationEnabled: onSetNotificationEnabled,
+                    onError: onError
+                )
+            }
+        } label: {
+            Text(UsageCreditsAlertsCopy.title())
+        }
+    }
+}
+
+/// "Low balance  Below [5] USD  ☑ Notify ☑ Drop": a prepaid balance's alert
+/// threshold in dollars. Empty is off — the alert is opt-in. Committed when
+/// focus leaves the field, on Return or when the pane closes, through a
+/// `LowBalanceDraftEditor` a quit also saves; unreadable text reverts to
+/// what is stored.
+private struct LowBalanceSettingsRow: View {
+    let provider: Provider
+    let thresholdCents: Int?
+    let channels: AlertChannels
+    let notifyBlockedNote: String?
+    let onSetDropEnabled: (Bool, String) async throws -> Void
+    let onSetNotificationEnabled: (Bool, String) async throws -> Void
+    let onError: (Error) -> Void
+    @StateObject private var editor: LowBalanceDraftEditor
+    @FocusState private var focused: Bool
+
+    init(
+        provider: Provider,
+        thresholdCents: Int?,
+        channels: AlertChannels,
+        notifyBlockedNote: String?,
+        pendingEdits: PendingEditRegistry?,
+        onSetThreshold: @escaping (Int?, Provider) async throws -> Void,
+        onSetDropEnabled: @escaping (Bool, String) async throws -> Void,
+        onSetNotificationEnabled: @escaping (Bool, String) async throws -> Void,
+        onError: @escaping (Error) -> Void
+    ) {
+        self.provider = provider
+        self.thresholdCents = thresholdCents
+        self.channels = channels
+        self.notifyBlockedNote = notifyBlockedNote
+        self.onSetDropEnabled = onSetDropEnabled
+        self.onSetNotificationEnabled = onSetNotificationEnabled
+        self.onError = onError
+        _editor = StateObject(wrappedValue: LowBalanceDraftEditor.editor(
+            provider: provider,
+            stored: thresholdCents,
+            in: pendingEdits,
+            save: { try await onSetThreshold($0, provider) },
+            onError: onError
+        ))
+    }
+
+    var body: some View {
+        LabeledContent {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(LowBalanceAlertsCopy.below())
+                    .font(Theme.mono(12))
+                    .foregroundStyle(Theme.creamDim)
+                TextField("", text: $editor.text, prompt: Text(LowBalanceAlertsCopy.offPrompt()))
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 64)
+                    .focused($focused)
+                    .onSubmit { editor.submit() }
+                    .accessibilityLabel(Text(LowBalanceAlertsCopy.fieldLabel()))
+                    .accessibilityIdentifier("lowBalanceField.\(provider.rawValue)")
+                // The currency code reads the same in every language; a "$"
+                // goes before the amount in English and after it in French.
+                Text(verbatim: "USD").font(Theme.mono(12)).foregroundStyle(Theme.creamDim)
+                ChannelToggles(
+                    channels: channels,
+                    notifyBlockedNote: notifyBlockedNote,
+                    key: AppSettingsData.lowBalanceKey(provider: provider),
+                    onSetDropEnabled: onSetDropEnabled,
+                    onSetNotificationEnabled: onSetNotificationEnabled,
+                    onError: onError
+                )
+            }
+        } label: {
+            Text(LowBalanceAlertsCopy.title())
+        }
+        // A reopened pane may get an editor that outlived the last one.
+        .task { editor.storeDidChange(thresholdCents) }
+        .onChange(of: thresholdCents) { _, cents in editor.storeDidChange(cents) }
+        .onChange(of: focused) { _, isFocused in if !isFocused { editor.submit() } }
+        .onDisappear { editor.submit() }
+    }
+}
+
+enum LowBalanceAlertsCopy {
+    static func title(locale: Locale = .current) -> String {
+        LocalizedStringResource.alertsRowLowBalance.string(in: locale)
+    }
+
+    static func below(locale: Locale = .current) -> String {
+        LocalizedStringResource.alertsLowBalanceBelow.string(in: locale)
+    }
+
+    static func offPrompt(locale: Locale = .current) -> String {
+        LocalizedStringResource.alertsLowBalanceOff.string(in: locale)
+    }
+
+    static func fieldLabel(locale: Locale = .current) -> String {
+        LocalizedStringResource.alertsLowBalanceFieldLabel.string(in: locale)
+    }
+}
+
+enum UsageCreditsAlertsCopy {
+    static func title(locale: Locale = .current) -> String {
+        LocalizedStringResource.alertsRowUsageCredits.string(in: locale)
+    }
+
+    /// "Expiry warning: 1 day, as for resets".
+    static func leadNote(leadDays: Int, locale: Locale = .current) -> String {
+        LocalizedStringResource.alertsUsageCreditsLeadNote(ResetExpiryCopy.stepperLabel(leadDays: leadDays, locale: locale)).string(in: locale)
     }
 }
 

@@ -118,6 +118,22 @@ enum AlertMessage {
                 body = .alertResetCreditExpiringBodyUntitled(accountLabel, expiry)
             }
             copy = (.alertResetCreditExpiringTitle(accountLabel), body)
+        case .usageCreditExpiring(let expiry):
+            let amount: String = UsageFormatters.money(expiry.amount, locale: locale)
+            let when: String = Self.expiryText(expiry.expiresAt, locale: locale)
+            copy = (
+                .alertUsageCreditExpiringTitle(accountLabel),
+                expiry.switchOff
+                    ? .alertUsageCreditExpiringBodySwitchOff(amount, accountLabel, when)
+                    : .alertUsageCreditExpiringBody(amount, accountLabel, when)
+            )
+        case .lowBalance(let alert):
+            let balance: String = UsageFormatters.money(alert.balance, locale: locale)
+            let threshold: String = LowBalancePolicy.thresholdText(alert.thresholdCents, like: alert.balance, locale: locale)
+            copy = (
+                .alertLowBalanceTitle(accountLabel),
+                .alertLowBalanceBody(balance, accountLabel, threshold)
+            )
         }
         return (copy.title.string(in: locale), copy.body.string(in: locale))
     }
@@ -168,6 +184,8 @@ enum AlertMessage {
         case .budgetThreshold: .alertRedactedBudget
         case .resetCreditAvailable: .alertRedactedResetCreditAvailable
         case .resetCreditExpiring: .alertRedactedResetCreditExpiring
+        case .usageCreditExpiring: .alertRedactedUsageCreditExpiring
+        case .lowBalance: .alertRedactedLowBalance
         }
         return ("Ration", body.string(in: locale))
     }
@@ -191,6 +209,10 @@ enum AlertMessage {
             return "\(base).resetCredit.\(credit.id).available"
         case .resetCreditExpiring(let credit):
             return "\(base).resetCredit.\(credit.id).expiring"
+        case .usageCreditExpiring(let expiry):
+            return "\(base).usageCredit.\(expiry.grantID).expiring"
+        case .lowBalance:
+            return "\(base).lowBalance"
         }
     }
 

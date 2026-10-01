@@ -205,6 +205,57 @@ final class WebUsageClient {
         return try Self.envelope(from: result)
     }
 
+    /// TypeSafe's per-day usage (`GET /api/usage?granularity=day` on the
+    /// console), summed per UTC day IN THE PAGE (`TypeSafeScripts
+    /// .aggregateUsage`), so API-key names and e-mails never cross the
+    /// bridge. `rows` is nil when the answer was unreadable.
+    func fetchTypeSafeUsage(in webView: WKWebView) async throws -> (status: Int, rows: [Any]?) {
+        let result = try await bounded { [evaluator] in
+            try await evaluator(Self.typeSafeUsageScript, [:], webView)
+        }
+        guard
+            let dictionary = result as? [String: Any],
+            let status = Self.integer(from: dictionary["status"])
+        else { throw WebUsageClientError.invalidResponse }
+        let rows = dictionary["days"] as? [Any]
+        // Native cap: a day per row, and the console returns 30.
+        guard (rows?.count ?? 0) <= 400 else { throw WebUsageClientError.invalidResponse }
+        return (status, rows)
+    }
+
+    static let typeSafeUsageScript = """
+    if (location.origin !== "https://console.typesafe.ai") {
+        return { status: 0, days: null };
+    }
+    \(boundedReadJS)
+    \(TypeSafeScripts.aggregateUsage)
+    // Aborted well inside the 60 s evaluation budget, so a stalled request
+    // (or body) returns here instead of hanging the evaluation: the billing
+    // read just before it then still lands (see TypeSafeProviderAdapter).
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    let response;
+    let body;
+    try {
+        response = await fetch("/api/usage?granularity=day", {
+            credentials: "include",
+            headers: { "Accept": "application/json" },
+            signal: controller.signal
+        });
+        body = await __readBounded(response);
+    } catch (error) {
+        return { status: 0, days: null };
+    } finally {
+        clearTimeout(timer);
+    }
+    if (body === null || response.status < 200 || response.status >= 300) {
+        return { status: body === null ? 0 : response.status, days: null };
+    }
+    let parsed;
+    try { parsed = JSON.parse(body); } catch (error) { return { status: response.status, days: null }; }
+    return { status: response.status, days: __rationTypeSafeDays(parsed) };
+    """
+
     /// Pause between the history script's requests, so a backfill trickles
     /// rather than bursts (12 invoices + up to `cursorHistoryMaxPages` pages).
     static let cursorHistoryPauseMilliseconds = 150

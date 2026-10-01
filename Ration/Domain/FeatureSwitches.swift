@@ -1,11 +1,15 @@
 import Foundation
 
-/// The four global feature switches (Settings → General → Features), all ON by
+/// The global feature switches (Settings → General → Features), all ON by
 /// default. Presentation and gating only: fetching, alert evaluation, dedupe
 /// and reset-credit bookkeeping keep running while a switch is off, so turning
 /// it back on shows current state instead of replaying a backlog.
+///
+/// `resets` and `usageCredits` are no longer switches of their own: since
+/// 2026-10-01 each provider has its own (`ProviderShow`), and these two only
+/// supply the default for a provider with no choice yet.
 struct FeatureSwitches: Equatable, Sendable {
-    /// Reset credits: card line, account-pane list, Alerts rows, reset alerts.
+    /// Legacy default for every provider's Resets switch.
     var resets: Bool
     /// Switch suggestions as the user chose them (see `switchAdviceEffective`).
     var switchAdvice: Bool
@@ -13,17 +17,19 @@ struct FeatureSwitches: Equatable, Sendable {
     var warmUp: Bool
     /// In-use detection: IN USE pill/frame/tint, menu-bar dots, Focus hero pick.
     var inUse: Bool
+    /// Legacy default for every provider's Credits switch.
+    var usageCredits: Bool = true
 
-    static let allOn = FeatureSwitches(resets: true, switchAdvice: true, warmUp: true, inUse: true)
+    static let allOn = FeatureSwitches(resets: true, switchAdvice: true, warmUp: true, inUse: true, usageCredits: true)
 
     /// Switch advice is built on in-use detection (its `from` account is the
     /// in-use one), so it is live only when both switches are on.
     var switchAdviceEffective: Bool { switchAdvice && inUse }
 }
 
-/// One global switch, for the Settings → General → Features rows.
+/// One global switch, for the Settings → General → Features rows. Credits
+/// and resets are per provider (`ProviderShowItem`).
 enum FeatureSwitch: String, CaseIterable, Identifiable, Sendable {
-    case resets
     case switchAdvice
     case warmUp
     case inUse
@@ -34,7 +40,6 @@ enum FeatureSwitch: String, CaseIterable, Identifiable, Sendable {
 
     func title(locale: Locale) -> String {
         let resource: LocalizedStringResource = switch self {
-        case .resets: .featureSwitchTitleResets
         case .switchAdvice: .featureSwitchTitleSwitchAdvice
         case .warmUp: .featureSwitchTitleWarmUp
         case .inUse: .featureSwitchTitleInUse
@@ -46,7 +51,6 @@ enum FeatureSwitch: String, CaseIterable, Identifiable, Sendable {
 
     func summary(locale: Locale) -> String {
         let resource: LocalizedStringResource = switch self {
-        case .resets: .featureSwitchSummaryResets
         case .switchAdvice: .featureSwitchSummarySwitchAdvice
         case .warmUp: .featureSwitchSummaryWarmUp
         case .inUse: .featureSwitchSummaryInUse
@@ -70,7 +74,6 @@ enum FeatureSwitch: String, CaseIterable, Identifiable, Sendable {
 
     func isOn(in features: FeatureSwitches) -> Bool {
         switch self {
-        case .resets: features.resets
         case .switchAdvice: features.switchAdvice
         case .warmUp: features.warmUp
         case .inUse: features.inUse

@@ -27,7 +27,7 @@ final class PersistedStateLocalizationTests: XCTestCase {
 
     // MARK: app-settings.json
 
-    static let settingsGolden = #"{"alertChannels":{"claude.weekly":["notification"]},"alertThresholds":{"claude.fiveHour":{"criticalPercent":95,"warningPercent":60}},"cursorSpend":{"criticalCents":5000,"warningCents":2500},"dropSnoozed":false,"featureInUseEnabled":true,"featureResetsEnabled":true,"featureSwitchAdviceEnabled":true,"featureWarmUpEnabled":false,"hasCompletedOnboarding":true,"holidays":[{"end":"2027-01-02","id":"6F1C1A52-0000-4000-8000-000000000001","label":"Winter break","start":"2026-12-24"}],"menuBarDisplaysRemaining":true,"menuBarWindows":{"chatgpt":"weekly"},"popoverLayout":"focus","quietHours":[0,1,2],"redactNotifications":true,"resetExpiryLeadDays":{"chatgpt":3},"showInUseInMenuBar":true,"sortByWeeklyReset":false,"usageAlertsEnabled":true}"#
+    static let settingsGolden = #"{"alertChannels":{"claude.weekly":["notification"]},"alertThresholds":{"claude.fiveHour":{"criticalPercent":95,"warningPercent":60}},"cursorSpend":{"criticalCents":5000,"warningCents":2500},"dropSnoozed":false,"featureInUseEnabled":true,"featureResetsEnabled":true,"featureSwitchAdviceEnabled":true,"featureUsageCreditsEnabled":true,"featureWarmUpEnabled":false,"hasCompletedOnboarding":true,"holidays":[{"end":"2027-01-02","id":"6F1C1A52-0000-4000-8000-000000000001","label":"Winter break","start":"2026-12-24"}],"lowBalanceCents":{},"menuBarDisplaysRemaining":true,"menuBarWindows":{"chatgpt":"weekly"},"popoverLayout":"focus","providerShow":{},"quietHours":[0,1,2],"redactNotifications":true,"resetExpiryLeadDays":{"chatgpt":3},"showInUseInMenuBar":true,"sortByWeeklyReset":false,"usageAlertsEnabled":true}"#
 
     func testSettingsFileIsTheSameBytesInEveryLanguage() async throws {
         let fileURL = directory.appending(path: "app-settings.json")
@@ -68,7 +68,7 @@ final class PersistedStateLocalizationTests: XCTestCase {
 
     // MARK: alert-state.json
 
-    static let alertStateGolden = #"["1D0E0E0E-0000-4000-8000-000000000002",{"fiveHour":{"hasObserved":true,"identity":"1970-01-12T14:46:40Z","lastRemaining":0.05,"notifiedTier":90},"modelWeekly":{"hasObserved":false},"notifiedRateLimited":false,"notifiedReauth":true,"resetCredits":{"credit-1":{"availableRow":"active","expiringRow":"inactive","expiryHandled":false,"lastSeenCount":1,"lastSeenExpiresAt":"1970-01-14T13:46:40Z"}},"spend":{"hasObserved":false},"weekly":{"hasObserved":true,"identity":"1970-01-19T13:46:40Z","lastRemaining":0.2,"notifiedTier":75}}]"#
+    static let alertStateGolden = #"["1D0E0E0E-0000-4000-8000-000000000002",{"fiveHour":{"hasObserved":true,"identity":"1970-01-12T14:46:40Z","lastRemaining":0.05,"notifiedTier":90},"lowBalance":{"notified":false,"row":"inactive"},"modelWeekly":{"hasObserved":false},"notifiedRateLimited":false,"notifiedReauth":true,"resetCredits":{"credit-1":{"availableRow":"active","expiringRow":"inactive","expiryHandled":false,"lastSeenCount":1,"lastSeenExpiresAt":"1970-01-14T13:46:40Z"}},"spend":{"hasObserved":false},"usageCredits":{},"weekly":{"hasObserved":true,"identity":"1970-01-19T13:46:40Z","lastRemaining":0.2,"notifiedTier":75}}]"#
 
     func testAlertStateFileIsTheSameBytesInEveryLanguage() async throws {
         let accountID = UUID(uuidString: "1D0E0E0E-0000-4000-8000-000000000002")!

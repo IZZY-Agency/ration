@@ -232,4 +232,99 @@ final class MenuBarGaugeStateTests: XCTestCase {
         )
         XCTAssertEqual(result.map(\.fraction), [0])
     }
+
+    // MARK: TypeSafe
+
+    private func usd(_ cents: Int64) -> Money { Money(minorUnits: cents, currency: "USD", exponent: 2)! }
+
+    /// A live reading: $26.58 left of $30.00 granted.
+    private func typeSafeSnapshot(for account: AccountRecord, readAgo: TimeInterval = 60, freeExpiresIn: TimeInterval = 17 * 86_400) -> UsageSnapshot {
+        let read = now.addingTimeInterval(-readAgo)
+        let grants = [
+            UsageCreditGrant(id: "free", kind: .free, remaining: usd(158), granted: usd(500), expiresAt: now.addingTimeInterval(freeExpiresIn)),
+            UsageCreditGrant(id: "bought", kind: .purchased, remaining: usd(2500), granted: usd(2500), expiresAt: now.addingTimeInterval(364 * 86_400)),
+        ]
+        return UsageSnapshot(
+            accountID: account.id, fetchedAt: read, fiveHour: nil, weekly: nil,
+            usageCredits: UsageCredits(fetchedAt: read, balance: usd(2658), grants: grants, complete: true)
+        )
+    }
+
+    func testTypeSafeGetsASquareForTheBalanceLeftOfTheCreditHeld() throws {
+        let account = makeAccount(.typeSafe, label: "Lab")
+        let left = try XCTUnwrap(gauges(accounts: [account], snapshots: [account.id: typeSafeSnapshot(for: account)], displaysRemaining: true).first)
+        XCTAssertEqual(left.fraction, 0.886, accuracy: 0.0001)
+        XCTAssertNil(left.windowKind)
+        XCTAssertEqual(left.credit, CreditGaugeFacts(balance: usd(2658), granted: usd(3000)))
+        XCTAssertEqual(left.source.gaugeShape, .roundedSquare, "an API account draws an API square")
+        let used = try XCTUnwrap(gauges(accounts: [account], snapshots: [account.id: typeSafeSnapshot(for: account)]).first)
+        XCTAssertEqual(used.fraction, 0.114, accuracy: 0.0001)
+        XCTAssertEqual(Provider.claude.gaugeSource.gaugeShape, .ring)
+    }
+
+    /// An expired grant leaves the total; an old reading draws nothing.
+    func testTypeSafeCountsOnlyUnexpiredGrantsAndCurrentReadings() throws {
+        let account = makeAccount(.typeSafe)
+        let expired = try XCTUnwrap(gauges(accounts: [account], snapshots: [account.id: typeSafeSnapshot(for: account, freeExpiresIn: -60)], displaysRemaining: true).first)
+        XCTAssertEqual(expired.credit?.granted, usd(2500))
+        XCTAssertEqual(expired.fraction, 1, "a balance above the grants' total reads full")
+        XCTAssertTrue(gauges(accounts: [account], snapshots: [account.id: typeSafeSnapshot(for: account, readAgo: UsageEvidence.maxAge + 60)]).isEmpty)
+    }
+
+    func testTypeSafeWithoutGrantsDrawsNothing() {
+        let account = makeAccount(.typeSafe)
+        let snapshot = UsageSnapshot(
+            accountID: account.id, fetchedAt: now, fiveHour: nil, weekly: nil,
+            usageCredits: UsageCredits(fetchedAt: now, balance: usd(500), grants: [], complete: true)
+        )
+        XCTAssertTrue(gauges(accounts: [account], snapshots: [account.id: snapshot]).isEmpty)
+    }
+
+    /// Spending a grant down never shrinks the whole: the
+    /// free $5 spent to nothing still counts, so $10 of $30 is a third left,
+    /// and everything spent is an empty square, not a missing one.
+    func testASpentGrantStillCountsInTheWhole() throws {
+        let account = makeAccount(.typeSafe)
+        func reading(balance: Int64, grants: [UsageCreditGrant], spent: [UsageCreditGrant], complete: Bool = true) -> UsageSnapshot {
+            UsageSnapshot(accountID: account.id, fetchedAt: now, fiveHour: nil, weekly: nil,
+                          usageCredits: UsageCredits(fetchedAt: now, balance: usd(balance), grants: grants, complete: complete, spentGrants: spent))
+        }
+        let free = UsageCreditGrant(id: "free", kind: .free, remaining: usd(0), granted: usd(500), expiresAt: now.addingTimeInterval(86_400))
+        let bought = UsageCreditGrant(id: "bought", kind: .purchased, remaining: usd(1000), granted: usd(2500), expiresAt: nil)
+        let third = try XCTUnwrap(gauges(accounts: [account], snapshots: [account.id: reading(balance: 1000, grants: [bought], spent: [free])], displaysRemaining: true).first)
+        XCTAssertEqual(third.credit?.granted, usd(3000))
+        XCTAssertEqual(third.fraction, 1.0 / 3.0, accuracy: 0.0001)
+        let empty = try XCTUnwrap(gauges(accounts: [account], snapshots: [account.id: reading(balance: 0, grants: [], spent: [free])], displaysRemaining: true).first)
+        XCTAssertEqual(empty.fraction, 0)
+    }
+
+    /// A guess would draw a falsely full square: a grant with no original
+    /// amount, or a list missing a grant, draws nothing.
+    func testAnUnknownWholeDrawsNothing() {
+        let account = makeAccount(.typeSafe)
+        let unknown = UsageCreditGrant(id: "gift", kind: .promotional, remaining: usd(300), granted: nil, expiresAt: nil)
+        let bought = UsageCreditGrant(id: "bought", kind: .purchased, remaining: usd(2500), granted: usd(2500), expiresAt: nil)
+        let noAmount = UsageSnapshot(accountID: account.id, fetchedAt: now, fiveHour: nil, weekly: nil,
+                                     usageCredits: UsageCredits(fetchedAt: now, balance: usd(2800), grants: [unknown, bought], complete: true))
+        XCTAssertTrue(gauges(accounts: [account], snapshots: [account.id: noAmount]).isEmpty)
+        let partial = UsageSnapshot(accountID: account.id, fetchedAt: now, fiveHour: nil, weekly: nil,
+                                    usageCredits: UsageCredits(fetchedAt: now, balance: usd(2800), grants: [bought], complete: false))
+        XCTAssertTrue(gauges(accounts: [account], snapshots: [account.id: partial]).isEmpty)
+    }
+
+    /// Without a saved order: subscriptions, then API orgs, then TypeSafe —
+    /// the popover's order.
+    func testTypeSafeComesAfterTheAPIOrgs() {
+        let typeSafe = makeAccount(.typeSafe, order: 0, label: "Lab"), claude = makeAccount(.claude, order: 1, label: "AI")
+        let accountGauges = gauges(
+            accounts: [typeSafe, claude],
+            snapshots: [typeSafe.id: typeSafeSnapshot(for: typeSafe), claude.id: snapshot(for: claude, fiveHour: 0.5)]
+        )
+        let org = MenuBarGauge(source: .api(.openAI), label: "Platform", fraction: 0, windowKind: nil, inUse: false)
+        XCTAssertEqual(MenuBarGaugeState.grouped(accountGauges, apiOrgs: [org]).map(\.label), ["AI", "Platform", "Lab"])
+    }
+}
+
+private extension Provider {
+    var gaugeSource: DisplaySource { .subscription(self) }
 }

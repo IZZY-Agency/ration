@@ -21,7 +21,21 @@ struct AnthropicSpendClient: APISpendClient {
         return items
     }
 
+    /// Anthropic reports whole UTC days only, and refuses a range in which no
+    /// day has finished: on the 1st it answers 400 "ending date must be after
+    /// starting date" (live 2026-10-01). Nothing is reported yet then, so the
+    /// month so far is honestly empty ("through yesterday"), without asking.
+    static func isFirstDay(of month: UTCMonth, now: Date) -> Bool {
+        UTCDay.start(of: now) == month.start
+    }
+
     func costReport(month: UTCMonth, key: String, refreshStartedAt: Date) async throws -> APICostReport {
+        if Self.isFirstDay(of: month, now: now()) {
+            // Still prove the key: a revoked or demoted one must not read as
+            // a healthy $0 for a whole day.
+            _ = try await identity(key: key)
+            return try AnthropicSpendDecoder.costReport(pages: [], month: month, fetchedAt: now(), refreshStartedAt: refreshStartedAt)
+        }
         let query = range(month) + [URLQueryItem(name: "group_by[]", value: "description")]
         let pages = try await APISpendEndpoints.allPages { page in
             try await http.get(vendor: .anthropic, path: "/v1/organizations/cost_report",
@@ -32,6 +46,10 @@ struct AnthropicSpendClient: APISpendClient {
     }
 
     func tokenReport(month: UTCMonth, key: String, refreshStartedAt: Date) async throws -> APITokenReport {
+        // Same whole-day rule as `costReport`.
+        if Self.isFirstDay(of: month, now: now()) {
+            return try AnthropicSpendDecoder.tokenReport(pages: [], month: month, fetchedAt: now(), refreshStartedAt: refreshStartedAt)
+        }
         let query = range(month) + [URLQueryItem(name: "group_by[]", value: "model"), URLQueryItem(name: "group_by[]", value: "service_tier")]
         let pages = try await APISpendEndpoints.allPages { page in
             try await http.get(vendor: .anthropic, path: "/v1/organizations/usage_report/messages",

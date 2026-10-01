@@ -84,6 +84,8 @@ func makeAlertsFixture(
     let chatGPTAdapter = AlertsProviderAdapterSpy(provider: .chatGPT)
     // Cursor, for the spend-snooze test — unused dead weight for the rest.
     let cursorAdapter = AlertsProviderAdapterSpy(provider: .cursor)
+    // TypeSafe, for the low-balance tests.
+    let typeSafeAdapter = AlertsProviderAdapterSpy(provider: .typeSafe)
     let model = AppModel(
         accountStore: accounts,
         snapshotStore: snapshots,
@@ -92,7 +94,7 @@ func makeAlertsFixture(
         appSettings: appSettings,
         alertStateStore: alertStateStore,
         profileManager: profileManager,
-        adapterRegistry: ProviderAdapterRegistry(adapters: [adapter, chatGPTAdapter, cursorAdapter]),
+        adapterRegistry: ProviderAdapterRegistry(adapters: [adapter, chatGPTAdapter, cursorAdapter, typeSafeAdapter]),
         notificationScheduler: scheduler,
         now: now,
         beforeAlertsHydrationCompletes: { await hydrationGate.hook() },
@@ -165,6 +167,42 @@ final class AlertsProviderAdapterSpy: ProviderAdapter {
     var fiveHourRemaining: Double?
     /// The plan field this fetch "reads"; nil = not read.
     var planDetection: PlanDetection?
+    /// The claude.ai organization the fetch "reads"; nil (the default) never
+    /// starts a background usage-credits read.
+    var organizationID: String?
+    /// What `fetchUsageCredits` returns; `usageCreditsError` throws instead.
+    var usageCredits: UsageCredits?
+    var usageCreditsError: Error?
+    private(set) var usageCreditsCalls = 0
+    /// Armed: the next `fetchUsageCredits` waits until `releaseUsageCredits()`.
+    var holdsUsageCredits = false
+    private var heldUsageCredits: CheckedContinuation<Void, Never>?
+    private var usageCreditsStarted: CheckedContinuation<Void, Never>?
+
+    func releaseUsageCredits() {
+        heldUsageCredits?.resume()
+        heldUsageCredits = nil
+    }
+
+    /// Suspends until a held `fetchUsageCredits` has started.
+    func waitUntilUsageCreditsHeld() async {
+        if heldUsageCredits != nil { return }
+        await withCheckedContinuation { usageCreditsStarted = $0 }
+    }
+
+    func fetchUsageCredits(for snapshot: UsageSnapshot, in webView: WKWebView) async throws -> UsageCredits? {
+        usageCreditsCalls += 1
+        if holdsUsageCredits {
+            holdsUsageCredits = false
+            await withCheckedContinuation { continuation in
+                heldUsageCredits = continuation
+                usageCreditsStarted?.resume()
+                usageCreditsStarted = nil
+            }
+        }
+        if let usageCreditsError { throw usageCreditsError }
+        return usageCredits
+    }
 
     /// `provider` defaults to `.claude` (the default single-adapter fixture
     /// shape almost every test uses); the per-provider threshold tests
@@ -187,6 +225,7 @@ final class AlertsProviderAdapterSpy: ProviderAdapter {
                 UsageWindow(kind: .fiveHour, remainingFraction: $0, resetsAt: nil)
             },
             weekly: nil,
+            organizationID: organizationID,
             planDetection: planDetection
         )
     }

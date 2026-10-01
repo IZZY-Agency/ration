@@ -36,7 +36,8 @@ enum DisplaySource: Hashable, Sendable {
 
     var gaugeShape: GaugeShape {
         switch self {
-        case .subscription: .ring
+        // TypeSafe is an API account: an API square, not a subscription ring.
+        case .subscription(let provider): provider.isAPIAccount ? .roundedSquare : .ring
         case .api: .roundedSquare
         }
     }

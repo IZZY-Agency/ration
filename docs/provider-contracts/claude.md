@@ -123,6 +123,40 @@ The **model weekly window** (`.modelWeekly`) is the entry with
   malformed array shape yields no model window, so it can never fail the whole
   `/usage` decode (the 5h/weekly windows always survive).
 
+## Usage credits (live-verified 2026-09-30)
+
+"Usage credits" is claude.ai's name for the money that pays for Claude once a
+plan limit is hit (Settings › Usage: "Usage credits", "Monthly spend limit").
+Ration shows the balance and warns before a grant expires; it never buys,
+toggles or spends anything.
+
+- **Switch**, from the usage response Ration already reads: `spend.enabled`
+  (newer shape), else `extra_usage.is_enabled` (older shape), else unknown.
+  Both decode leniently; a changed shape is "unknown", never a failed usage
+  read. It is the "Turn on usage credits to keep using Claude if you hit a plan
+  limit" switch.
+- **Balance**, its own request after each successful usage fetch, in the
+  background (the plan-read pattern; a timeout yields the web view):
+  `GET /api/organizations/{org}/prepaid/credits`. Fields read:
+  - `balance.money {amount_minor, currency, exponent}`: required, or no reading.
+  - `promo_tranches[]` (promotional) and `tranches[]` (purchased): per element
+    `id`, `remaining.money`, `granted.money`, `expires_at` (ISO 8601, may be
+    null). An element without an id or remaining amount, in another currency
+    than the balance, or with an unparseable expiry is skipped and marks the
+    reading incomplete (alert memory is then not pruned). A purchased
+    tranche's shape was not seen live (the account had none); it is decoded
+    with the promotional shape.
+- Not read: `spend.used/limit/cap/balance/auto_reload`, `extra_usage`'s
+  amounts, `overage_spend_limit`, `auto_reload_settings`, invoice and payment
+  fields, `program_id`, `name`, `scope`. The cloud session credit
+  (`iguana_necktie`, a codename key) is out of scope.
+- API-only organizations (`capabilities: ["api"]`) answer 403; they are not
+  subscription accounts and are never read.
+- **Kept** (in the account's snapshot, `usage-snapshots.json`): the balance
+  (minor units, currency, exponent), per grant its id, kind, remaining and
+  granted amounts and expiry, the read time, whether every grant parsed, and
+  the switch state. The organization id stays in memory only, as for usage.
+
 ## Send contract (auto-start 5h window)
 
 Captured 2026-07-13 via the contract probe (shapes only — no tokens, ids, or

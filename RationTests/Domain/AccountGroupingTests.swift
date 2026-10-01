@@ -16,7 +16,8 @@ final class AccountGroupingTests: XCTestCase {
         let gpt = pres(0, .chatGPT)
         let claude = pres(1, .claude)
         let cursor = pres(2, .cursor)
-        let groups = AccountGrouping.grouped([gpt, cursor, claude], orderingPinByProvider: [:])
+        let typeSafe = pres(3, .typeSafe)
+        let groups = AccountGrouping.grouped([typeSafe, gpt, cursor, claude], orderingPinByProvider: [:])
         XCTAssertEqual(groups.map(\.provider), Provider.allCases)
     }
 

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.10.0
+
+- Usage credits on Claude cards: the balance of an account's usage credits, the
+  money that pays for Claude past a plan limit, marked "off" when claude.ai's
+  switch for them is off. The account's settings list each grant with what is
+  left and when it expires, and Ration warns a set number of days before a
+  credit expires, as a notification, a line in the drop, or both.
+- Codex credits on ChatGPT cards: the credit balance ChatGPT reports with its
+  usage, also in the account's settings.
+- Show per provider: Settings › General › Features now shows or hides credits,
+  resets and token burn (Claude plan value) separately for Claude and ChatGPT.
+  Off hides it on that provider's cards and settings and silences its alerts.
+  All are on by default, and the earlier Resets and Usage credits switches carry
+  over.
+- Add API Account works like Add Account: pick Anthropic API or OpenAI API, then
+  paste its Admin key. An Admin key for the other platform is refused with a
+  pointer back.
+- The Ration icon steps aside in the menu bar while account rings show, and
+  comes back when there are none.
+- Anthropic API accounts no longer fail on the first day of a month: Anthropic
+  reports whole days only, so the card shows $0 so far, and a revoked key is
+  still reported.
+- Pressing ⌘, twice opens Settings once.
+
 ## 1.9.0
 
 - Claude Code account switching: move Claude Code to another of your Claude
