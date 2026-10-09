@@ -37,6 +37,11 @@ final class SettingsSelectionTests: XCTestCase {
 
     // MARK: normalized(_:accounts:)
 
+    func testDisplayAndFeaturesArePreservedWhenAccountsChange() {
+        XCTAssertEqual(SettingsSelection.normalized(.display, accounts: []), .display)
+        XCTAssertEqual(SettingsSelection.normalized(.features, accounts: [account(order: 0)]), .features)
+    }
+
     func testWarmUpIsPreservedWhenAccountsChange() {
         XCTAssertEqual(SettingsSelection.normalized(.warmUp, accounts: [account(order: 0)]), .warmUp)
         XCTAssertEqual(SettingsSelection.normalized(.warmUp, accounts: []), .warmUp)

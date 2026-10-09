@@ -21,15 +21,15 @@ final class OnboardingAndAccountsCopyLocalizationTests: XCTestCase {
         )
         XCTAssertEqual(
             OnboardingProviderGuide.guide(for: .claude, warmUpEnabled: false, locale: L10n.en).hint,
-            "If you sign in with a magic link, paste the link from your email into the field at the top of the sign-in window. Opening it in Safari signs in your browser, not Ration. Warm-up is off in General: Ration won't start your 5-hour window automatically."
+            "If you sign in with a magic link, paste the link from your email into the field at the top of the sign-in window. Opening it in Safari signs in your browser, not Ration. Warm-up is off in Features: Ration won't start your 5-hour window automatically."
         )
         XCTAssertEqual(
             OnboardingProviderGuide.guide(for: .claude, warmUpEnabled: false, locale: L10n.fr).hint,
-            "Si vous vous connectez avec un lien magique, collez le lien reçu par e-mail dans le champ en haut de la fenêtre de connexion. L’ouvrir dans Safari connecte votre navigateur, pas Ration. Le préchauffage est désactivé dans Général\(nb): Ration ne démarrera pas automatiquement votre fenêtre de 5\(nb)heures."
+            "Si vous vous connectez avec un lien magique, collez le lien reçu par e-mail dans le champ en haut de la fenêtre de connexion. L’ouvrir dans Safari connecte votre navigateur, pas Ration. Le préchauffage est désactivé dans Fonctionnalités\(nb): Ration ne démarrera pas automatiquement votre fenêtre de 5\(nb)heures."
         )
         XCTAssertEqual(
             OnboardingProviderGuide.guide(for: .claude, warmUpEnabled: false, locale: L10n.uk).hint,
-            "Якщо ви входите за магічним посиланням, вставте посилання з листа в поле вгорі вікна входу. Якщо відкрити його в Safari, увійде ваш браузер, а не Ration. Розігрів вимкнено в розділі «Загальні»: Ration не запускатиме ваше 5-годинне вікно автоматично."
+            "Якщо ви входите за магічним посиланням, вставте посилання з листа в поле вгорі вікна входу. Якщо відкрити його в Safari, увійде ваш браузер, а не Ration. Розігрів вимкнено в розділі «Функції»: Ration не запускатиме ваше 5-годинне вікно автоматично."
         )
         for locale in [L10n.en, L10n.fr, L10n.uk] {
             for enabled in [true, false] {
@@ -195,8 +195,9 @@ final class OnboardingAndAccountsCopyLocalizationTests: XCTestCase {
             let copy = OnboardingDoneStep.copy(hasAccounts: true, locale: locale)
             let settings = LocalizedStringResource("Settings").string(in: locale)
             let history = LocalizedStringResource("History").string(in: locale)
-            let alerts = SettingsSidebar.fixedTitles(locale: locale)[2]
-            let general = SettingsSidebar.fixedTitles(locale: locale)[0]
+            let items = SettingsSidebar.fixedGroups(locale: locale).flatMap { $0 }
+            let alerts = items.first { $0.selection == .alerts }?.title ?? ""
+            let general = items.first { $0.selection == .general }?.title ?? ""
             let about = LocalizedStringResource("About").string(in: locale)
             XCTAssertEqual(copy.bullets[2].title, settings)
             XCTAssertEqual(copy.bullets[3].title, history)

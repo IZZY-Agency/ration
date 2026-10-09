@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.11.0
+
+- The ring bar: the menu bar's gauges in a glass bar at the left, right, top or
+  bottom of the screen, big enough to read at a glance. It never takes focus
+  from the app you are in. Turn it on in Settings › Display › Ring Bar (it is
+  off by default) and choose Rail, small rings in a thin strip, or Capsules,
+  each gauge with its share left and its account's name. Subscriptions and API
+  accounts each get their own glass. Hover a gauge for its limits and resets;
+  click it to open Ration.
+- Resize the ring bar like the Dock: drag anywhere on it but a gauge. The
+  pointer changes over the bar and a grip appears beside it. The Size slider in
+  Settings does the same.
+- Auto Hide keeps the ring bar out of sight until the pointer reaches its edge.
+- Right-click the ring bar to turn Auto Hide on or off, change its style or
+  edge, or open its settings.
+- Settings › Display › Rings chooses, for each account, whether its gauge shows
+  in the menu bar, in the ring bar, or in both. New accounts show in both.
+- Settings has two new panes. Display holds the popover, the gauges, the menu
+  bar, the ring bar and the rings; Features holds the feature switches that
+  were in General.
+- VoiceOver reads each ring bar gauge in one sentence and can open Ration from
+  it. Increase Contrast makes the unfilled part of every gauge stronger, in the
+  menu bar too, and menu-bar tooltips no longer repeat a provider's name when
+  the account's label already starts with it.
+
 ## 1.10.0
 
 - Usage credits on Claude cards: the balance of an account's usage credits, the

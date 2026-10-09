@@ -207,6 +207,9 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             start: LocalDate(year: 2026, month: 12, day: 24), end: LocalDate(year: 2027, month: 1, day: 2), label: "Noël"
         ))
         try await model.settings.setQuietHours([1, 2, 3, 4, 5, 6, 7, 8])
+        // The Ring Bar rows (Style, Position, Hide at edge, both notes) only
+        // draw while it is on.
+        try await model.settings.setRingBarEnabled(true)
 
         func split(_ selection: SettingsSelection, _ detail: some View) -> some View {
             NavigationSplitView {
@@ -236,10 +239,19 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         let general = GeneralDetailView(
             launchAtLogin: launchAtLogin, appearance: appearance, settings: model.settings,
             notificationPermission: .denied,
-            onSetSortByWeeklyReset: { _ in }, onSetUsageAlertsEnabled: { _ in }, onSetRedactNotifications: { _ in },
-            onSetShowInUseInMenuBar: { _ in }, onSetMenuBarWindow: { _, _ in }, onSetMenuBarDisplaysRemaining: { _ in },
-            onSetPopoverLayout: { _ in }, onOpenSetupGuide: {}, onAllowNotifications: {}
+            onSetUsageAlertsEnabled: { _ in }, onSetRedactNotifications: { _ in },
+            onOpenSetupGuide: {}, onAllowNotifications: {}
         )
+        let display = DisplayDetailView(
+            settings: model.settings, accounts: accounts.map(\.account),
+            apiOrgs: [APIOrgRecord(id: UUID(), vendor: .anthropic, vendorOrgID: nil, label: "Agency API", monthlyBudgetCents: 20_000,
+                                   isPaused: false, displayOrder: 0, createdAt: now),
+                      APIOrgRecord(id: UUID(), vendor: .openAI, vendorOrgID: nil, label: "Lab", monthlyBudgetCents: nil,
+                                   isPaused: false, displayOrder: 1, createdAt: now)],
+            onSetPopoverLayout: { _ in }, onSetSortByWeeklyReset: { _ in }, onSetShowInUseInMenuBar: { _ in },
+            onSetMenuBarWindow: { _, _ in }, onSetMenuBarDisplaysRemaining: { _ in }
+        )
+        let features = FeaturesDetailView(settings: model.settings)
         let alerts = AlertsDetailView(
             settings: model.settings, providers: [.claude, .chatGPT, .cursor], notificationPermission: .denied,
             onSetThresholds: { _, _, _, _ in .default }, onSetCursorSpend: { _, _ in .off },
@@ -256,7 +268,9 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         for (scheme, suffix) in Self.schemes {
             // Tall enough for every row of the longest pane: horizontal fit is
             // what these check; the window itself scrolls vertically.
-            try write(await renderHosted(split(.general, general), width: width, height: 2300, scheme), dir, "settings-general-\(suffix).png")
+            try write(await renderHosted(split(.general, general), width: width, height: 1400, scheme), dir, "settings-general-\(suffix).png")
+            try write(await renderHosted(split(.display, display), width: width, height: 2600, scheme), dir, "settings-display-\(suffix).png")
+            try write(await renderHosted(split(.features, features), width: width, height: 1600, scheme), dir, "settings-features-\(suffix).png")
             try write(await renderHosted(split(.alerts, alerts), width: width, height: 1500, scheme), dir, "settings-alerts-\(suffix).png")
             try write(await renderHosted(split(.warmUp, warmUp), width: width, height: 1100, scheme), dir, "settings-warmup-\(suffix).png")
             try write(await renderHosted(split(.account(claude.id), account(claude)), width: width, height: 1000, scheme), dir, "settings-account-inuse-\(suffix).png")
@@ -1442,6 +1456,51 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
                                 snapshot: nil, planUnits: 5, order: 1),
         ], now: now)
         return model
+    }
+
+    // MARK: Ring bar
+
+    /// Both styles along the top edge and the hover card. The glass is AppKit
+    /// and does not draw here; the text is what the sweep checks.
+    func testRingBar() throws {
+        let dir = try directory
+        let id = UUID()
+        let snapshot = UsageSnapshot(
+            accountID: id, fetchedAt: now.addingTimeInterval(-60),
+            fiveHour: UsageWindow(kind: .fiveHour, remainingFraction: 0.98, resetsAt: now.addingTimeInterval(3 * 3600 + 43 * 60)),
+            weekly: UsageWindow(kind: .weekly, remainingFraction: 0.89, resetsAt: now.addingTimeInterval(5 * 86_400 + 5 * 3600)),
+            modelWeekly: UsageWindow(kind: .modelWeekly, remainingFraction: 1, resetsAt: now.addingTimeInterval(5 * 86_400 + 5 * 3600),
+                                     label: "Fable")
+        )
+        let claude = GaugeEntry(id: id, gauge: MenuBarGauge(provider: .claude, label: "Client", fraction: 0.89, windowKind: .weekly,
+                                                            inUse: true), details: .subscription(snapshot))
+        let gpt = GaugeEntry(id: UUID(), gauge: MenuBarGauge(provider: .chatGPT, label: "ChatGPT 20x", fraction: 0.5,
+                                                             windowKind: .weekly, inUse: false), details: .credit)
+        let api = GaugeEntry(id: UUID(), gauge: MenuBarGauge(source: .api(.anthropic), label: "Agency API", fraction: 0.98,
+                                                             windowKind: nil, inUse: false,
+                                                             budget: BudgetGaugeFacts(exactPercent: 2, isLowerBound: false)),
+                             details: .apiBudget(nil, thresholds: .default))
+        let groups = [
+            RingBarGroup(source: .subscription(.claude), entries: [claude]),
+            RingBarGroup(source: .subscription(.chatGPT), entries: [gpt]),
+            RingBarGroup(source: .api(.anthropic), entries: [api]),
+        ]
+        for (scheme, suffix) in Self.schemes {
+            for style in RingBarStyle.allCases {
+                let model = RingBarModel()
+                model.groups = groups
+                model.style = style
+                model.edge = .top
+                model.displaysRemaining = true
+                let sources = style == .rail ? groups.map(\.source) : [groups[1].source]
+                let view = RingBarSegmentView(model: model, sources: sources, segment: 0).background(Theme.panel)
+                try write(render(view, scheme), dir, "ringbar-\(style.rawValue)-\(suffix).png")
+            }
+            let card = RingBarText.card(for: claude, displaysRemaining: true, now: now)
+            try write(render(RingBarCardView(card: card), scheme), dir, "ringbar-card-\(suffix).png")
+            let apiCard = RingBarText.card(for: api, displaysRemaining: false, now: now)
+            try write(render(RingBarCardView(card: apiCard), scheme), dir, "ringbar-card-api-\(suffix).png")
+        }
     }
 
     // MARK: Rendering

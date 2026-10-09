@@ -105,6 +105,13 @@ final class MenuBarController: NSObject {
     /// silent. nil while no panel is shown.
     private var attentionLoggedPlacement: AttentionDropPlacement?
 
+    /// The ring bar: built in `start()` (nil under XCTest unless a test
+    /// injects one), fed by `updateGauges()`.
+    private let makeRingBar: @MainActor (RingBarActions) -> (any RingBarPresenting)?
+    private var ringBar: (any RingBarPresenting)?
+    /// Re-places the ring bar after sleep (on the workspace's own center).
+    private var ringBarWakeObserver: (any NSObjectProtocol)?
+
     private var statusItemFrameObservation: NSKeyValueObservation?
     /// Redraws the rings when the menu bar's OWN appearance changes (macOS
     /// light/dark switch, wallpaper tint) — independent of the app setting,
@@ -138,7 +145,10 @@ final class MenuBarController: NSObject {
         // An ordinary Quit: it drops a pending relaunch first.
         terminateApp: @escaping () -> Void = { AppRelauncher.shared.quitWithoutRelaunch() },
         statusItemIsAnchored: (() -> Bool)? = nil,
-        popoverKeyCode: @escaping @MainActor (PopoverShortcut) -> UInt32 = ShortcutKeyCodeResolver.liveKeyCode
+        popoverKeyCode: @escaping @MainActor (PopoverShortcut) -> UInt32 = ShortcutKeyCodeResolver.liveKeyCode,
+        makeRingBar: @escaping @MainActor (RingBarActions) -> (any RingBarPresenting)? = {
+            RingBarController.makeForProduction(actions: $0)
+        }
     ) {
         self.model = model
         self.launchAtLogin = launchAtLogin
@@ -158,6 +168,7 @@ final class MenuBarController: NSObject {
         self.terminateApp = terminateApp
         self.statusItemIsAnchoredOverride = statusItemIsAnchored
         self.popoverKeyCode = popoverKeyCode
+        self.makeRingBar = makeRingBar
         super.init()
     }
 
@@ -206,6 +217,7 @@ final class MenuBarController: NSObject {
             for controller in managedWindowControllers {
                 controller.window?.backgroundColor = Theme.inkNS
             }
+            ringBar?.setAppearance(resolved)
             updateGauges()
         }
 
@@ -217,6 +229,35 @@ final class MenuBarController: NSObject {
                 guard let self, self.statusItem != nil else { return }
                 self.popover.appearance = self.popoverAppearance()
             }
+        }
+
+        ringBar = makeRingBar(RingBarActions(
+            openDashboard: { [weak self] in self?.presentDashboard() },
+            setScale: { [weak self] scale in
+                guard let self else { return }
+                Task { try? await self.model.setRingBarScale(scale) }
+            },
+            setHidesAtEdge: { [weak self] hides in
+                guard let self else { return }
+                Task { try? await self.model.setRingBarHidesAtEdge(hides) }
+            },
+            setEdge: { [weak self] edge in
+                guard let self else { return }
+                Task { try? await self.model.setRingBarEdge(edge) }
+            },
+            setStyle: { [weak self] style in
+                guard let self else { return }
+                Task { try? await self.model.setRingBarStyle(style) }
+            },
+            openSettings: { [weak self] in self?.showSettings(selecting: .display) }
+        ))
+        ringBar?.setAppearance(appearance.mode.nsAppearance)
+        ringBarWakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.ringBar?.screensChanged() }
         }
 
         startInUseIndicator()
@@ -366,7 +407,10 @@ final class MenuBarController: NSObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshAttentionDrop() }
+            MainActor.assumeIsolated {
+                self?.refreshAttentionDrop()
+                self?.ringBar?.screensChanged()
+            }
         }
         attentionObservers.append(screens)
 
@@ -436,7 +480,7 @@ final class MenuBarController: NSObject {
             // in those first milliseconds would sail through and land on
             // whatever application is behind the panel. The shield keeps the
             // events and drops them.
-            let shield = AttentionDropShieldView(frame: hosting.bounds)
+            let shield = PresentationShieldView(frame: hosting.bounds)
             shield.autoresizingMask = [.width, .height]
             panel.contentView?.addSubview(shield)
             let settleToken = UUID()
@@ -650,7 +694,7 @@ final class MenuBarController: NSObject {
     }
 
     /// Re-checks shortly after, for as long as a mouse button is held.
-    private func retryAttentionSettle(token: UUID, shield: AttentionDropShieldView?) {
+    private func retryAttentionSettle(token: UUID, shield: PresentationShieldView?) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak shield] in
             MainActor.assumeIsolated {
                 guard let self, self.attentionSettleToken == token else { return }
@@ -683,6 +727,14 @@ final class MenuBarController: NSObject {
     /// parked by the system) there is nothing to hang a popover from — the
     /// window opens instead.
     private func showPopoverFromDrop() {
+        presentDashboard()
+    }
+
+    /// Opens the dashboard the way a status-item click does: the popover
+    /// when it can hang from the status item, else the window. Never touches
+    /// alerts — the drop acknowledges its row itself (`selectAttentionRow`);
+    /// a ring-bar gauge click comes straight here.
+    func presentDashboard() {
         guard !popover.isShown else { return }
         guard let button = statusItem?.button, statusItemIsAnchored() else {
             showFallbackWindow()
@@ -697,68 +749,84 @@ final class MenuBarController: NSObject {
         return false
     }
 
-    /// Recomputes the usage gauges — a ring per visible account, the in-use
+    /// Recomputes the usage gauges — one capture (`GaugeFeed`) for both the
+    /// status item and the ring bar: a gauge per visible account, the in-use
     /// dot from the popover pill's burn rules but WITHOUT its per-provider
     /// dedup (`ActiveUsageMap.computePerAccount`: two same-provider accounts
-    /// in parallel use both get a dot), values from the snapshot store — and
-    /// renders them onto the status item button.
+    /// in parallel use both get a dot), values from the snapshot store.
     func updateGauges() {
         // The drop shares this entry point deliberately — see
-        // `startAttentionDrop()`. It must run even when there is no status
-        // item button to draw gauges onto, so it goes before the guard.
+        // `startAttentionDrop()`. It runs whatever the gauge toggles say,
+        // and even when there is no status item button to draw onto.
         refreshAttentionDrop()
 
-        guard let button = statusItem?.button else { return }
-        let displaysRemaining = model.settings.menuBarDisplaysRemaining
-        let gauges: [MenuBarGauge]
-        if model.settings.showInUseInMenuBar {
-            let at = now()
+        let settings = model.settings
+        let displaysRemaining = settings.menuBarDisplaysRemaining
+        let at = now()
+        var entries: [GaugeEntry] = []
+        var savedOrder: [SidebarAccountOrder.Item]?
+        if settings.wantsGauges {
             let accounts = model.visibleAccounts
-            // Materialized here because `gauges` is a nonisolated pure
-            // function — its closures cannot call back into MainActor state.
+            // Materialized here because the feed is pure — its closures
+            // cannot call back into MainActor state.
             let snapshots = Dictionary(
                 uniqueKeysWithValues: accounts.compactMap { account in
                     model.snapshot(for: account.id).map { (account.id, $0) }
                 }
             )
-            let windowKinds = Dictionary(
-                uniqueKeysWithValues: Provider.allCases.map {
-                    ($0, model.settings.menuBarWindow(for: $0))
-                }
-            )
-            let accountGauges = MenuBarGaugeState.accountGauges(
+            let input = GaugeFeedInput(
                 accounts: accounts,
-                // In-use detection off → no green center dots; the rings
-                // themselves stay (they are `showInUseInMenuBar`'s).
-                activeUsage: model.settings.featureInUseEnabled
+                snapshots: snapshots,
+                // In-use detection off → no green center dots; the gauges
+                // themselves stay.
+                activeUsage: settings.featureInUseEnabled
                     ? ActiveUsageMap.computePerAccount(accounts: accounts, history: model.history, now: at)
                     : [:],
-                snapshots: { snapshots[$0] },
-                windowKind: { windowKinds[$0] ?? AppSettingsData.defaultMenuBarWindow(for: $0) },
+                windowKinds: Dictionary(
+                    uniqueKeysWithValues: Provider.allCases.map { ($0, settings.menuBarWindow(for: $0)) }
+                ),
                 displaysRemaining: displaysRemaining,
+                apiGauges: apiSpend?.orgGauges(displaysRemaining: displaysRemaining, now: at) ?? [],
+                apiPresentations: Dictionary(
+                    (apiSpend?.presentations(now: at) ?? []).map { ($0.id, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                ),
+                apiThresholds: apiSpend?.state.thresholds ?? .default,
                 now: at
             )
-            let apiGauges = apiSpend?.orgGauges(displaysRemaining: displaysRemaining, now: at) ?? []
+            entries = GaugeFeed.entries(input)
             // The Settings list's order once dragged; before, provider-grouped with API last.
-            if let order = apiSpend?.savedAccountOrder(
+            savedOrder = apiSpend?.savedAccountOrder(
                 subscriptions: model.presentations.map(\.account.id),
                 apiAccounts: SidebarAccountOrder.apiAccountIDs(model.presentations)
-            ) {
-                gauges = SidebarAccountOrder.ordered(accountGauges + apiGauges, by: order)
-            } else {
-                gauges = MenuBarGaugeState.grouped(accountGauges.map(\.value), apiOrgs: apiGauges.map(\.value))
-            }
-        } else {
-            gauges = []
+            )
         }
+
+        ringBar?.update(
+            groups: settings.ringBarEnabled
+                ? GaugeFeed.ringBarGroups(GaugeFeed.visible(entries, on: .ringBar, shows: settings.shows), savedOrder: savedOrder)
+                : [],
+            configuration: RingBarConfiguration(settings: settings),
+            now: at
+        )
+
+        guard let button = statusItem?.button else { return }
         StatusItemFactory.applyGauges(
-            gauges,
+            settings.showInUseInMenuBar
+                ? GaugeFeed.menuBarOrder(GaugeFeed.visible(entries, on: .menuBar, shows: settings.shows), savedOrder: savedOrder)
+                : [],
             displaysRemaining: displaysRemaining,
             to: button
         )
     }
 
     func stop() {
+        ringBar?.stop()
+        ringBar = nil
+        if let ringBarWakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(ringBarWakeObserver)
+        }
+        ringBarWakeObserver = nil
         inUseCancellables.removeAll()
         inUseTimer?.invalidate()
         inUseTimer = nil

@@ -6,6 +6,10 @@ enum SettingsSelection: Hashable {
     /// An API org (API spend).
     case apiOrg(UUID)
     case general
+    /// How gauges look and where they show (menu bar, ring bar).
+    case display
+    /// The feature switches.
+    case features
     case warmUp
     case alerts
     /// Claude Code account switching.
@@ -28,6 +32,10 @@ enum SettingsSelection: Hashable {
         switch selection {
         case .general:
             return .general
+        case .display:
+            return .display
+        case .features:
+            return .features
         case .warmUp:
             return .warmUp
         case .alerts:

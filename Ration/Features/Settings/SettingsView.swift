@@ -43,6 +43,9 @@ struct SettingsView: View {
     @State private var providerShow: ProviderShow = .allOn
     @State private var errorMessage: String?
     @State private var addingAPIAccount = false
+    /// API orgs for Display › Rings, kept in step with every change (order
+    /// included), since `apiSpend` itself is not observed here.
+    @State private var apiOrgRecords: [APIOrgRecord] = []
 
     /// Computed from the non-paused subset only: a paused account can have
     /// recent history for up to the lookback window, and must not be able to
@@ -105,6 +108,7 @@ struct SettingsView: View {
             }
         }
         .onChange(of: model.accounts.map(\.id)) { _, _ in ensureSelection() }
+        .onReceive(apiOrgRecordsPublisher) { apiOrgRecords = $0 }
         .onReceive(apiOrgIDs) { ids in
             // `$state` fires on willSet: use the published IDs, not a re-read.
             selection = SettingsSelection.normalized(selection, accounts: offeredAccounts, apiOrgIDs: ids)
@@ -225,14 +229,26 @@ struct SettingsView: View {
                 appearance: appearance,
                 settings: model.settings,
                 notificationPermission: model.notificationPermission,
-                onSetSortByWeeklyReset: { enabled in
-                    perform { try await model.setSortByWeeklyReset(enabled) }
-                },
                 onSetUsageAlertsEnabled: { enabled in
                     perform(request: { model.requestSetUsageAlerts(enabled) })
                 },
                 onSetRedactNotifications: { enabled in
                     perform { try await model.setRedactNotifications(enabled) }
+                },
+                onOpenSetupGuide: onOpenSetupGuide,
+                onAllowNotifications: { model.requestNotificationPermission() }
+            )
+        case .display:
+            DisplayDetailView(
+                settings: model.settings,
+                // The sidebar's order (sorted when Sort by soonest reset is on).
+                accounts: model.presentations.map(\.account).filter(\.provider.isOffered),
+                apiOrgs: apiOrgRecords,
+                onSetPopoverLayout: { layout in
+                    perform { try await model.setPopoverLayout(layout) }
+                },
+                onSetSortByWeeklyReset: { enabled in
+                    perform { try await model.setSortByWeeklyReset(enabled) }
                 },
                 onSetShowInUseInMenuBar: { enabled in
                     perform { try await model.setShowInUseInMenuBar(enabled) }
@@ -243,17 +259,34 @@ struct SettingsView: View {
                 onSetMenuBarDisplaysRemaining: { enabled in
                     perform { try await model.setMenuBarDisplaysRemaining(enabled) }
                 },
-                onSetPopoverLayout: { layout in
-                    perform { try await model.setPopoverLayout(layout) }
+                onSetRingBarEnabled: { enabled in
+                    perform { try await model.setRingBarEnabled(enabled) }
                 },
+                onSetRingBarStyle: { style in
+                    perform { try await model.setRingBarStyle(style) }
+                },
+                onSetRingBarEdge: { edge in
+                    perform { try await model.setRingBarEdge(edge) }
+                },
+                onSetRingBarHidesAtEdge: { enabled in
+                    perform { try await model.setRingBarHidesAtEdge(enabled) }
+                },
+                onSetRingBarScale: { scale in
+                    perform { try await model.setRingBarScale(scale) }
+                },
+                onSetShows: { surface, id, shown in
+                    perform { try await model.setShows(surface, id: id, shown) }
+                }
+            )
+        case .features:
+            FeaturesDetailView(
+                settings: model.settings,
                 onSetFeature: { feature, enabled in
                     perform { try await model.setFeature(feature, enabled: enabled) }
                 },
                 onSetProviderShow: { item, provider, enabled in
                     perform { try await model.setShows(item, for: provider, enabled) }
                 },
-                onOpenSetupGuide: onOpenSetupGuide,
-                onAllowNotifications: { model.requestNotificationPermission() },
                 tokenBurn: model.tokenBurn
             )
         case .claudeCode:
@@ -331,6 +364,12 @@ struct SettingsView: View {
     }
 
     private var currentAPIOrgIDs: [UUID] { apiSpend?.state.orgs.map(\.id) ?? [] }
+
+    /// Every change to the API orgs (`$state` emits the new value).
+    private var apiOrgRecordsPublisher: AnyPublisher<[APIOrgRecord], Never> {
+        guard let apiSpend else { return Empty<[APIOrgRecord], Never>().eraseToAnyPublisher() }
+        return apiSpend.$state.map(\.orgs).removeDuplicates().eraseToAnyPublisher()
+    }
 
     /// Re-normalizes when an org is added or removed (a removed org's pane
     /// falls back like a removed account's).

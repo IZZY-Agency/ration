@@ -142,18 +142,20 @@ enum StatusItemFactory {
 
     /// The menu-bar gauge in either shape: the subscription ring, or the API
     /// budget's rounded square (same stroke, track and fill direction).
+    /// `side` and `stroke` default to the menu bar's; the ring bar draws the
+    /// same gauge bigger.
     static func gaugeImage(
         fraction: Double,
         color: NSColor,
         shape: GaugeShape,
         inUse: Bool = false,
+        side: CGFloat = ringPointSize,
+        stroke: CGFloat = 2.5,
         appearance: NSAppearance
     ) -> NSImage {
         if shape == .roundedSquare {
-            return roundedSquareImage(fraction: fraction, color: color, appearance: appearance)
+            return roundedSquareImage(fraction: fraction, color: color, side: side, stroke: stroke, appearance: appearance)
         }
-        let side = ringPointSize
-        let stroke: CGFloat = 2.5
         let clamped = min(max(fraction, 0), 1)
         return NSImage(
             size: NSSize(width: side, height: side),
@@ -170,11 +172,11 @@ enum StatusItemFactory {
                 track.lineWidth = stroke
                 // `withAlphaComponent` on a dynamic colour stays dynamic; it
                 // resolves here, inside the block, like the rest.
-                color.withAlphaComponent(0.28).setStroke()
+                color.withAlphaComponent(trackAlpha).setStroke()
                 track.stroke()
 
                 if inUse {
-                    let dotRadius: CGFloat = 2
+                    let dotRadius: CGFloat = 2 * side / ringPointSize
                     let dot = NSBezierPath(ovalIn: NSRect(
                         x: center.x - dotRadius, y: center.y - dotRadius,
                         width: dotRadius * 2, height: dotRadius * 2
@@ -201,17 +203,15 @@ enum StatusItemFactory {
         }
     }
 
-    private static func roundedSquareImage(fraction: Double, color: NSColor, appearance: NSAppearance) -> NSImage {
-        let side = ringPointSize
-        let stroke: CGFloat = 2.5
-        let radius: CGFloat = 3.2
+    private static func roundedSquareImage(fraction: Double, color: NSColor, side: CGFloat, stroke: CGFloat, appearance: NSAppearance) -> NSImage {
+        let radius: CGFloat = 3.2 * side / ringPointSize
         let clamped = min(max(fraction, 0), 1)
         return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
             appearance.performAsCurrentDrawingAppearance {
                 let inset = rect.insetBy(dx: stroke / 2, dy: stroke / 2)
                 let track = roundedSquarePath(in: inset, radius: radius)
                 track.lineWidth = stroke
-                color.withAlphaComponent(0.28).setStroke()
+                color.withAlphaComponent(trackAlpha).setStroke()
                 track.stroke()
                 if clamped > 0 {
                     let fill = roundedSquarePath(in: inset, radius: radius)
@@ -240,14 +240,34 @@ enum StatusItemFactory {
         return "Ration — " + parts.joined(separator: " · ")
     }
 
-    /// One account's part of the tooltip: "Claude AI 5h 14% left".
-    private static func toolTipEntry(
+    /// One account's part of the tooltip: "Claude AI 5h 14% left". Also the
+    /// ring bar's gauge value for VoiceOver.
+    /// The unfilled track, which tells how much is left; stronger with
+    /// Increase Contrast. Read at draw time, so a change applies on redraw.
+    static var trackAlpha: CGFloat { Theme.increaseContrast ? 0.5 : 0.28 }
+
+    /// "Claude AI", but never "ChatGPT ChatGPT …": a label that is, or
+    /// starts with, the provider's name (a whole word, any case — "chatgpt
+    /// pro" too) keeps it once.
+    nonisolated static func gaugeName(_ gauge: MenuBarGauge) -> String {
+        let provider = gauge.source.displayName
+        let label = gauge.label
+        if label.caseInsensitiveCompare(provider) == .orderedSame { return label }
+        if label.count > provider.count,
+           String(label.prefix(provider.count)).caseInsensitiveCompare(provider) == .orderedSame,
+           label.dropFirst(provider.count).first?.isWhitespace == true {
+            return label
+        }
+        return "\(provider) \(label)"
+    }
+
+    nonisolated static func toolTipEntry(
         _ gauge: MenuBarGauge,
         displaysRemaining: Bool,
         locale: Locale
     ) -> String {
+        let name = gaugeName(gauge)
         if let budget = gauge.budget {
-            let name = "\(gauge.source.displayName) \(gauge.label)"
             let resource: LocalizedStringResource
             if displaysRemaining {
                 let left = APIMoney.wholePercent(100 - budget.exactPercent, budget.isLowerBound ? .up : .plain)
@@ -259,12 +279,6 @@ enum StatusItemFactory {
             return resource.string(in: locale)
         }
         let percent = Int((gauge.fraction * 100).rounded())
-        // "Claude AI …", but never "ChatGPT ChatGPT …" when the label
-        // already is the provider name (case-insensitively — a label
-        // typed "chatgpt" must not repeat either).
-        let name: String = gauge.label.caseInsensitiveCompare(gauge.source.displayName) == .orderedSame
-            ? gauge.label
-            : "\(gauge.source.displayName) \(gauge.label)"
         if let credit = gauge.credit {
             // The money, not a percentage: "TypeSafe Lab $26.58 of $30.00 credit left".
             let granted: String = UsageFormatters.money(credit.granted, locale: locale)
@@ -283,7 +297,7 @@ enum StatusItemFactory {
         return LocalizedStringResource.statusItemTooltipInUse(value).string(in: locale)
     }
 
-    static func windowLabel(_ kind: UsageWindowKind, locale: Locale = .current) -> String {
+    nonisolated static func windowLabel(_ kind: UsageWindowKind, locale: Locale = .current) -> String {
         switch kind {
         case .fiveHour: LocalizedStringResource.focusShortNameFiveHour.string(in: locale)
         case .weekly: LocalizedStringResource.statusItemWindowWeekly.string(in: locale)

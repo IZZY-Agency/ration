@@ -2060,6 +2060,30 @@ final class AppModel: ObservableObject {
         try await appSettings.setMenuBarDisplaysRemaining(value)
     }
 
+    func setRingBarEnabled(_ value: Bool) async throws {
+        try await appSettings.setRingBarEnabled(value)
+    }
+
+    func setRingBarStyle(_ value: RingBarStyle) async throws {
+        try await appSettings.setRingBarStyle(value)
+    }
+
+    func setRingBarEdge(_ value: RingBarEdge) async throws {
+        try await appSettings.setRingBarEdge(value)
+    }
+
+    func setRingBarHidesAtEdge(_ value: Bool) async throws {
+        try await appSettings.setRingBarHidesAtEdge(value)
+    }
+
+    func setShows(_ surface: GaugeSurface, id: UUID, _ shown: Bool) async throws {
+        try await appSettings.setShows(surface, id: id, shown)
+    }
+
+    func setRingBarScale(_ value: Double) async throws {
+        try await appSettings.setRingBarScale(value)
+    }
+
     func setPopoverLayout(_ value: PopoverLayout) async throws {
         try await appSettings.setPopoverLayout(value)
     }

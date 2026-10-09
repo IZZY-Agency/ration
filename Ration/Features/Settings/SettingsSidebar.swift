@@ -64,6 +64,18 @@ struct SettingsSidebar: View {
                 accessibilityIdentifier: "generalSettingsItem"
             ),
             FixedItem(
+                selection: .display,
+                title: LocalizedStringResource.settingsSidebarDisplay.string(in: locale),
+                systemImage: "circle.circle",
+                accessibilityIdentifier: "displaySettingsItem"
+            ),
+            FixedItem(
+                selection: .features,
+                title: SettingsSectionTitle.features(locale: locale),
+                systemImage: "switch.2",
+                accessibilityIdentifier: "featuresSettingsItem"
+            ),
+            FixedItem(
                 selection: .warmUp,
                 title: LocalizedStringResource.settingsSidebarWarmUp.string(in: locale),
                 systemImage: "moon.zzz",

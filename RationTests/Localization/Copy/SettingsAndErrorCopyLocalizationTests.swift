@@ -67,9 +67,9 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(FeatureSwitch.switchAdviceNeedsInUseNote(locale: L10n.fr), "Nécessite la détection du compte en cours")
         XCTAssertEqual(FeatureSwitch.switchAdviceNeedsInUseNote(locale: L10n.uk), "Потрібне визначення активного облікового запису")
 
-        XCTAssertEqual(FeatureSwitch.warmUpOffNote(locale: L10n.en), "Warm-up is off in General")
-        XCTAssertEqual(FeatureSwitch.warmUpOffNote(locale: L10n.fr), "Le préchauffage est désactivé dans Général")
-        XCTAssertEqual(FeatureSwitch.warmUpOffNote(locale: L10n.uk), "Розігрів вимкнено в розділі «Загальні»")
+        XCTAssertEqual(FeatureSwitch.warmUpOffNote(locale: L10n.en), "Warm-up is off in Features")
+        XCTAssertEqual(FeatureSwitch.warmUpOffNote(locale: L10n.fr), "Le préchauffage est désactivé dans Fonctionnalités")
+        XCTAssertEqual(FeatureSwitch.warmUpOffNote(locale: L10n.uk), "Розігрів вимкнено в розділі «Функції»")
     }
 
     // MARK: Pickers
@@ -105,15 +105,15 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
         )
         XCTAssertEqual(
             WarmUpDefaults.newClaudeAccountDisclosure(warmUpEnabled: false, locale: L10n.en),
-            "Warm-up is off in General: Ration won't start your 5-hour window automatically."
+            "Warm-up is off in Features: Ration won't start your 5-hour window automatically."
         )
         XCTAssertEqual(
             WarmUpDefaults.newClaudeAccountDisclosure(warmUpEnabled: false, locale: L10n.fr),
-            "Le préchauffage est désactivé dans Général\(nb): Ration ne démarrera pas automatiquement votre fenêtre de 5\(nb)heures."
+            "Le préchauffage est désactivé dans Fonctionnalités\(nb): Ration ne démarrera pas automatiquement votre fenêtre de 5\(nb)heures."
         )
         XCTAssertEqual(
             WarmUpDefaults.newClaudeAccountDisclosure(warmUpEnabled: false, locale: L10n.uk),
-            "Розігрів вимкнено в розділі «Загальні»: Ration не запускатиме ваше 5-годинне вікно автоматично."
+            "Розігрів вимкнено в розділі «Функції»: Ration не запускатиме ваше 5-годинне вікно автоматично."
         )
     }
 

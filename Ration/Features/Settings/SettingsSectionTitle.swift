@@ -11,6 +11,11 @@ enum SettingsSectionTitle {
     static var accounts: String { accounts(locale: .current) }
     static var general: String { general(locale: .current) }
     static var menuBar: String { menuBar(locale: .current) }
+    static var ringBar: String { ringBar(locale: .current) }
+    static var notifications: String { notifications(locale: .current) }
+    static var popover: String { popover(locale: .current) }
+    static var gauges: String { gauges(locale: .current) }
+    static var rings: String { rings(locale: .current) }
     static var features: String { features(locale: .current) }
     static var identity: String { identity(locale: .current) }
     static var automation: String { automation(locale: .current) }
@@ -27,8 +32,9 @@ enum SettingsSectionTitle {
 
     static func all(locale: Locale) -> [String] {
         [
-            accounts(locale: locale), general(locale: locale), menuBar(locale: locale),
-            features(locale: locale), identity(locale: locale), automation(locale: locale),
+            accounts(locale: locale), general(locale: locale), notifications(locale: locale),
+            popover(locale: locale), gauges(locale: locale), menuBar(locale: locale),
+            ringBar(locale: locale), rings(locale: locale), features(locale: locale), identity(locale: locale), automation(locale: locale),
             resets(locale: locale), billing(locale: locale), session(locale: locale),
             quietHours(locale: locale), holidays(locale: locale), cursorSpend(locale: locale),
             planValue(locale: locale), usageCredits(locale: locale),
@@ -38,6 +44,11 @@ enum SettingsSectionTitle {
     static func accounts(locale: Locale) -> String { LocalizedStringResource.settingsSectionAccounts.string(in: locale) }
     static func general(locale: Locale) -> String { LocalizedStringResource.settingsSectionGeneral.string(in: locale) }
     static func menuBar(locale: Locale) -> String { LocalizedStringResource.settingsSectionMenuBar.string(in: locale) }
+    static func ringBar(locale: Locale) -> String { LocalizedStringResource.settingsSectionRingBar.string(in: locale) }
+    static func notifications(locale: Locale) -> String { LocalizedStringResource.settingsSectionNotifications.string(in: locale) }
+    static func popover(locale: Locale) -> String { LocalizedStringResource.settingsSectionPopover.string(in: locale) }
+    static func gauges(locale: Locale) -> String { LocalizedStringResource.settingsSectionGauges.string(in: locale) }
+    static func rings(locale: Locale) -> String { LocalizedStringResource.settingsSectionRings.string(in: locale) }
     static func features(locale: Locale) -> String { LocalizedStringResource.settingsSectionFeatures.string(in: locale) }
     static func identity(locale: Locale) -> String { LocalizedStringResource.settingsSectionIdentity.string(in: locale) }
     static func automation(locale: Locale) -> String { LocalizedStringResource.settingsSectionAutomation.string(in: locale) }

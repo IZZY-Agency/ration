@@ -47,25 +47,25 @@
         }
       }
     },
-    "A ring per account, filled by the window below, in place of the menu bar icon (it comes back when nothing shows); accounts currently in use get a green center dot. API accounts with a monthly budget show a square. Hover for exact values. Cursor has no rate windows and never shows." : {
-      "comment" : "Settings › General note under the menu bar rings toggle. Cursor is a brand.",
+    "A ring per account, filled by the window chosen under Gauges, in place of the menu bar icon (it comes back when nothing shows); accounts currently in use get a green center dot. API accounts with a monthly budget show a square. Hover for exact values. Cursor has no rate windows and never shows." : {
+      "comment" : "Settings › Display note under the menu bar rings toggle. Gauges is the section above. Cursor is a brand.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A ring per account, filled by the window below, in place of the menu bar icon (it comes back when nothing shows); accounts currently in use get a green center dot. API accounts with a monthly budget show a square. Hover for exact values. Cursor has no rate windows and never shows."
+            "value" : "A ring per account, filled by the window chosen under Gauges, in place of the menu bar icon (it comes back when nothing shows); accounts currently in use get a green center dot. API accounts with a monthly budget show a square. Hover for exact values. Cursor has no rate windows and never shows."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un anneau par compte, rempli selon la fenêtre ci-dessous, à la place de l’icône de la barre des menus (elle revient quand rien ne s’affiche) ; les comptes en cours d’utilisation ont un point vert au centre. Les comptes API avec un budget mensuel affichent un carré. Survolez-les pour voir les valeurs exactes. Cursor n’a pas de fenêtre de limite et n’apparaît jamais."
+            "value" : "Un anneau par compte, rempli selon la fenêtre choisie sous Jauges, à la place de l’icône de la barre des menus (elle revient quand rien ne s’affiche) ; les comptes en cours d’utilisation ont un point vert au centre. Les comptes API avec un budget mensuel affichent un carré. Survolez-les pour voir les valeurs exactes. Cursor n’a pas de fenêtre de limite et n’apparaît jamais."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "По кільцю на кожен обліковий запис замість значка в рядку меню (він повертається, коли нічого не показується), заповненому за вікном, вибраним нижче; активні облікові записи мають зелену крапку в центрі. Облікові записи API з місячним бюджетом показують квадрат. Наведіть курсор, щоб побачити точні значення. Cursor не має вікон лімітів і ніколи не показується."
+            "value" : "По кільцю на кожен обліковий запис замість значка в рядку меню (він повертається, коли нічого не показується), заповненому за вікном, вибраним у розділі «Індикатори»; активні облікові записи мають зелену крапку в центрі. Облікові записи API з місячним бюджетом показують квадрат. Наведіть курсор, щоб побачити точні значення. Cursor не має вікон лімітів і ніколи не показується."
           }
         }
       }
@@ -457,6 +457,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Застосувати"
+          }
+        }
+      }
+    },
+    "Apply to the menu-bar rings and the ring bar." : {
+      "comment" : "Settings › Display › Gauges note: these choices serve both surfaces.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply to the menu-bar rings and the ring bar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S’appliquent aux anneaux de la barre des menus et à la barre d’anneaux."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Діють для кілець у рядку меню й панелі кілець."
           }
         }
       }
@@ -1243,29 +1266,6 @@
         }
       }
     },
-    "Display" : {
-      "comment" : "Settings › General picker: whether the menu bar rings show used or remaining.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Display"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Показувати"
-          }
-        }
-      }
-    },
     "Done" : {
       "comment" : "Setup guide footer button on the last step.",
       "localizations" : {
@@ -1446,6 +1446,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Приховувати дані облікового запису в сповіщеннях"
+          }
+        }
+      }
+    },
+    "Hide until the pointer reaches the edge" : {
+      "comment" : "Settings › General › Ring Bar toggle: the bar hides and comes back when the pointer is pushed against its screen edge, like the Dock.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide until the pointer reaches the edge"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Masquer jusqu’à ce que le pointeur atteigne le bord"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ховати, доки вказівник не досягне краю"
           }
         }
       }
@@ -2140,6 +2163,29 @@
         }
       }
     },
+    "Opens Ration" : {
+      "comment" : "VoiceOver hint on a ring bar gauge: clicking it opens the Ration popover.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens Ration"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre Ration"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відкриває Ration"
+          }
+        }
+      }
+    },
     "Opens Ration and dismisses this row" : {
       "comment" : "VoiceOver hint on a row of the alerts drop.",
       "localizations" : {
@@ -2159,6 +2205,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Відкриває Ration і приховує цей рядок"
+          }
+        }
+      }
+    },
+    "Or drag empty glass on the bar, like the Dock." : {
+      "comment" : "Settings › Display › Ring Bar note under Size: dragging the bar's empty area resizes it, as the Dock's divider does.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Or drag empty glass on the bar, like the Dock."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ou faites glisser une zone vide de la barre, comme pour le Dock."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Або перетягніть порожнє місце на панелі, як у Dock."
           }
         }
       }
@@ -2370,6 +2439,29 @@
         }
       }
     },
+    "Position" : {
+      "comment" : "Settings › General › Ring Bar picker: the screen edge the bar docks to.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Розташування"
+          }
+        }
+      }
+    },
     "Provider" : {
       "comment" : "Settings › account row: Claude, ChatGPT or Cursor.",
       "localizations" : {
@@ -2412,6 +2504,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Сторінку постачальника виявлено. Перевірте обліковий запис, коли вхід завершиться."
+          }
+        }
+      }
+    },
+    "Push the pointer against that edge to bring the bar back. A Dock that hides on the same edge comes back with it." : {
+      "comment" : "Settings › General › Ring Bar note under Hide until the pointer reaches the edge.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Push the pointer against that edge to bring the bar back. A Dock that hides on the same edge comes back with it."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poussez le pointeur contre ce bord pour faire revenir la barre. Un Dock masqué sur le même bord revient avec elle."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Доведіть вказівник до цього краю, щоб повернути панель. Dock, що ховається біля того самого краю, з’явиться разом із нею."
           }
         }
       }
@@ -3014,6 +3129,52 @@
         }
       }
     },
+    "Show" : {
+      "comment" : "Settings › Display › Gauges picker: whether gauges show the used or the remaining share.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показувати"
+          }
+        }
+      }
+    },
+    "Show the ring bar" : {
+      "comment" : "Settings › General › Ring Bar toggle: show the menu bar's gauges in a glass bar at a screen edge.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the ring bar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher la barre d’anneaux"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показувати панель кілець"
+          }
+        }
+      }
+    },
     "Show this in the menu-bar drop" : {
       "comment" : "Settings › Alerts tooltip on the Drop checkbox.",
       "localizations" : {
@@ -3175,6 +3336,29 @@
         }
       }
     },
+    "Size" : {
+      "comment" : "Settings › Display › Ring Bar slider: the ring bar's size.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Size"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taille"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Розмір"
+          }
+        }
+      }
+    },
     "Skip" : {
       "comment" : "Button: skip this step.",
       "localizations" : {
@@ -3290,6 +3474,29 @@
         }
       }
     },
+    "Style" : {
+      "comment" : "Settings › General › Ring Bar picker: Rail or Capsules.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Style"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Style"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Стиль"
+          }
+        }
+      }
+    },
     "The day your plan renews each month. Used for per-cycle utilisation in History. Days 29–31 fall back to the month's last day." : {
       "comment" : "Settings › account note under Renewal day. History = Ration's History window.",
       "localizations" : {
@@ -3309,6 +3516,29 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "День, коли тариф поновлюється щомісяця. Потрібен для розрахунку використання за цикл в Історії. Дні 29–31 замінюються останнім днем місяця."
+          }
+        }
+      }
+    },
+    "The menu bar's gauges in a glass bar at the edge of the screen, grouped by provider. It never takes focus from the app you are in." : {
+      "comment" : "Settings › General › Ring Bar note under the toggle.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The menu bar's gauges in a glass bar at the edge of the screen, grouped by provider. It never takes focus from the app you are in."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les jauges de la barre des menus dans une barre en verre au bord de l’écran, regroupées par fournisseur. Elle ne prend jamais le focus de l’app que vous utilisez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Індикатори з рядка меню на скляній панелі біля краю екрана, згруповані за постачальником. Вона ніколи не забирає фокус у програми, з якою ви працюєте."
           }
         }
       }
@@ -14101,19 +14331,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Warm-up is off in General"
+            "value" : "Warm-up is off in Features"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le préchauffage est désactivé dans Général"
+            "value" : "Le préchauffage est désactivé dans Fonctionnalités"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Розігрів вимкнено в розділі «Загальні»"
+            "value" : "Розігрів вимкнено в розділі «Функції»"
           }
         }
       }
@@ -16864,19 +17094,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If you sign in with a magic link, paste the link from your email into the field at the top of the sign-in window. Opening it in Safari signs in your browser, not Ration. Warm-up is off in General: Ration won't start your 5-hour window automatically."
+            "value" : "If you sign in with a magic link, paste the link from your email into the field at the top of the sign-in window. Opening it in Safari signs in your browser, not Ration. Warm-up is off in Features: Ration won't start your 5-hour window automatically."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Si vous vous connectez avec un lien magique, collez le lien reçu par e-mail dans le champ en haut de la fenêtre de connexion. L’ouvrir dans Safari connecte votre navigateur, pas Ration. Le préchauffage est désactivé dans Général : Ration ne démarrera pas automatiquement votre fenêtre de 5 heures."
+            "value" : "Si vous vous connectez avec un lien magique, collez le lien reçu par e-mail dans le champ en haut de la fenêtre de connexion. L’ouvrir dans Safari connecte votre navigateur, pas Ration. Le préchauffage est désactivé dans Fonctionnalités : Ration ne démarrera pas automatiquement votre fenêtre de 5 heures."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Якщо ви входите за магічним посиланням, вставте посилання з листа в поле вгорі вікна входу. Якщо відкрити його в Safari, увійде ваш браузер, а не Ration. Розігрів вимкнено в розділі «Загальні»: Ration не запускатиме ваше 5-годинне вікно автоматично."
+            "value" : "Якщо ви входите за магічним посиланням, вставте посилання з листа в поле вгорі вікна входу. Якщо відкрити його в Safari, увійде ваш браузер, а не Ration. Розігрів вимкнено в розділі «Функції»: Ration не запускатиме ваше 5-годинне вікно автоматично."
           }
         }
       }
@@ -18848,6 +19078,462 @@
         }
       }
     },
+    "ringBar.accessibility.details" : {
+      "comment" : "VoiceOver custom-content label on a ring bar gauge: the hover card's facts (every window, resets, spend).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Détails"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подробиці"
+          }
+        }
+      }
+    },
+    "ringBar.card.windowLeft" : {
+      "comment" : "Ring bar hover card line: a usage window's tag and the share left. %1$@ = window tag (5h, wk, Fable — never translated), %2$lld = percent. Mirrors statusItem.tooltip.left.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$lld%% left"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : %2$lld %% restant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: залишилося %2$lld%%"
+          }
+        }
+      }
+    },
+    "ringBar.card.windowUsed" : {
+      "comment" : "Ring bar hover card line: a usage window's tag and the share used. %1$@ = window tag (5h, wk, Fable — never translated), %2$lld = percent. Mirrors statusItem.tooltip.used.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$lld%% used"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ : %2$lld %% utilisé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: використано %2$lld%%"
+          }
+        }
+      }
+    },
+    "ringBar.edge.bottom" : {
+      "comment" : "Ring bar position (Settings › General › Ring Bar): the bottom screen edge.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bottom"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bas"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Унизу"
+          }
+        }
+      }
+    },
+    "ringBar.edge.left" : {
+      "comment" : "Ring bar position (Settings › General › Ring Bar): the left screen edge.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Left"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gauche"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ліворуч"
+          }
+        }
+      }
+    },
+    "ringBar.edge.right" : {
+      "comment" : "Ring bar position (Settings › General › Ring Bar): the right screen edge.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Right"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Droite"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Праворуч"
+          }
+        }
+      }
+    },
+    "ringBar.edge.top" : {
+      "comment" : "Ring bar position (Settings › General › Ring Bar): the top screen edge, under the menu bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haut"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Угорі"
+          }
+        }
+      }
+    },
+    "ringBar.menu.autoHide" : {
+      "comment" : "Ring bar right-click menu: toggles hiding the bar until the pointer reaches its screen edge (Settings › Display › Ring Bar: “Hide until the pointer reaches the edge”). Title Case in English, like macOS menus.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto Hide"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Masquage automatique"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Автоматично ховати"
+          }
+        }
+      }
+    },
+    "ringBar.menu.settings" : {
+      "comment" : "Ring bar right-click menu: opens Settings at the pane with the ring bar's options. Uses each language's word for Settings (fr Réglages, uk Параметри) and the Ring Bar section's name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ring Bar Settings…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réglages de la barre d’anneaux…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Параметри панелі кілець…"
+          }
+        }
+      }
+    },
+    "ringBar.style.capsules" : {
+      "comment" : "Ring bar style name (Settings › Display › Ring Bar): rounded glass trays (one for subscriptions, one for API keys) with each gauge's value and name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capsules"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capsules"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Капсули"
+          }
+        }
+      }
+    },
+    "ringBar.style.rail" : {
+      "comment" : "Ring bar style name (Settings › Display › Ring Bar): thin glass strips of small gauges (one for subscriptions, one for API keys).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rail"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rail"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Смуга"
+          }
+        }
+      }
+    },
+    "ringsGrid.cell.menuBar" : {
+      "comment" : "VoiceOver label of a Rings grid checkbox. %@ = account name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, menu bar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, barre des menus"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, рядок меню"
+          }
+        }
+      }
+    },
+    "ringsGrid.cell.ringBar" : {
+      "comment" : "VoiceOver label of a Rings grid checkbox. %@ = account name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, ring bar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, barre d’anneaux"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, панель кілець"
+          }
+        }
+      }
+    },
+    "ringsGrid.menuBar" : {
+      "comment" : "Settings › Display › Rings column header: show this account's gauge in the menu bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menu bar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Barre des menus"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Рядок меню"
+          }
+        }
+      }
+    },
+    "ringsGrid.noBudget" : {
+      "comment" : "Settings › Display › Rings: an API account without a monthly budget has no gauge.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No budget"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun budget"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Без бюджету"
+          }
+        }
+      }
+    },
+    "ringsGrid.noLimit" : {
+      "comment" : "Settings › Display › Rings: why Cursor has no checkboxes (usage-based, no limit to fill a gauge).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No limit to show"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune limite à afficher"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Немає ліміту для показу"
+          }
+        }
+      }
+    },
+    "ringsGrid.note" : {
+      "comment" : "Settings › Display › Rings note under the grid.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New accounts show in both."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les nouveaux comptes s’affichent dans les deux."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нові облікові записи показуються в обох."
+          }
+        }
+      }
+    },
+    "ringsGrid.paused" : {
+      "comment" : "Settings › Display › Rings: a paused account shows nowhere.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pause"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Призупинено"
+          }
+        }
+      }
+    },
+    "ringsGrid.ringBar" : {
+      "comment" : "Settings › Display › Rings column header: show this account's gauge in the ring bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ring bar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Barre d’anneaux"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Панель кілець"
+          }
+        }
+      }
+    },
     "settings.section.accounts" : {
       "comment" : "Settings sidebar section header: the list of connected accounts.",
       "extractionState" : "manual",
@@ -18968,6 +19654,30 @@
         }
       }
     },
+    "settings.section.gauges" : {
+      "comment" : "Settings › Display section header: how the usage gauges read (used or remaining, which window).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gauges"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jauges"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Індикатори"
+          }
+        }
+      }
+    },
     "settings.section.general" : {
       "comment" : "Settings section header and sidebar item: app-wide settings. Other copy quotes this name (Général / «Загальні»).",
       "extractionState" : "manual",
@@ -19064,6 +19774,30 @@
         }
       }
     },
+    "settings.section.notifications" : {
+      "comment" : "Settings › General section header: usage alerts and notification privacy. Title Case in English, sentence case in French and Ukrainian. Ukrainian avoids «Сповіщення», the Alerts pane's name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Системні сповіщення"
+          }
+        }
+      }
+    },
     "settings.section.planValue" : {
       "comment" : "Settings section header on a Claude account: what its Claude Code use would cost at API prices. Title Case in English, sentence case in French and Ukrainian.",
       "extractionState" : "manual",
@@ -19084,6 +19818,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Вартість плану"
+          }
+        }
+      }
+    },
+    "settings.section.popover" : {
+      "comment" : "Settings › Display section header: the popover's layout and sorting. French and Ukrainian call the popover Ration's menu.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Popover"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menu de Ration"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Меню Ration"
           }
         }
       }
@@ -19132,6 +19890,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Скидання"
+          }
+        }
+      }
+    },
+    "settings.section.ringBar" : {
+      "comment" : "Settings › General section header: the floating bar of usage gauges at a screen edge. Title Case in English, sentence case in French and Ukrainian.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ring Bar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Barre d’anneaux"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Панель кілець"
+          }
+        }
+      }
+    },
+    "settings.section.rings" : {
+      "comment" : "Settings › Display section header: the grid choosing, per account, menu bar and/or ring bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rings"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anneaux"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кільця"
           }
         }
       }
@@ -19276,6 +20082,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Claude Code"
+          }
+        }
+      }
+    },
+    "settings.sidebar.display" : {
+      "comment" : "Settings sidebar row: how gauges look and where they show (popover layout, menu bar, ring bar).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affichage"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відображення"
           }
         }
       }
@@ -23258,19 +24088,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Warm-up is off in General: Ration won't start your 5-hour window automatically."
+            "value" : "Warm-up is off in Features: Ration won't start your 5-hour window automatically."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le préchauffage est désactivé dans Général : Ration ne démarrera pas automatiquement votre fenêtre de 5 heures."
+            "value" : "Le préchauffage est désactivé dans Fonctionnalités : Ration ne démarrera pas automatiquement votre fenêtre de 5 heures."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Розігрів вимкнено в розділі «Загальні»: Ration не запускатиме ваше 5-годинне вікно автоматично."
+            "value" : "Розігрів вимкнено в розділі «Функції»: Ration не запускатиме ваше 5-годинне вікно автоматично."
           }
         }
       }

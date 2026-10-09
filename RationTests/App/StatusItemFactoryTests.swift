@@ -142,6 +142,46 @@ final class StatusItemFactoryTests: XCTestCase {
         )
     }
 
+    /// VoiceOver on the ring bar read "ChatGPT ChatGPT 20x weekly…": a label
+    /// that already starts with the provider's name keeps it once.
+    func testToolTipDoesNotRepeatProviderNameAtTheStartOfTheLabel() {
+        XCTAssertEqual(
+            StatusItemFactory.toolTipEntry(MenuBarGauge(provider: .chatGPT, label: "ChatGPT 20x", fraction: 0.3, windowKind: .weekly, inUse: true),
+                                           displaysRemaining: true, locale: Locale(identifier: "en")),
+            "ChatGPT 20x weekly 30% left (in use)"
+        )
+        XCTAssertEqual(
+            StatusItemFactory.toolTipEntry(MenuBarGauge(provider: .chatGPT, label: "chatgpt pro", fraction: 0.3, windowKind: .weekly, inUse: false),
+                                           displaysRemaining: true, locale: Locale(identifier: "en")),
+            "chatgpt pro weekly 30% left"
+        )
+        XCTAssertEqual(
+            StatusItemFactory.toolTipEntry(MenuBarGauge(provider: .chatGPT, label: "ChatGPTeam", fraction: 0.3, windowKind: .weekly, inUse: false),
+                                           displaysRemaining: true, locale: Locale(identifier: "en")),
+            "ChatGPT ChatGPTeam weekly 30% left",
+            "only a whole word counts as the provider's name"
+        )
+    }
+
+    /// Increase Contrast: the unfilled track, which tells how much is left,
+    /// gets stronger.
+    func testIncreaseContrastStrengthensTheTrack() throws {
+        defer { Theme.increaseContrastOverride = nil }
+        func trackAlpha() throws -> CGFloat {
+            let image = StatusItemFactory.gaugeImage(fraction: 0, color: .systemOrange, shape: .ring, side: 40, stroke: 6,
+                                                     appearance: try XCTUnwrap(NSAppearance(named: .darkAqua)))
+            let cg = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+            let rep = NSBitmapImageRep(cgImage: cg)
+            let scale = CGFloat(rep.pixelsWide) / 40
+            // The ring's leftmost point, mid-stroke: track only (nothing filled).
+            return try XCTUnwrap(rep.colorAt(x: Int(3 * scale), y: rep.pixelsHigh / 2)).alphaComponent
+        }
+        Theme.increaseContrastOverride = false
+        XCTAssertEqual(try trackAlpha(), 0.28, accuracy: 0.03)
+        Theme.increaseContrastOverride = true
+        XCTAssertEqual(try trackAlpha(), 0.5, accuracy: 0.03)
+    }
+
     func testWindowLabels() {
         XCTAssertEqual(StatusItemFactory.windowLabel(.fiveHour), "5h")
         XCTAssertEqual(StatusItemFactory.windowLabel(.weekly), "weekly")
@@ -321,5 +361,16 @@ final class StatusItemFactoryTests: XCTestCase {
                        "Ration — TypeSafe Lab $3.42 of $30.00 credit used")
         XCTAssertEqual(StatusItemFactory.toolTip(for: [gauge], displaysRemaining: true, locale: Locale(identifier: "fr")),
                        "Ration — TypeSafe Lab\u{00A0}: 26,58\u{00A0}$US sur 30,00\u{00A0}$US de crédit restant")
+    }
+
+    /// The ring bar draws the same gauges bigger; the menu bar keeps 13 pt.
+    func testGaugeImageHonoursSideAndKeepsMenuBarDefault() {
+        let appearance = NSAppearance(named: .darkAqua)!
+        let menu = StatusItemFactory.gaugeImage(fraction: 0.5, color: .systemYellow, shape: .ring, appearance: appearance)
+        XCTAssertEqual(menu.size, NSSize(width: 13, height: 13))
+        let bar = StatusItemFactory.gaugeImage(fraction: 0.5, color: .systemYellow, shape: .ring, side: 30, stroke: 3.5, appearance: appearance)
+        XCTAssertEqual(bar.size, NSSize(width: 30, height: 30))
+        let square = StatusItemFactory.gaugeImage(fraction: 0.5, color: .systemYellow, shape: .roundedSquare, side: 20, stroke: 3, appearance: appearance)
+        XCTAssertEqual(square.size, NSSize(width: 20, height: 20))
     }
 }

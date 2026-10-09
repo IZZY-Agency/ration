@@ -48,22 +48,7 @@ final class FeatureSwitchesSnapshotTests: XCTestCase {
             try await settings.load()
             // In-use off: shows the locked Switch suggestions row and its note.
             try await settings.setFeature(.inUse, enabled: false)
-            let defaults = try XCTUnwrap(UserDefaults(suiteName: "FeatureSwitchesSnapshotTests-\(UUID())"))
-            let view = GeneralDetailView(
-                launchAtLogin: LaunchAtLoginController(service: StaticLaunchAtLoginService()),
-                appearance: AppearanceController(defaults: defaults),
-                settings: settings,
-                notificationPermission: .allowed,
-                onSetSortByWeeklyReset: { _ in },
-                onSetUsageAlertsEnabled: { _ in },
-                onSetRedactNotifications: { _ in },
-                onSetShowInUseInMenuBar: { _ in },
-                onSetMenuBarWindow: { _, _ in },
-                onSetMenuBarDisplaysRemaining: { _ in },
-                onSetPopoverLayout: { _ in },
-                onOpenSetupGuide: {},
-                onAllowNotifications: {}
-            )
+            let view = FeaturesDetailView(settings: settings)
             .frame(width: 560, height: 1500)
 
             let rep = renderHosted(view, size: NSSize(width: 560, height: 1500), dark: dark)

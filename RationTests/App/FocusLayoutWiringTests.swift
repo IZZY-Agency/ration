@@ -64,7 +64,7 @@ final class FocusLayoutWiringTests: XCTestCase {
         try await store.load()
         var written: [PopoverLayout] = []
 
-        let binding = GeneralDetailView.layoutBinding(settings: store) { written.append($0) }
+        let binding = DisplayDetailView.layoutBinding(settings: store) { written.append($0) }
         XCTAssertEqual(binding.wrappedValue, .standard)
         binding.wrappedValue = .focus
 

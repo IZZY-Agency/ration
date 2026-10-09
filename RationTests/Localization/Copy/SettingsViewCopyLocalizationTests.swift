@@ -13,17 +13,17 @@ final class SettingsViewCopyLocalizationTests: XCTestCase {
     func testSectionTitlesInEveryLanguage() {
         XCTAssertEqual(
             SettingsSectionTitle.all(locale: L10n.en),
-            ["Accounts", "General", "Menu Bar", "Features", "Identity", "Automation", "Resets", "Billing",
+            ["Accounts", "General", "Notifications", "Popover", "Gauges", "Menu Bar", "Ring Bar", "Rings", "Features", "Identity", "Automation", "Resets", "Billing",
              "Session", "Quiet Hours", "Holidays", "Cursor Spend", "Plan Value", "Usage Credits"]
         )
         XCTAssertEqual(
             SettingsSectionTitle.all(locale: L10n.fr),
-            ["Comptes", "Général", "Barre des menus", "Fonctionnalités", "Identité", "Automatisation",
+            ["Comptes", "Général", "Notifications", "Menu de Ration", "Jauges", "Barre des menus", "Barre d’anneaux", "Anneaux", "Fonctionnalités", "Identité", "Automatisation",
              "Réinitialisations", "Facturation", "Session", "Heures calmes", "Jours fériés", "Dépenses Cursor", "Valeur du forfait", "Crédits d’utilisation"]
         )
         XCTAssertEqual(
             SettingsSectionTitle.all(locale: L10n.uk),
-            ["Облікові записи", "Загальні", "Рядок меню", "Функції", "Ідентифікація", "Автоматизація",
+            ["Облікові записи", "Загальні", "Системні сповіщення", "Меню Ration", "Індикатори", "Рядок меню", "Панель кілець", "Кільця", "Функції", "Ідентифікація", "Автоматизація",
              "Скидання", "Оплата", "Сеанс", "Тихі години", "Вихідні дні", "Витрати Cursor", "Вартість плану", "Кредити використання"]
         )
     }
@@ -31,14 +31,14 @@ final class SettingsViewCopyLocalizationTests: XCTestCase {
     /// "General" is quoted by the warm-up-off note (Général / «Загальні»):
     /// the sidebar item must carry the same name.
     func testSidebarItemsInEveryLanguage() {
-        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.en), ["General", "Warm-up", "Alerts", "Claude Code"])
-        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.fr), ["Général", "Préchauffage", "Alertes", "Claude Code"])
-        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.uk), ["Загальні", "Розігрів", "Сповіщення", "Claude Code"])
+        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.en), ["General", "Display", "Features", "Warm-up", "Alerts", "Claude Code"])
+        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.fr), ["Général", "Affichage", "Fonctionnalités", "Préchauffage", "Alertes", "Claude Code"])
+        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.uk), ["Загальні", "Відображення", "Функції", "Розігрів", "Сповіщення", "Claude Code"])
         XCTAssertTrue(
-            FeatureSwitch.warmUpOffNote(locale: L10n.uk).contains("«\(SettingsSidebar.fixedTitles(locale: L10n.uk)[0])»")
+            FeatureSwitch.warmUpOffNote(locale: L10n.uk).contains("«\(SettingsSidebar.fixedTitles(locale: L10n.uk)[2])»")
         )
         XCTAssertTrue(
-            FeatureSwitch.warmUpOffNote(locale: L10n.fr).hasSuffix(SettingsSidebar.fixedTitles(locale: L10n.fr)[0])
+            FeatureSwitch.warmUpOffNote(locale: L10n.fr).hasSuffix(SettingsSidebar.fixedTitles(locale: L10n.fr)[2])
         )
     }
 

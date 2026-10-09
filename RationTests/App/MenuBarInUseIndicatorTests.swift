@@ -408,3 +408,139 @@ private final class IndicatorWebProfileStub: WebProfileManaging {
     func makeWebView(profileID: UUID) -> WKWebView { WKWebView(frame: .zero) }
     func removeProfile(profileID: UUID) async throws {}
 }
+
+/// Records what `MenuBarController` hands the ring bar.
+@MainActor
+final class RingBarSpy: RingBarPresenting {
+    var updates: [(groups: [RingBarGroup], configuration: RingBarConfiguration)] = []
+    var appearances = 0
+    var screenChanges = 0
+    var stopped = false
+    func update(groups: [RingBarGroup], configuration: RingBarConfiguration, now: Date) { updates.append((groups, configuration)) }
+    func setAppearance(_ appearance: NSAppearance?) { appearances += 1 }
+    func screensChanged() { screenChanges += 1 }
+    func stop() { stopped = true }
+}
+
+/// The ring bar rides the menu bar's single gauge capture. Lives here for
+/// the file-private indicator harness.
+@MainActor
+final class MenuBarRingBarTests: XCTestCase {
+    private func makeController(_ harness: IndicatorHarness, spy: RingBarSpy) -> MenuBarController {
+        MenuBarController(model: harness.model, launchAtLogin: LaunchAtLoginController(),
+                          hotKeyRegistrar: HotKeyRegistrarSpy(), makeRingBar: { _ in spy })
+    }
+
+    /// The bar's right-click menu reaches the settings and the Settings window.
+    func testRingBarMenuActionsReachTheSettings() async throws {
+        let harness = try await makeIndicatorHarness(seedAccounts: [])
+        var actions: RingBarActions?
+        let controller = MenuBarController(model: harness.model, launchAtLogin: LaunchAtLoginController(),
+                                           hotKeyRegistrar: HotKeyRegistrarSpy(),
+                                           makeRingBar: { actions = $0; return RingBarSpy() })
+        controller.start()
+        defer { controller.stop() }
+        let bar = try XCTUnwrap(actions)
+        bar.setHidesAtEdge(true)
+        bar.setEdge(.top)
+        bar.setStyle(.capsules)
+        let settings = harness.model.settings
+        let deadline = Date().addingTimeInterval(3)
+        while (!settings.ringBarHidesAtEdge || settings.ringBarEdge != .top || settings.ringBarStyle != .capsules) && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(settings.ringBarHidesAtEdge)
+        XCTAssertEqual(settings.ringBarEdge, .top)
+        XCTAssertEqual(settings.ringBarStyle, .capsules)
+        bar.openSettings()
+        XCTAssertEqual(controller.requestedSettingsSelection, .display)
+    }
+
+    func testBarKeepsGaugesWithMenuBarRingsOff() async throws {
+        let account = makeIndicatorAccount(.claude, order: 0)
+        let harness = try await makeIndicatorHarness(seedAccounts: [account])
+        try await harness.seedSnapshot(for: account, fiveHourRemaining: 0.4)
+        try await harness.model.setShowInUseInMenuBar(false)
+        try await harness.model.setRingBarEnabled(true)
+        let spy = RingBarSpy()
+        let controller = makeController(harness, spy: spy)
+        controller.start()
+        defer { controller.stop() }
+        let last = try XCTUnwrap(spy.updates.last)
+        XCTAssertTrue(last.configuration.enabled)
+        XCTAssertEqual(last.groups.map(\.source), [.subscription(.claude)])
+        XCTAssertEqual(last.groups.first?.entries.first?.gauge.fraction ?? 0, 0.6, accuracy: 0.0001, "used, like the menu bar")
+        XCTAssertEqual(controller.statusItem?.button?.attributedTitle.string, "", "menu-bar rings stay off")
+    }
+
+    func testHiddenFromTheMenuBarStaysInTheBar() async throws {
+        let shown = makeIndicatorAccount(.claude, order: 0)
+        let hidden = makeIndicatorAccount(.chatGPT, order: 1)
+        let harness = try await makeIndicatorHarness(seedAccounts: [shown, hidden])
+        try await harness.seedSnapshot(for: shown, fiveHourRemaining: 0.4)
+        try await harness.seedSnapshot(for: hidden, fiveHourRemaining: 0.7)
+        try await harness.model.setRingBarEnabled(true)
+        try await harness.model.setShows(.menuBar, id: hidden.id, false)
+        let spy = RingBarSpy()
+        let controller = makeController(harness, spy: spy)
+        controller.start()
+        defer { controller.stop() }
+        let tooltip = try XCTUnwrap(controller.statusItem?.button?.toolTip)
+        XCTAssertFalse(tooltip.contains("chatgpt-1"), tooltip)
+        XCTAssertTrue(tooltip.contains("claude-0"), tooltip)
+        XCTAssertEqual(spy.updates.last?.groups.map(\.source), [.subscription(.claude), .subscription(.chatGPT)])
+    }
+
+    func testHiddenFromTheBarStaysInTheMenuBar() async throws {
+        let shown = makeIndicatorAccount(.claude, order: 0)
+        let hidden = makeIndicatorAccount(.chatGPT, order: 1)
+        let harness = try await makeIndicatorHarness(seedAccounts: [shown, hidden])
+        try await harness.seedSnapshot(for: shown, fiveHourRemaining: 0.4)
+        try await harness.seedSnapshot(for: hidden, fiveHourRemaining: 0.7)
+        try await harness.model.setRingBarEnabled(true)
+        try await harness.model.setShows(.ringBar, id: hidden.id, false)
+        let spy = RingBarSpy()
+        let controller = makeController(harness, spy: spy)
+        controller.start()
+        defer { controller.stop() }
+        XCTAssertTrue(controller.statusItem?.button?.toolTip?.contains("chatgpt-1") == true)
+        XCTAssertEqual(spy.updates.last?.groups.map(\.source), [.subscription(.claude)])
+    }
+
+    func testBarOffSendsNoGroups() async throws {
+        let account = makeIndicatorAccount(.claude, order: 0)
+        let harness = try await makeIndicatorHarness(seedAccounts: [account])
+        try await harness.seedSnapshot(for: account, fiveHourRemaining: 0.4)
+        let spy = RingBarSpy()
+        let controller = makeController(harness, spy: spy)
+        controller.start()
+        defer { controller.stop() }
+        XCTAssertEqual(spy.updates.last?.groups.isEmpty, true)
+        XCTAssertEqual(spy.updates.last?.configuration.enabled, false)
+        XCTAssertEqual(controller.statusItem?.button?.attributedTitle.string, "\u{FFFC}", "menu-bar rings unchanged")
+    }
+
+    func testStartSetsAppearanceAndStopStopsTheBar() async throws {
+        let harness = try await makeIndicatorHarness(seedAccounts: [])
+        let spy = RingBarSpy()
+        let controller = makeController(harness, spy: spy)
+        controller.start()
+        XCTAssertGreaterThan(spy.appearances, 0)
+        controller.stop()
+        XCTAssertTrue(spy.stopped)
+    }
+
+    func testScreenChangeReachesTheBar() async throws {
+        let harness = try await makeIndicatorHarness(seedAccounts: [])
+        let spy = RingBarSpy()
+        let controller = makeController(harness, spy: spy)
+        controller.start()
+        defer { controller.stop() }
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        let deadline = Date().addingTimeInterval(1)
+        while spy.screenChanges == 0 && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(spy.screenChanges, 1)
+    }
+}

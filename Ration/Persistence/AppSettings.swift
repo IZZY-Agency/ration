@@ -93,6 +93,33 @@ struct AppSettingsData: Codable, Equatable, Sendable {
     var featureWarmUpEnabled: Bool
     var featureInUseEnabled: Bool
     var featureUsageCreditsEnabled: Bool
+    /// The ring bar (Settings › General › Ring Bar): the menu bar's gauges in
+    /// a glass bar at a screen edge. Off by default; independent of the
+    /// menu-bar rings. Missing or malformed → the defaults below, one field at
+    /// a time.
+    var ringBarEnabled: Bool
+    var ringBarStyle: RingBarStyle
+    var ringBarEdge: RingBarEdge
+    /// Hide the bar until the pointer reaches its edge.
+    var ringBarHidesAtEdge: Bool
+    /// Per account or API org (UUID string): which surfaces show its gauge
+    /// (Settings › Display › Rings). Missing → both; malformed entries drop
+    /// alone (`lossyDecode`).
+    var gaugeVisibility: [String: GaugeVisibility]
+    /// The ring bar's size, dragged on the bar or set with the Size slider.
+    /// Clamped to `ringBarScaleRange`; unreadable → 1.
+    var ringBarScale: Double
+
+    static let ringBarScaleRange: ClosedRange<Double> = 0.8...1.8
+
+    static func clampedScale(_ value: Double) -> Double {
+        guard value.isFinite else { return 1 }
+        return min(max(value, ringBarScaleRange.lowerBound), ringBarScaleRange.upperBound)
+    }
+
+    func shows(_ surface: GaugeSurface, id: UUID) -> Bool {
+        gaugeVisibility[id.uuidString]?.shows(surface) ?? true
+    }
 
     /// The global switches as one value, for pure gating code.
     var features: FeatureSwitches {
@@ -197,7 +224,13 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         featureSwitchAdviceEnabled: Bool = true,
         featureWarmUpEnabled: Bool = true,
         featureInUseEnabled: Bool = true,
-        featureUsageCreditsEnabled: Bool = true
+        featureUsageCreditsEnabled: Bool = true,
+        ringBarEnabled: Bool = false,
+        ringBarStyle: RingBarStyle = .rail,
+        ringBarEdge: RingBarEdge = .left,
+        ringBarHidesAtEdge: Bool = false,
+        gaugeVisibility: [String: GaugeVisibility] = [:],
+        ringBarScale: Double = 1
     ) {
         self.sortByWeeklyReset = sortByWeeklyReset
         self.usageAlertsEnabled = usageAlertsEnabled
@@ -221,6 +254,12 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         self.featureWarmUpEnabled = featureWarmUpEnabled
         self.featureInUseEnabled = featureInUseEnabled
         self.featureUsageCreditsEnabled = featureUsageCreditsEnabled
+        self.ringBarEnabled = ringBarEnabled
+        self.ringBarStyle = ringBarStyle
+        self.ringBarEdge = ringBarEdge
+        self.ringBarHidesAtEdge = ringBarHidesAtEdge
+        self.gaugeVisibility = gaugeVisibility
+        self.ringBarScale = Self.clampedScale(ringBarScale)
     }
 
     static func canonical(_ cells: [Int]) -> [Int] {
@@ -250,6 +289,12 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         case featureWarmUpEnabled
         case featureInUseEnabled
         case featureUsageCreditsEnabled
+        case ringBarEnabled
+        case ringBarStyle
+        case ringBarEdge
+        case ringBarHidesAtEdge
+        case gaugeVisibility
+        case ringBarScale
     }
 
     init(from decoder: Decoder) throws {
@@ -311,6 +356,14 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         featureWarmUpEnabled = feature(.featureWarmUpEnabled)
         featureInUseEnabled = feature(.featureInUseEnabled)
         featureUsageCreditsEnabled = feature(.featureUsageCreditsEnabled)
+        // Lenient like `popoverLayout`: one unknown value (a newer build, a
+        // hand edit) falls back alone instead of resetting every setting.
+        ringBarEnabled = ((try? container.decodeIfPresent(Bool.self, forKey: .ringBarEnabled)) ?? nil) ?? false
+        ringBarStyle = ((try? container.decodeIfPresent(RingBarStyle.self, forKey: .ringBarStyle)) ?? nil) ?? .rail
+        ringBarEdge = ((try? container.decodeIfPresent(RingBarEdge.self, forKey: .ringBarEdge)) ?? nil) ?? .left
+        ringBarHidesAtEdge = ((try? container.decodeIfPresent(Bool.self, forKey: .ringBarHidesAtEdge)) ?? nil) ?? false
+        gaugeVisibility = Self.lossyDecode(container, forKey: .gaugeVisibility)
+        ringBarScale = Self.clampedScale(((try? container.decodeIfPresent(Double.self, forKey: .ringBarScale)) ?? nil) ?? 1)
     }
 
     /// Decodes a `[String: Value]` entry by entry, DROPPING malformed entries
@@ -363,8 +416,21 @@ final class AppSettings: ObservableObject {
     @Published private(set) var featureWarmUpEnabled: Bool = true
     @Published private(set) var featureInUseEnabled: Bool = true
     @Published private(set) var featureUsageCreditsEnabled: Bool = true
+    @Published private(set) var ringBarEnabled: Bool = false
+    @Published private(set) var ringBarStyle: RingBarStyle = .rail
+    @Published private(set) var ringBarEdge: RingBarEdge = .left
+    @Published private(set) var ringBarHidesAtEdge: Bool = false
+    @Published private(set) var gaugeVisibility: [String: GaugeVisibility] = [:]
+    @Published private(set) var ringBarScale: Double = 1
 
     var features: FeatureSwitches { data.features }
+
+    /// Gauges are worth computing when either surface shows them.
+    var wantsGauges: Bool { showInUseInMenuBar || ringBarEnabled }
+
+    func shows(_ surface: GaugeSurface, id: UUID) -> Bool {
+        gaugeVisibility[id.uuidString]?.shows(surface) ?? true
+    }
 
     /// The four switches as they change (current value first). For views that
     /// hold `AppModel` rather than observing `AppSettings` directly — values
@@ -422,7 +488,13 @@ final class AppSettings: ObservableObject {
             featureSwitchAdviceEnabled: featureSwitchAdviceEnabled,
             featureWarmUpEnabled: featureWarmUpEnabled,
             featureInUseEnabled: featureInUseEnabled,
-            featureUsageCreditsEnabled: featureUsageCreditsEnabled
+            featureUsageCreditsEnabled: featureUsageCreditsEnabled,
+            ringBarEnabled: ringBarEnabled,
+            ringBarStyle: ringBarStyle,
+            ringBarEdge: ringBarEdge,
+            ringBarHidesAtEdge: ringBarHidesAtEdge,
+            gaugeVisibility: gaugeVisibility,
+            ringBarScale: ringBarScale
         )
     }
 
@@ -526,6 +598,35 @@ final class AppSettings: ObservableObject {
 
     func setMenuBarDisplaysRemaining(_ value: Bool) async throws {
         try await mutate { $0.menuBarDisplaysRemaining = value }
+    }
+
+    func setRingBarEnabled(_ value: Bool) async throws {
+        try await mutate { $0.ringBarEnabled = value }
+    }
+
+    func setRingBarStyle(_ value: RingBarStyle) async throws {
+        try await mutate { $0.ringBarStyle = value }
+    }
+
+    func setRingBarEdge(_ value: RingBarEdge) async throws {
+        try await mutate { $0.ringBarEdge = value }
+    }
+
+    func setRingBarHidesAtEdge(_ value: Bool) async throws {
+        try await mutate { $0.ringBarHidesAtEdge = value }
+    }
+
+    /// One account's one surface; an entry back to both shown is removed.
+    func setShows(_ surface: GaugeSurface, id: UUID, _ shown: Bool) async throws {
+        try await mutate { data in
+            var entry = data.gaugeVisibility[id.uuidString] ?? GaugeVisibility()
+            entry.set(surface, shown)
+            data.gaugeVisibility[id.uuidString] = entry.showsEverywhere ? nil : entry
+        }
+    }
+
+    func setRingBarScale(_ value: Double) async throws {
+        try await mutate { $0.ringBarScale = AppSettingsData.clampedScale(value) }
     }
 
     func setThresholds(
@@ -871,6 +972,24 @@ final class AppSettings: ObservableObject {
         }
         if featureUsageCreditsEnabled != data.featureUsageCreditsEnabled {
             featureUsageCreditsEnabled = data.featureUsageCreditsEnabled
+        }
+        if ringBarEnabled != data.ringBarEnabled {
+            ringBarEnabled = data.ringBarEnabled
+        }
+        if ringBarStyle != data.ringBarStyle {
+            ringBarStyle = data.ringBarStyle
+        }
+        if ringBarEdge != data.ringBarEdge {
+            ringBarEdge = data.ringBarEdge
+        }
+        if ringBarHidesAtEdge != data.ringBarHidesAtEdge {
+            ringBarHidesAtEdge = data.ringBarHidesAtEdge
+        }
+        if gaugeVisibility != data.gaugeVisibility {
+            gaugeVisibility = data.gaugeVisibility
+        }
+        if ringBarScale != data.ringBarScale {
+            ringBarScale = data.ringBarScale
         }
     }
 }

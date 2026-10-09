@@ -174,7 +174,7 @@ final class FeatureSwitchesTests: XCTestCase {
             XCTAssertFalse(feature.summary.contains("\n"), "one line")
         }
         XCTAssertEqual(FeatureSwitch.switchAdviceNeedsInUseNote, "Needs in-use detection")
-        XCTAssertEqual(FeatureSwitch.warmUpOffNote, "Warm-up is off in General")
+        XCTAssertEqual(FeatureSwitch.warmUpOffNote, "Warm-up is off in Features")
     }
 
     func testFeatureBindingReadsSettingAndWritesThroughCallback() async throws {
@@ -185,8 +185,8 @@ final class FeatureSwitchesTests: XCTestCase {
         try await store.setFeature(.warmUp, enabled: false)
         var written: [(FeatureSwitch, Bool)] = []
 
-        let warmUp = GeneralDetailView.featureBinding(.warmUp, settings: store) { written.append(($0, $1)) }
-        let inUse = GeneralDetailView.featureBinding(.inUse, settings: store) { written.append(($0, $1)) }
+        let warmUp = FeaturesDetailView.featureBinding(.warmUp, settings: store) { written.append(($0, $1)) }
+        let inUse = FeaturesDetailView.featureBinding(.inUse, settings: store) { written.append(($0, $1)) }
         XCTAssertFalse(warmUp.wrappedValue)
         XCTAssertTrue(inUse.wrappedValue)
         warmUp.wrappedValue = true
@@ -256,9 +256,9 @@ final class FeatureSwitchesTests: XCTestCase {
     func testNewAccountDisclosureFollowsTheSwitch() {
         XCTAssertTrue(WarmUpDefaults.newClaudeAccountDisclosure(warmUpEnabled: true).hasPrefix("Warm-up is on"))
         let off = WarmUpDefaults.newClaudeAccountDisclosure(warmUpEnabled: false)
-        XCTAssertTrue(off.hasPrefix("Warm-up is off in General"), off)
+        XCTAssertTrue(off.hasPrefix("Warm-up is off in Features"), off)
         XCTAssertFalse(off.contains("Warm-up is on"))
-        XCTAssertTrue(OnboardingProviderGuide.guide(for: .claude, warmUpEnabled: false).hint.contains("Warm-up is off in General"))
+        XCTAssertTrue(OnboardingProviderGuide.guide(for: .claude, warmUpEnabled: false).hint.contains("Warm-up is off in Features"))
         XCTAssertTrue(OnboardingProviderGuide.guide(for: .claude, warmUpEnabled: true).hint.contains("Warm-up is on"))
     }
 
