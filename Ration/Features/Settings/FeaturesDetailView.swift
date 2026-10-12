@@ -21,7 +21,7 @@ struct FeaturesDetailView: View {
                     .disabled(!feature.isAvailable(in: features))
                     .accessibilityIdentifier("featureToggle-\(feature.rawValue)")
 
-                    Text(feature.isAvailable(in: features) ? feature.summary : FeatureSwitch.switchAdviceNeedsInUseNote)
+                    Text(feature.isAvailable(in: features) ? feature.summary : FeatureSwitch.needsInUseNote)
                         .font(Theme.mono(12))
                         .foregroundStyle(feature.isAvailable(in: features) ? Theme.creamDim : Theme.warn)
                 }

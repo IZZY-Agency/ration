@@ -24,6 +24,17 @@ struct FocusView: View {
     var claudeCodeBusy = false
     /// Switch Claude Code to this account.
     var onClaudeCodeSwitch: (UUID) -> Void = { _ in }
+    /// Codex's line under Claude Code's; nil when the feature is not in use.
+    var codex: CodexFocusLine? = nil
+    var codexBusy = false
+    /// Switch Codex to this account.
+    var onCodexSwitch: (UUID) -> Void = { _ in }
+    /// Codex's status line (spec §4.6, §5), the list layout's own line: under
+    /// Codex's Focus line, or in its place when Codex has no login to name
+    /// (signed out, a damaged file). nil when there is nothing to say.
+    var codexStatus: CodexStatusLine? = nil
+    /// A click on the status line: opens Settings › Codex.
+    var onCodexStatus: () -> Void = {}
 
     private static let inset: CGFloat = 16
 
@@ -60,6 +71,25 @@ struct FocusView: View {
                     .padding(.vertical, 10)
             }
 
+            if codex != nil || codexStatus != nil {
+                if model.hero != nil || claudeCode != nil {
+                    separator
+                }
+                if let codex {
+                    CodexFocusLineView(line: codex, busy: codexBusy, action: onCodexSwitch)
+                        .padding(.horizontal, Self.inset)
+                        .padding(.vertical, 10)
+                }
+                if let codexStatus {
+                    // The list's inset: its glyph lines up with the Codex
+                    // line's, as it does with the cards' in the list.
+                    CodexStatusLineView(line: codexStatus, action: onCodexStatus)
+                        .padding(.horizontal, AccountListMetrics.listInset)
+                        .padding(.top, codex == nil ? 6 : -4)
+                        .padding(.bottom, 6)
+                }
+            }
+
             ForEach(model.otherInUse, id: \.presentation.id) { line in
                 separator
                 inUseLine(line)
@@ -76,8 +106,8 @@ struct FocusView: View {
             }
 
             if !model.others.isEmpty {
-                if model.hero != nil || claudeCode != nil || !model.otherInUse.isEmpty || !model.warnings.isEmpty
-                    || !model.switchLines.isEmpty {
+                if model.hero != nil || claudeCode != nil || codex != nil || codexStatus != nil || !model.otherInUse.isEmpty
+                    || !model.warnings.isEmpty || !model.switchLines.isEmpty {
                     separator
                 }
                 FocusFlowLayout(horizontalSpacing: 14, verticalSpacing: 6) {

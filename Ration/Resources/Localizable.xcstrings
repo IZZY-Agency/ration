@@ -12231,6 +12231,1782 @@
         }
       }
     },
+    "codex.card.current" : {
+      "comment" : "Tag on the ChatGPT account card whose account Codex (OpenAI's coding agent: the CLI and the ChatGPT app's Codex — a product name, keep it) is signed in to. Shown uppercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex"
+          }
+        }
+      }
+    },
+    "codex.card.current.accessibility" : {
+      "comment" : "VoiceOver for the Codex tag on a ChatGPT account card.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex uses this account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex utilise ce compte"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex використовує цей обліковий запис"
+          }
+        }
+      }
+    },
+    "codex.card.switching" : {
+      "comment" : "Card button while Codex is being switched to this ChatGPT account. Shown uppercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switching…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculement…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикання…"
+          }
+        }
+      }
+    },
+    "codex.card.use" : {
+      "comment" : "The button on a ChatGPT card's name line that switches Codex to that account. Drawn uppercase.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути"
+          }
+        }
+      }
+    },
+    "codex.card.use.accessibility" : {
+      "comment" : "VoiceOver and tooltip for the card button. %@ = the account's name in Ration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch Codex to %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faire passer Codex à %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути Codex на %@"
+          }
+        }
+      }
+    },
+    "codex.card.use.sameWorkspace.accessibility" : {
+      "comment" : "VoiceOver and tooltip for the card's and Focus's switch button when the target is another seat of the ChatGPT workspace Codex is on now: a running Codex session may adopt the new seat instead of refusing. %@ = the account's name in Ration. fr: U+00A0 before ':'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch Codex to %@ — same workspace: running sessions may follow"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faire passer Codex à %@ — même espace de travail : les sessions en cours peuvent basculer aussi"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути Codex на %@ — той самий робочий простір: запущені сесії можуть теж перемкнутися"
+          }
+        }
+      }
+    },
+    "codex.error.changing" : {
+      "comment" : "Error: Codex changed its sign-in file while Ration was reading it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex is changing its sign-in. Try again in a moment."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex est en train de changer de connexion. Réessayez dans un instant."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex саме змінює вхід. Спробуйте ще раз за мить."
+          }
+        }
+      }
+    },
+    "codex.error.conflict" : {
+      "comment" : "Error: Codex signed in to another account (an external codex login) during the switch; Ration did not overwrite it and rolled nothing back. fr: U+00A0 before ';'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex signed in to another account during the switch; Ration left it as it is."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex s’est connecté à un autre compte pendant le basculement ; Ration l’a laissé tel quel."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Під час перемикання Codex увійшов в інший обліковий запис; Ration залишив його як є."
+          }
+        }
+      }
+    },
+    "codex.error.failed" : {
+      "comment" : "Error: the Codex switch did not go through and was undone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The switch didn’t go through and was undone."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le basculement n’a pas abouti et a été annulé."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикання не вдалося, його скасовано."
+          }
+        }
+      }
+    },
+    "codex.error.needsAttention" : {
+      "comment" : "Error: Ration could not fully undo a Codex switch; the user should sign in again (codex login is a command, keep it).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration couldn’t fully undo a switch. Run codex login to be safe."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration n’a pas pu annuler complètement un basculement. Lancez codex login par précaution."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration не зміг повністю скасувати перемикання. Для певності виконайте codex login."
+          }
+        }
+      }
+    },
+    "codex.error.notSignedIn" : {
+      "comment" : "Error: Codex has no ChatGPT sign-in to switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex isn’t signed in with a ChatGPT account."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex n’est pas connecté à un compte ChatGPT."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex не ввійшов в обліковий запис ChatGPT."
+          }
+        }
+      }
+    },
+    "codex.error.rememberFirst" : {
+      "comment" : "Error: switching away would lose a Codex sign-in Ration has not remembered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex is on an account Ration hasn’t remembered. Remember it first, so it isn’t lost."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex utilise un compte que Ration n’a pas mémorisé. Mémorisez-le d’abord pour ne pas le perdre."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex використовує обліковий запис, який Ration не зберіг. Спершу збережіть його, щоб не втратити."
+          }
+        }
+      }
+    },
+    "codex.error.unsupported" : {
+      "comment" : "Error: Codex uses an API key or stores its login in the system keychain (its keyring credential store), which Ration cannot switch. fr: U+00A0 before ':'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex is signed in with an API key or keeps its login in the keychain, which Ration can’t switch."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex est connecté avec une clé API ou garde sa connexion dans le trousseau : Ration ne peut pas le basculer."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex увійшов за допомогою ключа API або зберігає вхід у в’язці ключів, тож Ration не може його перемкнути."
+          }
+        }
+      }
+    },
+    "codex.focus.on" : {
+      "comment" : "Focus layout, the line under the big number: the ChatGPT account Codex uses now. %@ = its name in Ration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex on %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex utilise %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex використовує %@"
+          }
+        }
+      }
+    },
+    "codex.focus.switch" : {
+      "comment" : "Focus layout, the button on the Codex line. Drawn uppercase. %@ = the account it switches Codex to.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer vers %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути на %@"
+          }
+        }
+      }
+    },
+    "codex.notification.failed.body" : {
+      "comment" : "Notification body after a failed automatic Codex switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic switching is paused. Open Ration to see why."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le basculement automatique est en pause. Ouvrez Ration pour en savoir plus."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Автоматичне перемикання призупинено. Відкрийте Ration, щоб дізнатися причину."
+          }
+        }
+      }
+    },
+    "codex.notification.failed.title" : {
+      "comment" : "Notification title: an automatic switch of Codex did not happen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex was not switched"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex n’a pas été basculé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex не перемкнено"
+          }
+        }
+      }
+    },
+    "codex.notification.noRoom.body" : {
+      "comment" : "Notification body: Codex stays on the ChatGPT account it uses. %@ = that account's name in Ration. fr: U+00A0 before ':'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex stays on %@: every remembered account is past your limit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex reste sur %@ : tous les comptes mémorisés ont dépassé votre limite."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex залишається на %@: усі збережені облікові записи перевищили ваш ліміт."
+          }
+        }
+      }
+    },
+    "codex.notification.noRoom.title" : {
+      "comment" : "Notification title: automatic switching found no remembered ChatGPT account with room left.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No ChatGPT account has room"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun compte ChatGPT n’a de marge"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Жоден обліковий запис ChatGPT не має запасу"
+          }
+        }
+      }
+    },
+    "codex.notification.redacted.body" : {
+      "comment" : "Notification body after an automatic Codex switch when notification details are hidden (privacy setting): no account names.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex switched accounts."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex a changé de compte."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex змінив обліковий запис."
+          }
+        }
+      }
+    },
+    "codex.notification.redacted.failed" : {
+      "comment" : "Notification body when an automatic Codex switch failed and notification details are hidden (privacy setting): no account names.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex was not switched."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex n’a pas été basculé."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex не перемкнено."
+          }
+        }
+      }
+    },
+    "codex.notification.redacted.noRoom" : {
+      "comment" : "Notification body when no remembered ChatGPT account has room for Codex and notification details are hidden (privacy setting): no account names.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No ChatGPT account has room for Codex."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun compte ChatGPT n’a de marge pour Codex."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Жоден обліковий запис ChatGPT не має запасу для Codex."
+          }
+        }
+      }
+    },
+    "codex.notification.switched.body" : {
+      "comment" : "Notification body after an automatic Codex switch. %1$@ = the account it left, %2$lld = percent of its weekly limit used. Running Codex sessions keep the old account until restarted. fr: U+202F before '%'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ used %2$lld%% of its weekly limit. Restart running Codex sessions."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ a utilisé %2$lld %% de sa limite hebdomadaire. Redémarrez les sessions Codex en cours."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ використав %2$lld%% тижневого ліміту. Перезапустіть запущені сесії Codex."
+          }
+        }
+      }
+    },
+    "codex.notification.switched.title" : {
+      "comment" : "Notification title when Ration switched Codex to another ChatGPT account automatically. %@ = that account's name in Ration.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex switched to %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex est passé à %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex перемкнено на %@"
+          }
+        }
+      }
+    },
+    "codex.remember.account" : {
+      "comment" : "Picker label in the Remember sheet: which Ration account the Codex sign-in belongs to.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It belongs to this Ration account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle appartient à ce compte Ration"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Він належить цьому обліковому запису Ration"
+          }
+        }
+      }
+    },
+    "codex.remember.confirm" : {
+      "comment" : "Sheet button: remember the Codex sign-in.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remember"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémoriser"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зберегти"
+          }
+        }
+      }
+    },
+    "codex.remember.disclosure" : {
+      "comment" : "Remember sheet: what Ration keeps and touches. Codex's sign-in file is ~/.codex/auth.json; the ChatGPT desktop app's built-in Codex shares it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration keeps a copy of this sign-in in your login Keychain (not synced) so it can switch Codex back to it without a login. It reads and writes Codex’s own sign-in file, which the ChatGPT app’s Codex also uses, and sends none of it anywhere."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration garde une copie de cette connexion dans votre trousseau de session (non synchronisé) pour y rebasculer Codex sans nouvelle connexion. Il lit et écrit le fichier de connexion de Codex, que le Codex de l’app ChatGPT utilise aussi, et n’en envoie rien nulle part."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration зберігає копію цього входу у вашій в’язці ключів входу (без синхронізації), щоб повертати на нього Codex без нового входу. Він читає й записує власний файл входу Codex, яким також користується Codex у застосунку ChatGPT, і нікуди нічого з цього не надсилає."
+          }
+        }
+      }
+    },
+    "codex.remember.notNow" : {
+      "comment" : "Sheet button: close without remembering.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not now"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas maintenant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не зараз"
+          }
+        }
+      }
+    },
+    "codex.remember.title" : {
+      "comment" : "Sheet title: remember the sign-in Codex uses now. fr: U+202F before '?'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remember this Codex sign-in?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémoriser cette connexion Codex ?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зберегти цей вхід Codex?"
+          }
+        }
+      }
+    },
+    "codex.settings.auto.acknowledge" : {
+      "comment" : "Checkbox the user ticks to confirm Codex uses its default sign-in file: no custom CODEX_HOME (an environment variable — keep it) and no keychain credential store. Automatic switching needs it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex uses its default sign-in file (no CODEX_HOME, no keychain store)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex utilise son fichier de connexion par défaut (sans CODEX_HOME ni trousseau)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex використовує стандартний файл входу (без CODEX_HOME і без зберігання у в’язці ключів)"
+          }
+        }
+      }
+    },
+    "codex.settings.auto.explain" : {
+      "comment" : "Explains the automatic Codex switching rule. fr: U+00A0 before ';'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration switches Codex to the remembered account with the most room on its weekly limit, and never to one already past your threshold. Only new Codex sessions use the new account; restart running ones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration bascule Codex vers le compte mémorisé qui a le plus de marge sur sa limite hebdomadaire, jamais vers un compte qui a déjà dépassé votre seuil. Seules les nouvelles sessions Codex utilisent le nouveau compte ; redémarrez celles en cours."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration перемикає Codex на збережений обліковий запис із найбільшим запасом тижневого ліміту і ніколи — на обліковий запис, який уже перевищив ваш поріг. Новий обліковий запис використовують лише нові сесії Codex; перезапустіть запущені."
+          }
+        }
+      }
+    },
+    "codex.settings.auto.header" : {
+      "comment" : "Settings › Codex section: switch Codex to another ChatGPT account automatically by a rule.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch automatically"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer automatiquement"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикати автоматично"
+          }
+        }
+      }
+    },
+    "codex.settings.auto.needsAcknowledge" : {
+      "comment" : "Shown under the automatic switching toggle until the user ticks the default-configuration checkbox above it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm the line above to switch automatically."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirmez la ligne ci-dessus pour basculer automatiquement."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Підтвердьте рядок вище, щоб перемикати автоматично."
+          }
+        }
+      }
+    },
+    "codex.settings.auto.paused" : {
+      "comment" : "Shown when automatic Codex switching stopped after a failed switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused after a switch that didn’t go through."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pause après un basculement qui n’a pas abouti."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Призупинено після невдалого перемикання."
+          }
+        }
+      }
+    },
+    "codex.settings.auto.percent" : {
+      "comment" : "Stepper value. %lld = percent of the weekly limit. fr: U+202F before '%'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%%"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %%"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%%"
+          }
+        }
+      }
+    },
+    "codex.settings.auto.resume" : {
+      "comment" : "Button: turn automatic Codex switching back on after a pause.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reprendre"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відновити"
+          }
+        }
+      }
+    },
+    "codex.settings.auto.threshold" : {
+      "comment" : "Stepper label: the share of the weekly limit that triggers an automatic Codex switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch when used"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer à partir de"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикати, коли використано"
+          }
+        }
+      }
+    },
+    "codex.settings.auto.toggle" : {
+      "comment" : "Toggle: automatic Codex account switching on or off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch Codex automatically"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer Codex automatiquement"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемикати Codex автоматично"
+          }
+        }
+      }
+    },
+    "codex.settings.current.tag" : {
+      "comment" : "Tag on the remembered sign-in that Codex uses right now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In use by Codex"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisée par Codex"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Використовується Codex"
+          }
+        }
+      }
+    },
+    "codex.settings.forget" : {
+      "comment" : "Button: delete Ration's copy of this remembered Codex sign-in and its link.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oublier"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Забути"
+          }
+        }
+      }
+    },
+    "codex.settings.forget.blocked" : {
+      "comment" : "Shown instead of Forget while a switch is unresolved: the user runs codex login (a command, keep it), then presses Resume. fr: U+00A0 inside « ».",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume after running codex login before forgetting a sign-in."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lancez codex login, puis « Reprendre », avant d’oublier une connexion."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перш ніж забути вхід, виконайте codex login і натисніть «Відновити»."
+          }
+        }
+      }
+    },
+    "codex.settings.forgetAll" : {
+      "comment" : "Button: delete every remembered Codex sign-in, the links and the switch history.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget all sign-ins"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oublier toutes les connexions"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Забути всі входи"
+          }
+        }
+      }
+    },
+    "codex.settings.forgetAll.confirm" : {
+      "comment" : "Confirmation title for Forget all. fr: U+202F before '?'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forget every remembered Codex sign-in?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oublier toutes les connexions Codex mémorisées ?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Забути всі збережені входи Codex?"
+          }
+        }
+      }
+    },
+    "codex.settings.forgetAll.message" : {
+      "comment" : "Confirmation message for Forget all.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration deletes its copies, the links and the switch history. Codex itself stays signed in."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration supprime ses copies, les liens et l’historique des basculements. Codex lui-même reste connecté."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration видалить свої копії, зв’язки та історію перемикань. Сам Codex залишиться в системі."
+          }
+        }
+      }
+    },
+    "codex.settings.link.chosen" : {
+      "comment" : "Under a remembered Codex sign-in linked by the user but not proven by its ChatGPT account and user ids.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chosen by you — not used for automatic switching"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisie par vous — pas utilisée pour le basculement automatique"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вибрано вами — не використовується для автоматичного перемикання"
+          }
+        }
+      }
+    },
+    "codex.settings.link.label" : {
+      "comment" : "Picker label: which Ration account a remembered Codex sign-in belongs to.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration account"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compte Ration"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обліковий запис Ration"
+          }
+        }
+      }
+    },
+    "codex.settings.link.none" : {
+      "comment" : "Picker choice: the Codex sign-in is not linked to any Ration account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not linked"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non liée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не пов’язано"
+          }
+        }
+      }
+    },
+    "codex.settings.link.validityUnknown" : {
+      "comment" : "Under a remembered Codex sign-in not refreshed for 7 days: automatic switching skips it; a switch by hand may need a new login. fr: U+00A0 before ':' and in '7 jours'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not refreshed for 7 days: used by hand only. If Codex asks you to log in, sign in and Remember again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non actualisée depuis 7 jours : réservée au basculement manuel. Si Codex vous demande de vous connecter, connectez-vous, puis mémorisez-la à nouveau."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не оновлювався 7 днів: лише для ручного перемикання. Якщо Codex попросить увійти, увійдіть і знову збережіть вхід."
+          }
+        }
+      }
+    },
+    "codex.settings.link.verified" : {
+      "comment" : "Under a remembered Codex sign-in: its ChatGPT account and user ids match the linked Ration account's, so automatic switching may use it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verified"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérifiée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перевірено"
+          }
+        }
+      }
+    },
+    "codex.settings.notify" : {
+      "comment" : "Toggle: send a notification when Ration switches Codex automatically.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notify me when Ration switches Codex"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "M’avertir quand Ration bascule Codex"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сповіщати, коли Ration перемикає Codex"
+          }
+        }
+      }
+    },
+    "codex.settings.now.header" : {
+      "comment" : "Settings › Codex section: the ChatGPT account Codex is signed in to right now.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex now"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex maintenant"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex зараз"
+          }
+        }
+      }
+    },
+    "codex.settings.now.none" : {
+      "comment" : "Shown when Codex has no ChatGPT sign-in in its default configuration (~/.codex/auth.json).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex isn’t signed in with a ChatGPT account in its default configuration."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex n’est pas connecté à un compte ChatGPT dans sa configuration par défaut."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex не ввійшов в обліковий запис ChatGPT у стандартній конфігурації."
+          }
+        }
+      }
+    },
+    "codex.settings.now.remember" : {
+      "comment" : "Button: remember the sign-in Codex uses now, to switch back to it later.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remember…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémoriser…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зберегти…"
+          }
+        }
+      }
+    },
+    "codex.settings.now.rememberAgain" : {
+      "comment" : "Button next to the current Codex sign-in when Ration has already remembered it: saves a fresh copy now, keeping its link to a Ration account (after signing in to that account again in Codex).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remember again"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémoriser à nouveau"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зберегти знову"
+          }
+        }
+      }
+    },
+    "codex.settings.now.remembered" : {
+      "comment" : "Label next to the current Codex sign-in when Ration has already remembered it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remembered"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mémorisée"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Збережено"
+          }
+        }
+      }
+    },
+    "codex.settings.privacy" : {
+      "comment" : "Privacy note at the bottom of Settings › Codex. Forget and Forget all are the pane's buttons. fr: U+00A0 before ';' and inside « ».",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration keeps a copy of each remembered sign-in in its own login Keychain items (never synced) so it can switch Codex without a login, and keeps the sign-in ids, their links and its last 500 switches in its own folder. It reads and writes Codex’s sign-in file, which the ChatGPT app’s Codex also uses, and sends none of the remembered sign-ins anywhere. Forget deletes one copy and its link; Forget all deletes every copy, the links and the switch history; Codex itself stays signed in. A parked copy can stop working if that account is refreshed elsewhere; Ration then asks you to sign in and Remember again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration garde une copie de chaque connexion mémorisée dans ses propres éléments de votre trousseau de session (jamais synchronisés) pour basculer Codex sans nouvelle connexion, et conserve les identifiants des connexions, leurs liens et ses 500 derniers basculements dans son propre dossier. Il lit et écrit le fichier de connexion de Codex, que le Codex de l’app ChatGPT utilise aussi, et n’envoie aucune des connexions mémorisées nulle part. « Oublier » supprime une copie et son lien ; « Oublier toutes les connexions » supprime toutes les copies, les liens et l’historique des basculements ; Codex lui-même reste connecté. Une copie mise de côté peut cesser de fonctionner si ce compte est actualisé ailleurs ; Ration vous demande alors de vous reconnecter et de la mémoriser à nouveau."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration зберігає копію кожного збереженого входу у власних елементах вашої в’язки ключів входу (без синхронізації), щоб перемикати Codex без нового входу, а ідентифікатори входів, їхні зв’язки та останні 500 перемикань — у власній теці. Він читає й записує файл входу Codex, яким також користується Codex у застосунку ChatGPT, і нікуди не надсилає жодного зі збережених входів. «Забути» видаляє одну копію та її зв’язок; «Забути всі входи» видаляє всі копії, зв’язки та історію перемикань; сам Codex залишається в системі. Відкладена копія може перестати працювати, якщо цей обліковий запис оновлено деінде; тоді Ration попросить вас увійти й знову зберегти вхід."
+          }
+        }
+      }
+    },
+    "codex.settings.remembered.empty" : {
+      "comment" : "Shown when no Codex sign-in is remembered yet: how to get two.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None yet. Remember the sign-in Codex uses now, then sign in to your other account in Codex and remember that one too."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune pour l’instant. Mémorisez la connexion que Codex utilise, puis connectez-vous à votre autre compte dans Codex et mémorisez-la aussi."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поки немає. Збережіть вхід, який зараз використовує Codex, потім увійдіть в інший обліковий запис у Codex і збережіть і його."
+          }
+        }
+      }
+    },
+    "codex.settings.remembered.header" : {
+      "comment" : "Settings › Codex section: Codex sign-ins Ration keeps copies of, to switch between.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remembered sign-ins"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connexions mémorisées"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Збережені входи"
+          }
+        }
+      }
+    },
+    "codex.settings.restart" : {
+      "comment" : "Settings › Codex: a switch reaches new Codex sessions only; running ones (in a terminal or in the ChatGPT desktop app) keep the old account until restarted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only new Codex sessions use the switched account. Restart running ones, including the ChatGPT app’s Codex."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seules les nouvelles sessions Codex utilisent le compte basculé. Redémarrez celles en cours, y compris le Codex de l’app ChatGPT."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнений обліковий запис використовують лише нові сесії Codex. Перезапустіть запущені, зокрема Codex у застосунку ChatGPT."
+          }
+        }
+      }
+    },
+    "codex.settings.saveFailed" : {
+      "comment" : "Settings › Codex: the feature's settings file could not be written, so automatic switching was turned off. fr: U+00A0 before ';'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration couldn’t save its Codex settings, so automatic switching is off. Try turning it on again."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration n’a pas pu enregistrer ses réglages Codex ; le basculement automatique est donc désactivé. Réessayez de l’activer."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ration не зміг зберегти налаштування Codex, тому автоматичне перемикання вимкнено. Спробуйте ввімкнути його знову."
+          }
+        }
+      }
+    },
+    "codex.settings.status.header" : {
+      "comment" : "Settings › Codex section: the last thing that happened (a switch, a failure, a pause).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last event"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernier événement"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остання подія"
+          }
+        }
+      }
+    },
+    "codex.settings.switch" : {
+      "comment" : "Button: switch Codex to this remembered sign-in.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basculer"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перемкнути"
+          }
+        }
+      }
+    },
+    "codex.status.damaged" : {
+      "comment" : "Popover line: Codex's sign-in file holds parts of two different accounts; signing in again fixes it (codex login is a command, keep it).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex’s sign-in file mixes two accounts — run codex login"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fichier de connexion Codex mêlant deux comptes — lancez codex login"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Файл входу Codex змішує два облікові записи — виконайте codex login"
+          }
+        }
+      }
+    },
+    "codex.status.failed" : {
+      "comment" : "Popover line: the last Codex switch failed and was undone.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t switch Codex"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de basculer Codex"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося перемкнути Codex"
+          }
+        }
+      }
+    },
+    "codex.status.needsAttention" : {
+      "comment" : "Popover line: a Codex switch could not be undone completely; the user should check Codex.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex’s sign-in needs attention"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La connexion de Codex demande votre attention"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вхід Codex потребує уваги"
+          }
+        }
+      }
+    },
+    "codex.status.noRoom" : {
+      "comment" : "Popover line: automatic switching found no remembered ChatGPT account with room left.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No remembered ChatGPT account has room"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun compte ChatGPT mémorisé n’a de marge"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Жоден збережений обліковий запис ChatGPT не має запасу"
+          }
+        }
+      }
+    },
+    "codex.status.paused" : {
+      "comment" : "Popover line: automatic Codex switching stopped after a failed switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic Codex switching is paused"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le basculement automatique de Codex est en pause"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Автоматичне перемикання Codex призупинено"
+          }
+        }
+      }
+    },
+    "codex.status.remember" : {
+      "comment" : "Popover line offering to remember the sign-in Codex uses now. %@ = the email of its ChatGPT account.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex is on %@ — remember it"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex utilise %@ — mémorisez-le"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex на %@ — збережіть його"
+          }
+        }
+      }
+    },
+    "codex.status.stale" : {
+      "comment" : "Popover line: right after a switch, Codex wants you to log in again (the remembered copy no longer works). %@ = the account's name in Ration. Remember is the button that saves a sign-in.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to %@ in Codex, then Remember it again"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectez-vous à %@ dans Codex, puis mémorisez à nouveau la connexion"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Увійдіть в обліковий запис %@ у Codex, потім знову збережіть вхід"
+          }
+        }
+      }
+    },
+    "codex.status.switched.automatic" : {
+      "comment" : "Popover line for an hour after an automatic switch. %@ = the account's name in Ration. Running Codex sessions keep the old account until restarted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex switched to %@ automatically — restart running sessions"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex est passé automatiquement à %@ — redémarrez les sessions en cours"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex автоматично перемкнено на %@ — перезапустіть запущені сесії"
+          }
+        }
+      }
+    },
+    "codex.status.switched.manual" : {
+      "comment" : "Popover line for an hour after the user switched Codex. %@ = the account's name in Ration. Running Codex sessions keep the old account until restarted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex now uses %@ — restart running sessions"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex utilise maintenant %@ — redémarrez les sessions en cours"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex тепер використовує %@ — перезапустіть запущені сесії"
+          }
+        }
+      }
+    },
+    "codex.status.switched.sameWorkspace" : {
+      "comment" : "Popover line and Settings' Last event for an hour after a Codex switch to another seat of the same ChatGPT workspace: running Codex sessions may adopt the new seat instead of refusing, so restarting them is the safe choice. %@ = the account's name in Ration. fr: U+00A0 before ':' and ';'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex now uses %@ — same workspace: running sessions may follow; restart to be sure"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex utilise maintenant %@ — même espace de travail : les sessions en cours peuvent basculer aussi ; redémarrez-les par précaution"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex тепер використовує %@ — той самий робочий простір: запущені сесії можуть теж перемкнутися; для певності перезапустіть їх"
+          }
+        }
+      }
+    },
+    "codex.status.switched.unverified" : {
+      "comment" : "Popover line and Settings' Last event for an hour after a Codex switch during which Codex itself refreshed the new account's sign-in (the file holds Codex's newer copy, not Ration's). %@ = the account's name in Ration. Running Codex sessions keep the old account until restarted. fr: U+00A0 before ';'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex now uses %@ — it refreshed its sign-in meanwhile; restart running sessions"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex utilise maintenant %@ — il a renouvelé sa connexion entre-temps ; redémarrez les sessions en cours"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex тепер використовує %@ — тим часом він оновив свій вхід; перезапустіть запущені сесії"
+          }
+        }
+      }
+    },
+    "codex.status.waiting" : {
+      "comment" : "Popover and Settings line: automatic switching wants to switch Codex, but some accounts' usage is not fresh yet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for fresh usage to switch Codex"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente de données d’utilisation à jour pour basculer Codex"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Очікування свіжих даних про використання, щоб перемкнути Codex"
+          }
+        }
+      }
+    },
     "codexCredits.line.unlimited" : {
       "comment" : "Account card line (ChatGPT): the account has unlimited Codex credits. Monospaced, keep short.",
       "extractionState" : "manual",
@@ -14301,7 +16077,7 @@
       }
     },
     "featureSwitch.note.switchAdviceNeedsInUse" : {
-      "comment" : "Shown under the Switch suggestions switch while In-use detection is off.",
+      "comment" : "Shown under the Switch suggestions and Keep awake switches while In-use detection is off.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -14368,6 +16144,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Позначає обліковий запис, з яким ви працюєте: мітки АКТИВНИЙ, крапки в рядку меню, головний блок у режимі «Фокус»."
+          }
+        }
+      }
+    },
+    "featureSwitch.summary.keepAwake" : {
+      "comment" : "One-line explanation under the Keep awake feature switch. Idle sleep only: the display still turns off, and closing the lid still sleeps the Mac; the hold applies on the power adapter, not on battery.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keeps the Mac from idle sleep while an account is in use, on the power adapter; the display still sleeps then. The eye button holds it for a set time with the display on. A closed lid still sleeps the Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empêche la mise en veille automatique du Mac tant qu'un compte est en cours, sur secteur ; l'écran s'éteint quand même alors. Le bouton en forme d'œil le garde éveillé pour une durée choisie, écran allumé. Le capot fermé met toujours en veille."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не дає Mac заснути від бездіяльності, поки обліковий запис активний, від адаптера живлення; екран тоді все одно вимикається. Кнопка з оком тримає його на обраний час з увімкненим екраном. Закрита кришка так само присипляє Mac."
           }
         }
       }
@@ -14440,6 +16240,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Визначення активного облікового запису"
+          }
+        }
+      }
+    },
+    "featureSwitch.title.keepAwake" : {
+      "comment" : "Settings → General → Features: title of the switch that keeps the Mac from idle sleep while an account is in use.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep awake"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garder le Mac éveillé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не давати Mac заснути"
           }
         }
       }
@@ -16078,6 +17902,318 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "активний, %@"
+          }
+        }
+      }
+    },
+    "keepAwake.banner.automatic" : {
+      "comment" : "Popover banner while the Keep awake while in use switch holds the Mac from idle sleep because an account is in use.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac kept awake while an account is in use"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac maintenu éveillé tant qu'un compte est en cours"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac не засне, поки обліковий запис активний"
+          }
+        }
+      }
+    },
+    "keepAwake.banner.manualIndefinite" : {
+      "comment" : "Popover banner while the open-ended override (Until I turn it off) holds the Mac from idle sleep.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac kept awake until you turn it off"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac maintenu éveillé jusqu'à ce que vous l'arrêtiez"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac не засне, поки ви не вимкнете"
+          }
+        }
+      }
+    },
+    "keepAwake.banner.manualUntil" : {
+      "comment" : "Popover banner while a timed override holds the Mac from idle sleep. %@ = the clock time it ends, e.g. 3:40 PM.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac kept awake until %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac maintenu éveillé jusqu'à %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac не засне до %@"
+          }
+        }
+      }
+    },
+    "keepAwake.button" : {
+      "comment" : "Popover footer: name of the Keep awake button (tooltip, VoiceOver). Opens a menu of durations that keep the Mac from idle sleep.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep awake"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garder éveillé"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не давати заснути"
+          }
+        }
+      }
+    },
+    "keepAwake.duration.hours1" : {
+      "comment" : "Keep awake menu: keep the Mac awake for 1 hour.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 hour"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 heure"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 година"
+          }
+        }
+      }
+    },
+    "keepAwake.duration.hours2" : {
+      "comment" : "Keep awake menu: keep the Mac awake for 2 hours.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2 hours"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2 heures"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2 години"
+          }
+        }
+      }
+    },
+    "keepAwake.duration.hours4" : {
+      "comment" : "Keep awake menu: keep the Mac awake for 4 hours.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "4 hours"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "4 heures"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "4 години"
+          }
+        }
+      }
+    },
+    "keepAwake.duration.hours8" : {
+      "comment" : "Keep awake menu: keep the Mac awake for 8 hours.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "8 hours"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "8 heures"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "8 годин"
+          }
+        }
+      }
+    },
+    "keepAwake.duration.minutes30" : {
+      "comment" : "Keep awake menu: keep the Mac awake for 30 minutes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minutes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 minutes"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 хвилин"
+          }
+        }
+      }
+    },
+    "keepAwake.duration.untilOff" : {
+      "comment" : "Keep awake menu: keep the Mac awake with no end, until the user picks Stop keeping awake.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Until I turn it off"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jusqu'à ce que je l'arrête"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поки я не вимкну"
+          }
+        }
+      }
+    },
+    "keepAwake.offInSettings" : {
+      "comment" : "Tooltip of the popover footer's Keep awake (eye) button while the Keep awake feature switch is off in Settings; the button is disabled then.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep awake is off in Settings"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Garder éveillé est désactivé dans les Réglages"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«Не давати заснути» вимкнено в Налаштуваннях"
+          }
+        }
+      }
+    },
+    "keepAwake.stop" : {
+      "comment" : "Keep awake menu: ends the override (the automatic hold, if the switch is on and an account is in use, carries on). The counterpart of \"Until I turn it off\".",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn off"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вимкнути"
+          }
+        }
+      }
+    },
+    "keepAwake.timeLeft" : {
+      "comment" : "Keep awake menu: how long the running override still has. %@ = a compact countdown such as 1h 12m.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ left"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encore %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Залишилося %@"
           }
         }
       }
@@ -20086,6 +22222,30 @@
         }
       }
     },
+    "settings.sidebar.codex" : {
+      "comment" : "Settings sidebar item for Codex account switching. Codex is a product name — keep it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex"
+          }
+        }
+      }
+    },
     "settings.sidebar.display" : {
       "comment" : "Settings sidebar row: how gauges look and where they show (popover layout, menu bar, ring bar).",
       "extractionState" : "manual",
@@ -20495,7 +22655,7 @@
       }
     },
     "statusItem.tooltip.budgetUsed" : {
-      "comment" : "Menu-bar tooltip for an API org budget gauge. %1$@ = vendor + org label (e.g. \"Anthropic API IZZY\"), %2$lld = percent of the monthly budget spent.",
+      "comment" : "Menu-bar tooltip for an API org budget gauge. %1$@ = vendor + org label (e.g. \"Anthropic API Client\"), %2$lld = percent of the monthly budget spent.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {

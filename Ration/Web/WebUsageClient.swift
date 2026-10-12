@@ -15,6 +15,10 @@ struct ChatGPTFetchResult: Equatable, Sendable {
     let usage: WebResponseEnvelope
     /// nil = not read (non-2xx usage, abort, oversized, or wrong shape).
     let resetCredits: WebResponseEnvelope?
+    /// Who the session that authorised `usage` is, from the same
+    /// `/api/auth/session` read. nil = signed out, a session without both
+    /// ids, or a value of the wrong shape.
+    let identity: ChatGPTIdentity?
 }
 
 enum WebUsageClientError: Error, Equatable {
@@ -170,7 +174,8 @@ final class WebUsageClient {
         // Lenient on purpose: a bad side-channel value is "not read", never a
         // failed usage fetch.
         let resetCredits = (result as? [String: Any]).flatMap { try? Self.envelope(from: $0["resetCredits"]) }
-        return ChatGPTFetchResult(usage: usage, resetCredits: resetCredits)
+        let identity = ChatGPTIdentity(scriptValue: (result as? [String: Any])?["identity"])
+        return ChatGPTFetchResult(usage: usage, resetCredits: resetCredits, identity: identity)
     }
 
     #if DEBUG
@@ -660,6 +665,22 @@ final class WebUsageClient {
         return { status: 401, retryAfter: null, body: "" };
     }
 
+    // Who this session is, from this same read: what a remembered Codex login
+    // links to this account by (account id + user id; a Team workspace
+    // shares the account id across seats). Strings only, never the token;
+    // null unless both ids are present.
+    const __text = (value) => (typeof value === "string" && value.length > 0) ? value : null;
+    const identityAccountID = __text(session?.account?.id);
+    const identityUserID = __text(session?.user?.id);
+    const identity = (identityAccountID !== null && identityUserID !== null)
+        ? {
+            accountID: identityAccountID,
+            userID: identityUserID,
+            email: __text(session?.user?.email),
+            planType: __text(session?.account?.planType)
+        }
+        : null;
+
     let accountID = session?.account?.id;
     if (typeof accountID !== "string" || accountID.length === 0) {
         try {
@@ -688,7 +709,7 @@ final class WebUsageClient {
     });
     const body = await __readBounded(response);
     if (body === null) {
-        return { status: 0, retryAfter: response.headers.get("Retry-After"), body: "", resetCredits: null };
+        return { status: 0, retryAfter: response.headers.get("Retry-After"), body: "", resetCredits: null, identity };
     }
 
     // Usage-limit resets. Same auth, same page, same bridge evaluation — a
@@ -733,7 +754,8 @@ final class WebUsageClient {
         status: response.status,
         retryAfter: response.headers.get("Retry-After"),
         body,
-        resetCredits
+        resetCredits,
+        identity
     };
     """
 

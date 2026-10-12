@@ -8,7 +8,7 @@ final class APISpendModelEditsTests: APISpendModelTestCase {
         anthropic.costResults = [.success(costReport(month: UTCMonth(containing: now), cents: "0", fetchedAt: now))]
         let id = try await model.addOrg(label: "", rawKey: " sk-ant-admin01-SENTINELSENTINEL\n", budgetCents: nil)
         XCTAssertEqual(try keys.read(for: id), "sk-ant-admin01-SENTINELSENTINEL")
-        XCTAssertEqual(model.state.orgs.first?.label, "IZZY", "empty label takes the org name from /me")
+        XCTAssertEqual(model.state.orgs.first?.label, "Client", "empty label takes the org name from /me")
         XCTAssertEqual(model.state.orgs.first?.vendorOrgID, "org-1")
     }
 
@@ -18,7 +18,7 @@ final class APISpendModelEditsTests: APISpendModelTestCase {
         await model.start()
         await assertThrows(try await model.addOrg(label: "x", rawKey: "sk-ant-api03-SENTINEL", budgetCents: nil), .regularKey(.anthropic))
         anthropic.costResults = [.success(costReport(month: UTCMonth(containing: now), cents: "0", fetchedAt: now))]
-        await assertThrows(try await model.addOrg(label: "x", rawKey: "sk-ant-admin01-OTHERKEY", budgetCents: nil), .duplicate(label: "IZZY"))
+        await assertThrows(try await model.addOrg(label: "x", rawKey: "sk-ant-admin01-OTHERKEY", budgetCents: nil), .duplicate(label: "Client"))
         XCTAssertEqual(model.state.orgs.count, 1)
     }
 

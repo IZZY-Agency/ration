@@ -139,6 +139,44 @@ final class ChatGPTProviderAdapterTests: XCTestCase {
         return try await adapter.fetchUsage(accountID: UUID(), in: WKWebView())
     }
 
+    private func fetchSnapshot(rateLimitJSON: String) async throws -> UsageSnapshot {
+        let client = WebUsageClient { _, _, _ in
+            ["status": 200, "retryAfter": NSNull(), "body": "{\"rate_limit\": \(rateLimitJSON)}"]
+        }
+        let adapter = ChatGPTProviderAdapter(client: client, prepareWebView: { _ in })
+        return try await adapter.fetchUsage(accountID: UUID(), in: WKWebView())
+    }
+
+    /// A window object reported without its used percent or reset
+    /// time is not "no window". The fetch still succeeds (it may be a
+    /// legitimate "no limit"), and the snapshot names the kind it could not
+    /// read, so the Codex rule treats it as unknown.
+    func testAnIncompleteWindowIsRecordedAsUnreadable() async throws {
+        let weekly = #"{"used_percent": 30, "limit_window_seconds": 604800, "reset_at": 1784487780}"#
+        let noPercent = try await fetchSnapshot(rateLimitJSON: """
+            {"primary_window": {"used_percent": null, "limit_window_seconds": 18000, "reset_at": 1784400000},
+             "secondary_window": \(weekly)}
+            """)
+        XCTAssertNil(noPercent.fiveHour)
+        XCTAssertNotNil(noPercent.weekly)
+        XCTAssertEqual(noPercent.unreadableWindowKinds, [.fiveHour])
+
+        let noReset = try await fetchSnapshot(rateLimitJSON: """
+            {"primary_window": {"used_percent": 12}, "secondary_window": \(weekly)}
+            """)
+        XCTAssertEqual(noReset.unreadableWindowKinds, [.fiveHour], "no duration: the slot's kind")
+
+        let absent = try await fetchSnapshot(rateLimitJSON: #"{"primary_window": null, "secondary_window": \#(weekly)}"#)
+        XCTAssertEqual(absent.unreadableWindowKinds, [], "not reported at all: absent")
+
+        let whole = try await fetchSnapshot(rateLimitJSON: """
+            {"primary_window": {"used_percent": 5, "limit_window_seconds": 18000, "reset_at": 1784400000},
+             "secondary_window": \(weekly)}
+            """)
+        XCTAssertEqual(whole.unreadableWindowKinds, [])
+        XCTAssertNotNil(whole.fiveHour)
+    }
+
     func testFetchReadsPlanType() async throws {
         let prolite = try await fetchSnapshot(planTypeJSON: "\"plan_type\": \"prolite\",")
         XCTAssertEqual(prolite.planDetection, .tier(.chatGPTPro5x))

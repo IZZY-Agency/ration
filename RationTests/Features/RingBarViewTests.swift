@@ -41,6 +41,99 @@ final class RingBarViewTests: XCTestCase {
         XCTAssertGreaterThan(railSize.height, railSize.width, "a left bar stacks vertically")
     }
 
+    /// Keep awake on: one eye at the head of the bar — the first segment —
+    /// never one per glass; idle and held alike take the room, and it goes
+    /// when the switch goes, on the same live host.
+    func testKeptAwakeAddsAnEyeToTheFirstSegmentOnly() {
+        for style in RingBarStyle.allCases {
+            let live = model(style: style, edge: .top)
+            let sources = [live.groups[0].source]
+            let liveHost = host(live, sources: sources)
+            let bareWidth = liveHost.fittingSize.width
+
+            live.keepAwake = .idle
+            liveHost.layoutSubtreeIfNeeded()
+            let idleWidth = liveHost.fittingSize.width
+            XCTAssertGreaterThan(idleWidth, bareWidth, "\(style): the idle eye takes its room")
+
+            live.keepAwake = .held(.automatic)
+            liveHost.layoutSubtreeIfNeeded()
+            XCTAssertEqual(liveHost.fittingSize.width, idleWidth, "\(style): held is the same room, filled")
+
+            live.keepAwake = .hidden
+            liveHost.layoutSubtreeIfNeeded()
+            XCTAssertEqual(liveHost.fittingSize.width, bareWidth, "\(style): the switch off takes it away")
+
+            let held = model(style: style, edge: .top)
+            held.keepAwake = .held(.manual(until: nil))
+            let heldWidth = host(held, sources: sources).fittingSize.width
+            XCTAssertGreaterThan(heldWidth, bareWidth, "\(style): the first segment gains the eye")
+
+            let second = NSHostingView(rootView: RingBarSegmentView(model: held, sources: sources, segment: 1))
+            second.layoutSubtreeIfNeeded()
+            XCTAssertEqual(second.fittingSize.width, bareWidth, "\(style): a later segment stays as it was")
+        }
+    }
+
+    /// The held eye is the reset blue: the only blue-dominant pixels in a bar
+    /// of gold and green rings. The idle eye takes room but stays grey.
+    func testTheHeldEyeIsDrawnInSkyBlueAndTheIdleOneIsNot() throws {
+        func bluePixels(_ model: RingBarModel) throws -> Int {
+            let view = NSHostingView(rootView: RingBarSegmentView(model: model, sources: model.groups.map(\.source), segment: 0)
+                .environment(\.colorScheme, .dark))
+            view.frame = NSRect(origin: .zero, size: view.fittingSize)
+            let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.contentView = view
+            view.layoutSubtreeIfNeeded()
+            let rep = try XCTUnwrap(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width), pixelsHigh: Int(view.bounds.height),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+            rep.size = view.bounds.size
+            view.cacheDisplay(in: view.bounds, to: rep)
+            var count = 0
+            for y in 0..<rep.pixelsHigh {
+                for x in 0..<rep.pixelsWide {
+                    guard let c = rep.colorAt(x: x, y: y), c.alphaComponent > 0.9 else { continue }
+                    // #8FB8F2: blue well above red, both high — nothing else in the bar is.
+                    if c.blueComponent > 0.85, c.redComponent < 0.7, c.greenComponent > 0.6 { count += 1 }
+                }
+            }
+            return count
+        }
+        let bare = model(style: .rail, edge: .top)
+        XCTAssertEqual(try bluePixels(bare), 0)
+        let idle = model(style: .rail, edge: .top)
+        idle.keepAwake = .idle
+        XCTAssertEqual(try bluePixels(idle), 0, "the outline eye is grey")
+        let held = model(style: .rail, edge: .top)
+        held.keepAwake = .held(.automatic)
+        XCTAssertGreaterThan(try bluePixels(held), 10)
+    }
+
+    /// An API-only bar (squares, no subscriptions) still heads with the eye.
+    func testKeptAwakeHeadsAnAPIOnlyFirstSegment() {
+        let api = RingBarGroup(source: .api(.anthropic), entries: [
+            GaugeEntry(id: UUID(), gauge: MenuBarGauge(source: .api(.anthropic), label: "Agency API", fraction: 0.2, windowKind: nil,
+                                                      inUse: false, budget: BudgetGaugeFacts(exactPercent: 20, isLowerBound: false)),
+                       details: .apiBudget(nil, thresholds: .default)),
+        ])
+        for style in RingBarStyle.allCases {
+            let bare = RingBarModel()
+            bare.style = style
+            bare.edge = .top
+            bare.groups = [api]
+            let bareWidth = host(bare, sources: [api.source]).fittingSize.width
+            let held = RingBarModel()
+            held.style = style
+            held.edge = .top
+            held.groups = [api]
+            held.keepAwake = .held(.automatic)
+            XCTAssertGreaterThan(host(held, sources: [api.source]).fittingSize.width, bareWidth, "\(style)")
+        }
+    }
+
     func testTopEdgeLaysOutHorizontally() {
         let rail = model(style: .rail, edge: .top)
         let size = host(rail, sources: rail.groups.map(\.source)).fittingSize

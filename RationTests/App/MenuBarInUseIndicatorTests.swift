@@ -367,7 +367,9 @@ private func makeIndicatorHarness(seedAccounts: [AccountRecord]) async throws ->
             fileURL: directory.appending(path: "alert-state.json")
         ),
         profileManager: IndicatorWebProfileStub(),
-        adapterRegistry: ProviderAdapterRegistry(adapters: [])
+        adapterRegistry: ProviderAdapterRegistry(adapters: []),
+        // Never a real idle-sleep hold from the test host.
+        idleSleepAssertion: IdleSleepAssertionSpy()
     )
     return IndicatorHarness(model: model, snapshotStore: snapshotStore)
 }
@@ -412,11 +414,13 @@ private final class IndicatorWebProfileStub: WebProfileManaging {
 /// Records what `MenuBarController` hands the ring bar.
 @MainActor
 final class RingBarSpy: RingBarPresenting {
-    var updates: [(groups: [RingBarGroup], configuration: RingBarConfiguration)] = []
+    var updates: [(groups: [RingBarGroup], configuration: RingBarConfiguration, keepAwake: KeepAwakeEye)] = []
     var appearances = 0
     var screenChanges = 0
     var stopped = false
-    func update(groups: [RingBarGroup], configuration: RingBarConfiguration, now: Date) { updates.append((groups, configuration)) }
+    func update(groups: [RingBarGroup], configuration: RingBarConfiguration, keepAwake: KeepAwakeEye, now: Date) {
+        updates.append((groups, configuration, keepAwake))
+    }
     func setAppearance(_ appearance: NSAppearance?) { appearances += 1 }
     func screensChanged() { screenChanges += 1 }
     func stop() { stopped = true }
@@ -454,6 +458,51 @@ final class MenuBarRingBarTests: XCTestCase {
         XCTAssertEqual(settings.ringBarStyle, .capsules)
         bar.openSettings()
         XCTAssertEqual(controller.requestedSettingsSelection, .display)
+    }
+
+    /// The eye follows the Keep awake switch on both surfaces from the one
+    /// gauge capture: hidden while the switch is off, an outline eye while it
+    /// is on, filled (with the banner's line in the tooltip) while a hold is
+    /// live, and back down the same ladder.
+    func testTheBarsShowTheEyeWhileKeepAwakeIsOnAndFillItWhileHeld() async throws {
+        let account = makeIndicatorAccount(.claude, order: 0)
+        let harness = try await makeIndicatorHarness(seedAccounts: [account])
+        try await harness.seedSnapshot(for: account, fiveHourRemaining: 0.4)
+        try await harness.model.setRingBarEnabled(true)
+        let spy = RingBarSpy()
+        let controller = makeController(harness, spy: spy)
+        controller.start()
+        defer { controller.stop() }
+        let button = try XCTUnwrap(controller.statusItem?.button)
+        XCTAssertEqual(spy.updates.last?.keepAwake, .hidden, "the switch starts off")
+        XCTAssertEqual(button.attributedTitle.string, "\u{FFFC}", "ring only")
+
+        try await harness.model.settings.setFeature(.keepAwake, enabled: true)
+        try await waitFor(spy, .idle)
+        XCTAssertEqual(button.attributedTitle.string, "\u{FFFC}\u{FFFC}", "ring, then the outline eye")
+        XCTAssertFalse(try XCTUnwrap(button.toolTip).contains("kept awake"))
+
+        harness.model.startKeepAwake(for: nil)
+        try await waitFor(spy, .held(.manual(until: nil)))
+        XCTAssertEqual(button.attributedTitle.string, "\u{FFFC}\u{FFFC}", "ring, then the filled eye")
+        XCTAssertTrue(try XCTUnwrap(button.toolTip).hasSuffix("Mac kept awake until you turn it off"))
+        XCTAssertEqual(button.accessibilityLabel(), button.toolTip)
+
+        harness.model.stopKeepAwake()
+        try await waitFor(spy, .idle)
+        XCTAssertFalse(try XCTUnwrap(button.toolTip).contains("kept awake"))
+
+        try await harness.model.settings.setFeature(.keepAwake, enabled: false)
+        try await waitFor(spy, .hidden)
+        XCTAssertEqual(button.attributedTitle.string, "\u{FFFC}", "ring only again")
+    }
+
+    private func waitFor(_ spy: RingBarSpy, _ eye: KeepAwakeEye) async throws {
+        let deadline = Date().addingTimeInterval(3)
+        while spy.updates.last?.keepAwake != eye && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(spy.updates.last?.keepAwake, eye)
     }
 
     func testBarKeepsGaugesWithMenuBarRingsOff() async throws {

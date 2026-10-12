@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.12.0
+
+- Keep awake: while an account is in use, Ration keeps the Mac from idle
+  sleep, so an agent run doesn't end in a sleeping Mac. It holds only on the
+  power adapter, the display still sleeps, and a closed lid still sleeps the
+  Mac. Turn it on in Settings › Features (it is off by default).
+- The eye button in the popover keeps the Mac awake for 30 minutes to 8 hours,
+  or until you turn it off, whether or not anything is in use and on battery
+  too, with the display on and no screensaver. A banner shows the hold, and it
+  ends when Ration quits or Keep awake is turned off.
+- While Keep awake is on, the menu bar and the ring bar carry the same eye,
+  grey at rest and blue while the Mac is kept awake. `pmset -g assertions`
+  lists the hold under Ration.
+- Codex account switching: move Codex to another of your ChatGPT accounts in
+  one click, with the Switch button on a ChatGPT card or the Codex line in
+  Focus. The card of the account Codex uses wears a CODEX tag. Remember each
+  account's sign-in once in Settings › Codex, where you can also link it to
+  its account, switch to it or forget it. Ration keeps its copies in your
+  login Keychain as its own items (not synced) and sends them nowhere.
+- Automatic Codex switching (off until you turn it on): when the account Codex
+  uses passes the share of its weekly limit you choose (75% by default),
+  Ration moves Codex to the remembered account with the most room, never to
+  one already past it, and tells you. It starts once you confirm that Codex
+  uses its default sign-in file, and pauses after a switch that doesn't go
+  through until you resume it.
+- Only new Codex sessions use the switched account: restart the running ones,
+  the ChatGPT app's Codex too, since it shares Codex's sign-in file. That
+  file, `~/.codex/auth.json`, is the one new place outside its sandbox that
+  Ration reads and writes.
+- Claude Code switching no longer loses the links between remembered sign-ins
+  and your accounts, or its automatic switching settings, when a refresh runs
+  before Ration has loaded them at launch.
+- Everything new is in French and Ukrainian too.
+
 ## 1.11.0
 
 - The ring bar: the menu bar's gauges in a glass bar at the left, right, top or

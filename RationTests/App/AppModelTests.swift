@@ -3538,7 +3538,9 @@ private final class TickSleep: @unchecked Sendable {
 @MainActor
 private final class SystemPowerObserverStub: SystemPowerObserving {
     var onShouldReleaseIdleResources: (@MainActor () -> Void)?
+    var onPowerSourceChanged: (@MainActor () -> Void)?
     var isLowPowerModeEnabled = false
+    var powerSource: PowerSource = .external
     private(set) var started = false
 
     func start() { started = true }

@@ -4,7 +4,7 @@ import XCTest
 final class APIAttentionRowTests: XCTestCase {
     private let en = Locale(identifier: "en")
     private func row(lowerBound: Bool = false, percent: Int = 78) -> AttentionRow {
-        AttentionRow(owner: .apiOrg(UUID()), accountLabel: "IZZY", source: .api(.anthropic), subject: .apiBudget, tier: .warning,
+        AttentionRow(owner: .apiOrg(UUID()), accountLabel: "Client", source: .api(.anthropic), subject: .apiBudget, tier: .warning,
                      usedPercent: percent, spentCents: 46_820, thresholdPercent: 75, thresholdCents: nil, resetsAt: nil,
                      resetCount: nil, resetCreditIDs: [], budgetCents: 60_000, isLowerBound: lowerBound)
     }
@@ -34,7 +34,7 @@ final class APIAttentionRowTests: XCTestCase {
     /// before the name, so two orgs both called "Work" stay apart.
     func testVendorMarkOnlyOnAPIRows() {
         XCTAssertEqual(AttentionDropView.vendorMark(for: row()), .anthropic)
-        let openAI = AttentionRow(owner: .apiOrg(UUID()), accountLabel: "IZZY", source: .api(.openAI), subject: .apiBudget, tier: .warning,
+        let openAI = AttentionRow(owner: .apiOrg(UUID()), accountLabel: "Client", source: .api(.openAI), subject: .apiBudget, tier: .warning,
                                   usedPercent: 78, spentCents: 46_820, thresholdPercent: 75, thresholdCents: nil, resetsAt: nil,
                                   resetCount: nil, resetCreditIDs: [], budgetCents: 60_000, isLowerBound: false)
         XCTAssertEqual(AttentionDropView.vendorMark(for: openAI), .openAI)

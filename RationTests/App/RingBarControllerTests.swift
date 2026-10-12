@@ -113,9 +113,36 @@ final class RingBarControllerTests: XCTestCase {
         RingBarConfiguration(enabled: enabled, style: style, edge: edge, hidesAtEdge: hides, displaysRemaining: true, scale: scale)
     }
 
+    /// The status reaches the bar's model through the real controller and
+    /// leaves it again; a rebuild (style change, API-only first group) keeps
+    /// it. The view draws the eye from the model alone.
+    func testKeepAwakeStatusReachesTheModelAndLeavesIt() {
+        let c = controller()
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
+        XCTAssertEqual(c.model.keepAwake, .hidden)
+
+        c.update(groups: groups(), configuration: config(), keepAwake: .idle, now: clock)
+        XCTAssertEqual(c.model.keepAwake, .idle)
+
+        c.update(groups: groups(), configuration: config(), keepAwake: .held(.manual(until: nil)), now: clock)
+        XCTAssertEqual(c.model.keepAwake, .held(.manual(until: nil)))
+
+        let api = RingBarGroup(source: .api(.anthropic), entries: [
+            GaugeEntry(id: extraID, gauge: MenuBarGauge(source: .api(.anthropic), label: "Agency API", fraction: 0.2, windowKind: nil,
+                                                        inUse: false, budget: BudgetGaugeFacts(exactPercent: 20, isLowerBound: false)),
+                       details: .apiBudget(nil, thresholds: .default)),
+        ])
+        c.update(groups: [api], configuration: config(style: .capsules), keepAwake: .held(.automatic), now: clock)
+        XCTAssertEqual(c.model.keepAwake, .held(.automatic))
+        XCTAssertEqual(c.model.groups, [api])
+
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
+        XCTAssertEqual(c.model.keepAwake, .hidden)
+    }
+
     func testOffMeansNoPanel() {
         let c = controller()
-        c.update(groups: groups(), configuration: config(enabled: false), now: clock)
+        c.update(groups: groups(), configuration: config(enabled: false), keepAwake: .hidden, now: clock)
         XCTAssertTrue(panels.isEmpty)
         XCTAssertFalse(c.isPanelVisible)
         XCTAssertFalse(c.isPolling)
@@ -123,7 +150,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testOnShowsPanelWithShieldThatLiftsAfterSettle() {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         XCTAssertTrue(c.isPanelVisible)
         XCTAssertTrue(c.isShieldUp)
         runPending()
@@ -132,7 +159,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testRevealUnderHeldButtonKeepsShieldUntilRelease() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(hides: true), now: clock)
+        c.update(groups: groups(), configuration: config(hides: true), keepAwake: .hidden, now: clock)
         let panel = try XCTUnwrap(panels.first)
         XCTAssertFalse(c.isShieldUp, "hidden: nothing to shield yet")
         // The pointer pushes against the edge with the button held down.
@@ -152,10 +179,10 @@ final class RingBarControllerTests: XCTestCase {
 
     func testTurningHideOffWhileHiddenShowsAndArms() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(hides: true), now: clock)
+        c.update(groups: groups(), configuration: config(hides: true), keepAwake: .hidden, now: clock)
         let panel = try XCTUnwrap(panels.first)
         XCTAssertEqual(panel.alphaValue, 0)
-        c.update(groups: groups(), configuration: config(hides: false), now: clock)
+        c.update(groups: groups(), configuration: config(hides: false), keepAwake: .hidden, now: clock)
         XCTAssertEqual(panel.alphaValue, 1)
         XCTAssertFalse(panel.ignoresMouseEvents)
         XCTAssertTrue(c.isShieldUp)
@@ -163,26 +190,26 @@ final class RingBarControllerTests: XCTestCase {
 
     func testTurningHideOnWhileShownHidesAndLetsClicksThrough() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.first)
-        c.update(groups: groups(), configuration: config(hides: true), now: clock)
+        c.update(groups: groups(), configuration: config(hides: true), keepAwake: .hidden, now: clock)
         XCTAssertEqual(panel.alphaValue, 0)
         XCTAssertTrue(panel.ignoresMouseEvents)
     }
 
     func testGrowingUnderThePointerRearms() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         XCTAssertFalse(c.isShieldUp)
-        c.update(groups: groups(count: 3), configuration: config(), now: clock)
+        c.update(groups: groups(count: 3), configuration: config(), keepAwake: .hidden, now: clock)
         XCTAssertTrue(c.isShieldUp, "new gauges under the pointer settle first")
     }
 
     func testOpenCardRefreshesOnUpdate() throws {
         let c = controller()
-        c.update(groups: groups(fraction: 0.5), configuration: config(), now: clock)
+        c.update(groups: groups(fraction: 0.5), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.first)
         let rect = CGRect(x: 9, y: 30, width: 24, height: 24)
@@ -193,7 +220,7 @@ final class RingBarControllerTests: XCTestCase {
         polls.last?.tick()
         runPending()
         let before = try XCTUnwrap(c.lastCardForTesting?.lines.first?.text)
-        c.update(groups: groups(fraction: 0.2), configuration: config(), now: clock)
+        c.update(groups: groups(fraction: 0.2), configuration: config(), keepAwake: .hidden, now: clock)
         let after = try XCTUnwrap(c.lastCardForTesting?.lines.first?.text)
         XCTAssertNotEqual(before, after)
         XCTAssertTrue(after.contains("20%"), after)
@@ -201,12 +228,12 @@ final class RingBarControllerTests: XCTestCase {
 
     func testZeroGaugesOrdersOutAndReappearanceRearms() {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
-        c.update(groups: [], configuration: config(), now: clock)
+        c.update(groups: [], configuration: config(), keepAwake: .hidden, now: clock)
         XCTAssertFalse(c.isPanelVisible)
         XCTAssertFalse(c.isPolling)
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         XCTAssertTrue(c.isPanelVisible)
         XCTAssertTrue(c.isShieldUp)
         XCTAssertEqual(panels.count, 1, "the panel is kept, not recreated")
@@ -214,26 +241,26 @@ final class RingBarControllerTests: XCTestCase {
 
     func testBurstOfUpdatesDoesNotRebuild() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         let built = c.rebuildCount
-        for i in 0..<20 { c.update(groups: groups(fraction: Double(i) / 20), configuration: config(), now: clock) }
+        for i in 0..<20 { c.update(groups: groups(fraction: Double(i) / 20), configuration: config(), keepAwake: .hidden, now: clock) }
         XCTAssertEqual(c.rebuildCount, built)
         XCTAssertEqual(panels.first?.frontCount, 1)
         XCTAssertEqual(polls.count, 1, "one poll for the bar's life on screen")
         let panel = try XCTUnwrap(panels.first)
         let frames = panel.setFrameCount
-        for _ in 0..<20 { c.update(groups: groups(), configuration: config(), now: clock) }
+        for _ in 0..<20 { c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock) }
         XCTAssertEqual(panel.setFrameCount, frames, "identical updates never move the panel")
     }
 
     func testStyleOrEdgeChangeRebuildsOnce() {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         let built = c.rebuildCount
-        c.update(groups: groups(), configuration: config(style: .capsules), now: clock)
-        c.update(groups: groups(), configuration: config(style: .capsules), now: clock)
+        c.update(groups: groups(), configuration: config(style: .capsules), keepAwake: .hidden, now: clock)
+        c.update(groups: groups(), configuration: config(style: .capsules), keepAwake: .hidden, now: clock)
         XCTAssertEqual(c.rebuildCount, built + 1)
-        c.update(groups: groups(), configuration: config(style: .capsules, edge: .bottom), now: clock)
+        c.update(groups: groups(), configuration: config(style: .capsules, edge: .bottom), keepAwake: .hidden, now: clock)
         XCTAssertEqual(c.rebuildCount, built + 2)
     }
 
@@ -242,7 +269,7 @@ final class RingBarControllerTests: XCTestCase {
     func testEveryGlassIsTintedTowardInk() throws {
         for style in RingBarStyle.allCases {
             let c = controller()
-            c.update(groups: groups(), configuration: config(style: style), now: clock)
+            c.update(groups: groups(), configuration: config(style: style), keepAwake: .hidden, now: clock)
             let glass = c.segmentHostsForTesting.compactMap { host -> NSGlassEffectView? in
                 var view: NSView? = host.superview
                 while let current = view, !(current is NSGlassEffectView) { view = current.superview }
@@ -276,7 +303,7 @@ final class RingBarControllerTests: XCTestCase {
         ]
         for style in RingBarStyle.allCases {
             let c = controller()
-            c.update(groups: kinds, configuration: config(style: style, edge: .bottom, scale: 1.5), now: clock)
+            c.update(groups: kinds, configuration: config(style: style, edge: .bottom, scale: 1.5), keepAwake: .hidden, now: clock)
             XCTAssertEqual(c.segmentHostsForTesting.map(\.rootView.sources),
                            [[.subscription(.claude), .subscription(.chatGPT)], [.api(.anthropic)]], "\(style)")
             let glass = c.segmentHostsForTesting.map { $0.convert($0.bounds, to: nil) }
@@ -286,7 +313,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testPlacementUsesPrimaryVisibleFrame() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(edge: .right), now: clock)
+        c.update(groups: groups(), configuration: config(edge: .right), keepAwake: .hidden, now: clock)
         let frame = try XCTUnwrap(panels.first?.frame)
         XCTAssertEqual(frame.maxX, 1677 - RingBarGeometry.margin)
         XCTAssertEqual(frame.midY, 542, accuracy: 1)
@@ -294,7 +321,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testHiddenBarIgnoresMouseEventsAndPollRevealsIt() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(hides: true), now: clock)
+        c.update(groups: groups(), configuration: config(hides: true), keepAwake: .hidden, now: clock)
         let panel = try XCTUnwrap(panels.first)
         XCTAssertTrue(c.isPolling)
         XCTAssertTrue(panel.ignoresMouseEvents)
@@ -316,7 +343,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testHoverShowsCardAfterDelayAndClickOpensDashboard() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.first)
         // The cell frames SwiftUI would report: the first gauge at the top of segment 0.
@@ -338,7 +365,7 @@ final class RingBarControllerTests: XCTestCase {
     /// brought the card straight back over the popover.
     func testClickSuppressesCardUntilPointerLeaves() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.first)
         let rect = CGRect(x: 9, y: 30, width: 24, height: 24)
@@ -375,7 +402,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testDragGrowsLiveAndSavesOnce() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.first)
         let startWidth = panel.frame.width
@@ -396,7 +423,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testPressWithoutMoveChangesNothing() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.first)
         let router = c.dragRouterForTesting
@@ -410,7 +437,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testSettingsUpdateDuringDragDoesNotSnapBack() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.first)
         let router = c.dragRouterForTesting
@@ -419,7 +446,7 @@ final class RingBarControllerTests: XCTestCase {
         buttons = 1
         XCTAssertTrue(router.mouseDragged(at: NSPoint(x: start.x + 20, y: start.y)))
         let live = c.model.scale
-        c.update(groups: groups(), configuration: config(scale: 1), now: clock)
+        c.update(groups: groups(), configuration: config(scale: 1), keepAwake: .hidden, now: clock)
         XCTAssertEqual(c.model.scale, live, accuracy: 0.0001)
         buttons = 0
         XCTAssertTrue(router.mouseUp(at: NSPoint(x: start.x + 20, y: start.y)))
@@ -428,17 +455,17 @@ final class RingBarControllerTests: XCTestCase {
 
     func testConfiguredScaleSizesTheBar() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         let panel = try XCTUnwrap(panels.first)
         let normal = panel.frame.width
-        c.update(groups: groups(), configuration: config(scale: 1.5), now: clock)
+        c.update(groups: groups(), configuration: config(scale: 1.5), keepAwake: .hidden, now: clock)
         XCTAssertEqual(c.model.scale, 1.5)
         XCTAssertEqual(panel.frame.width, normal * 1.5, accuracy: 4)
     }
 
     func testHoverAndRevealPauseDuringResize() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(hides: true), now: clock)
+        c.update(groups: groups(), configuration: config(hides: true), keepAwake: .hidden, now: clock)
         let panel = try XCTUnwrap(panels.first)
         pointer = NSPoint(x: 0, y: panel.frame.midY)
         polls.last?.tick()
@@ -478,7 +505,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testRebuildDuringDragEndsTheDragAndSaves() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.first)
         let router = c.dragRouterForTesting
@@ -490,10 +517,10 @@ final class RingBarControllerTests: XCTestCase {
         let more = groups() + [RingBarGroup(source: .subscription(.chatGPT), entries: [
             GaugeEntry(id: UUID(), gauge: MenuBarGauge(provider: .chatGPT, label: "20x", fraction: 0.5, windowKind: .weekly, inUse: false),
                        details: .credit)])]
-        c.update(groups: more, configuration: config(), now: clock)
+        c.update(groups: more, configuration: config(), keepAwake: .hidden, now: clock)
         XCTAssertEqual(savedScales.count, 1, "the partial drag is kept")
         XCTAssertEqual(savedScales.first ?? 0, live, accuracy: 0.0001)
-        c.update(groups: more, configuration: config(scale: 1.6), now: clock)
+        c.update(groups: more, configuration: config(scale: 1.6), keepAwake: .hidden, now: clock)
         XCTAssertEqual(c.model.scale, 1.6, "the drag no longer blocks the saved size")
         buttons = 0
         _ = router.mouseUp(at: NSPoint(x: start.x + 20, y: start.y))
@@ -503,7 +530,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testReleaseWithoutChangeAppliesTheLatestSavedScale() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.first)
         let router = c.dragRouterForTesting
@@ -511,7 +538,7 @@ final class RingBarControllerTests: XCTestCase {
         XCTAssertTrue(router.mouseDown(at: start))
         buttons = 1
         XCTAssertTrue(router.mouseDragged(at: NSPoint(x: start.x, y: start.y + 5)), "along the bar: no size change")
-        c.update(groups: groups(), configuration: config(scale: 1.4), now: clock)
+        c.update(groups: groups(), configuration: config(scale: 1.4), keepAwake: .hidden, now: clock)
         XCTAssertEqual(c.model.scale, 1, "held during the drag")
         buttons = 0
         XCTAssertTrue(router.mouseUp(at: NSPoint(x: start.x, y: start.y + 5)))
@@ -521,7 +548,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testRouterLeavesGaugesTheirClicks() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.first)
         let rect = CGRect(x: 9, y: 30, width: 24, height: 24)
@@ -535,12 +562,12 @@ final class RingBarControllerTests: XCTestCase {
 
     func testRouterIgnoresAHiddenOrSettlingBar() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         let panel = try XCTUnwrap(panels.first)
         XCTAssertTrue(c.isShieldUp)
         XCTAssertFalse(c.dragRouterForTesting.mouseDown(at: glass(panel)), "input still settling")
         runPending()
-        c.update(groups: groups(), configuration: config(hides: true), now: clock)
+        c.update(groups: groups(), configuration: config(hides: true), keepAwake: .hidden, now: clock)
         runPending()
         XCTAssertFalse(c.dragRouterForTesting.mouseDown(at: glass(panel)), "hidden at the edge")
     }
@@ -552,7 +579,7 @@ final class RingBarControllerTests: XCTestCase {
     /// A shown, settled bar with the pointer on its empty glass.
     private func onGlass(hides: Bool = false) throws -> (RingBarController, NSPanel) {
         let c = controller()
-        c.update(groups: groups(), configuration: config(hides: hides), now: clock)
+        c.update(groups: groups(), configuration: config(hides: hides), keepAwake: .hidden, now: clock)
         runPending()
         let panel = try XCTUnwrap(panels.last)
         if hides {
@@ -688,7 +715,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testOnlyWhereAPressWouldResize() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         let panel = try XCTUnwrap(panels.first)
         pointer = glass(panel)
         polls.last?.tick()
@@ -697,7 +724,7 @@ final class RingBarControllerTests: XCTestCase {
         XCTAssertFalse(c.isGripShown)
 
         let hidden = controller()
-        hidden.update(groups: groups(), configuration: config(hides: true), now: clock)
+        hidden.update(groups: groups(), configuration: config(hides: true), keepAwake: .hidden, now: clock)
         runPending()
         let hiddenPanel = try XCTUnwrap(panels.last)
         pointer = NSPoint(x: hiddenPanel.frame.maxX + 40, y: hiddenPanel.frame.minY + 2)
@@ -726,7 +753,7 @@ final class RingBarControllerTests: XCTestCase {
 
     func testHidingTheBarRestoresTheArrow() throws {
         let (c, _) = try onGlass()
-        c.update(groups: groups(), configuration: config(enabled: false), now: clock)
+        c.update(groups: groups(), configuration: config(enabled: false), keepAwake: .hidden, now: clock)
         XCTAssertEqual(systemPointer, .arrow, "the pointer was on the bar: it was ours to give back")
         XCTAssertFalse(c.isGripShown)
         XCTAssertEqual(gripPanels.last?.isVisible, false)
@@ -748,7 +775,7 @@ final class RingBarControllerTests: XCTestCase {
     /// Auto Hide, Style and Position, each showing the bar's setting.
     func testTheMenuSetsUpAutoHideStyleAndPosition() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(style: .rail, edge: .left, hides: false), now: clock)
+        c.update(groups: groups(), configuration: config(style: .rail, edge: .left, hides: false), keepAwake: .hidden, now: clock)
         let menu = c.contextMenuForTesting()
         let hide = try XCTUnwrap(menu.items.first)
         XCTAssertEqual(hide.title, String(localized: .ringBarMenuAutoHide))
@@ -779,7 +806,7 @@ final class RingBarControllerTests: XCTestCase {
         perform(settings)
         XCTAssertEqual(settingsOpened, 1)
 
-        c.update(groups: groups(), configuration: config(edge: .bottom, hides: true), now: clock)
+        c.update(groups: groups(), configuration: config(edge: .bottom, hides: true), keepAwake: .hidden, now: clock)
         let again = c.contextMenuForTesting()
         XCTAssertEqual(again.items.first?.state, .on, "ticked while the bar hides at its edge")
         perform(again.items.first)
@@ -853,7 +880,7 @@ final class RingBarControllerTests: XCTestCase {
         let more = groups() + [RingBarGroup(source: .subscription(.chatGPT), entries: [
             GaugeEntry(id: UUID(), gauge: MenuBarGauge(provider: .chatGPT, label: "20x", fraction: 0.5, windowKind: .weekly, inUse: false),
                        details: .credit)])]
-        c.update(groups: more, configuration: config(), now: clock)
+        c.update(groups: more, configuration: config(), keepAwake: .hidden, now: clock)
         XCTAssertFalse(router.mouseDragged(at: NSPoint(x: start.x + 20, y: start.y)), "the press belonged to the old layout")
         XCTAssertEqual(c.model.scale, 1)
     }
@@ -864,7 +891,7 @@ final class RingBarControllerTests: XCTestCase {
         let start = glass(panel)
         XCTAssertTrue(router.mouseDown(at: start))
         buttons = 1
-        c.update(groups: groups(count: 3), configuration: config(), now: clock)
+        c.update(groups: groups(count: 3), configuration: config(), keepAwake: .hidden, now: clock)
         XCTAssertTrue(c.isShieldUp, "the bar grew under the press")
         _ = router.mouseDragged(at: NSPoint(x: start.x + 20, y: start.y))
         XCTAssertEqual(c.model.scale, 1, "the shield is the rule for drags too")
@@ -875,20 +902,20 @@ final class RingBarControllerTests: XCTestCase {
 
     func testSwitchingOffStopsPolling() {
         let c = controller()
-        c.update(groups: groups(), configuration: config(hides: true), now: clock)
-        c.update(groups: groups(), configuration: config(enabled: false, hides: true), now: clock)
+        c.update(groups: groups(), configuration: config(hides: true), keepAwake: .hidden, now: clock)
+        c.update(groups: groups(), configuration: config(enabled: false, hides: true), keepAwake: .hidden, now: clock)
         XCTAssertTrue(polls.allSatisfy(\.cancelled))
         XCTAssertFalse(c.isPanelVisible)
     }
 
     func testStopCancelsEverythingAndLateCallbacksAreIgnored() throws {
         let c = controller()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         let panel = try XCTUnwrap(panels.first)
         XCTAssertFalse(pending.isEmpty, "a settle callback is pending")
         c.stop()
         runPending()
-        c.update(groups: groups(), configuration: config(), now: clock)
+        c.update(groups: groups(), configuration: config(), keepAwake: .hidden, now: clock)
         XCTAssertFalse(c.isPanelVisible)
         XCTAssertFalse(panel.isVisible)
         XCTAssertEqual(panel.frontCount, 1)

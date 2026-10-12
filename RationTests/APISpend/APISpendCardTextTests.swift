@@ -7,7 +7,7 @@ final class APISpendCardTextTests: XCTestCase {
     private func presentation(budget: Int?, cents: String, coverage: PriorityCoverage? = nil, oldMonth: Bool = false, error: APISpendError? = nil) -> APIOrgPresentation {
         let month = oldMonth ? UTCMonth(year: 2026, month: 8) : UTCMonth(containing: now)
         let report = costReport(month: month, cents: cents, fetchedAt: oldMonth ? month.start : now)
-        let org = APIOrgRecord(id: UUID(), vendor: .anthropic, vendorOrgID: "o", label: "IZZY", monthlyBudgetCents: budget, isPaused: false, displayOrder: 0, createdAt: now)
+        let org = APIOrgRecord(id: UUID(), vendor: .anthropic, vendorOrgID: "o", label: "Client", monthlyBudgetCents: budget, isPaused: false, displayOrder: 0, createdAt: now)
         return APIOrgPresentation(org: org, cost: report, tokens: nil, coverage: coverage, costError: error, tokenError: nil, isStale: false, isOldMonth: oldMonth,
                                   tier: budget.flatMap { APIBudgetPolicy.tier(monthToDateCents: report.monthToDateCents, budgetCents: $0, thresholds: .default) })
     }
@@ -65,7 +65,7 @@ final class APISpendCardTextTests: XCTestCase {
         let caption = APISpendCardText.text(for: p, thresholds: .default, now: now, locale: en).caption
         XCTAssertTrue(caption.contains("through yesterday"), caption)
         XCTAssertFalse(caption.contains("today"), caption)
-        let noBudget = APISpendCardText.text(for: APIOrgPresentation(org: APIOrgRecord(id: p.org.id, vendor: .anthropic, vendorOrgID: "o", label: "IZZY",
+        let noBudget = APISpendCardText.text(for: APIOrgPresentation(org: APIOrgRecord(id: p.org.id, vendor: .anthropic, vendorOrgID: "o", label: "Client",
                                                                                         monthlyBudgetCents: nil, isPaused: false, displayOrder: 0, createdAt: now),
                                                                      cost: p.cost, tokens: nil, coverage: nil, costError: nil, tokenError: nil,
                                                                      isStale: false, isOldMonth: false, tier: nil),
@@ -83,14 +83,14 @@ final class APISpendCardTextTests: XCTestCase {
         let month = UTCMonth(containing: october1)
         let empty = APICostReport(month: month, fetchedAt: october1, refreshStartedAt: october1, days: [], byModel: [],
                                   otherCharges: [], byLineItem: [], coversToday: false)
-        let org = APIOrgRecord(id: UUID(), vendor: .anthropic, vendorOrgID: "o", label: "IZZY", monthlyBudgetCents: 60_000,
+        let org = APIOrgRecord(id: UUID(), vendor: .anthropic, vendorOrgID: "o", label: "Client", monthlyBudgetCents: 60_000,
                                isPaused: false, displayOrder: 0, createdAt: october1)
         let p = APIOrgPresentation(org: org, cost: empty, tokens: nil, coverage: nil, costError: nil, tokenError: nil,
                                    isStale: false, isOldMonth: false, tier: nil)
         let caption = APISpendCardText.text(for: p, thresholds: .default, now: october1, locale: en).caption
         XCTAssertTrue(caption.contains("no costs reported yet"), caption)
         XCTAssertFalse(caption.contains("yesterday"), caption)
-        let noBudget = APIOrgPresentation(org: APIOrgRecord(id: org.id, vendor: .anthropic, vendorOrgID: "o", label: "IZZY", monthlyBudgetCents: nil,
+        let noBudget = APIOrgPresentation(org: APIOrgRecord(id: org.id, vendor: .anthropic, vendorOrgID: "o", label: "Client", monthlyBudgetCents: nil,
                                                             isPaused: false, displayOrder: 0, createdAt: october1),
                                           cost: empty, tokens: nil, coverage: nil, costError: nil, tokenError: nil, isStale: false, isOldMonth: false, tier: nil)
         XCTAssertTrue(APISpendCardText.text(for: noBudget, thresholds: .default, now: october1, locale: en).caption.contains("no costs reported yet"))
@@ -106,7 +106,7 @@ final class APISpendCardTextTests: XCTestCase {
         XCTAssertEqual(APISpendStateCopy.text(for: .keyRejected, locale: en), "Key rejected. Replace it in Settings.")
         XCTAssertEqual(APISpendStateCopy.text(for: .transport, locale: en), ProviderError.transport.message(locale: en))
         let spoken = APISpendCardText.accessibilityDescription(for: presentation(budget: 60_000, cents: "46820"), thresholds: .default, now: now, locale: en)
-        XCTAssertTrue(spoken.hasPrefix("IZZY, Anthropic API"), spoken)
+        XCTAssertTrue(spoken.hasPrefix("Client, Anthropic API"), spoken)
         XCTAssertFalse(spoken.contains("3d 6h"), "the countdown is spoken in words")
     }
 }

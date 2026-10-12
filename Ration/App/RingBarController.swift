@@ -48,7 +48,7 @@ struct RingBarActions {
 /// `MenuBarController`'s view of the ring bar (a spy in its tests).
 @MainActor
 protocol RingBarPresenting: AnyObject {
-    func update(groups: [RingBarGroup], configuration: RingBarConfiguration, now: Date)
+    func update(groups: [RingBarGroup], configuration: RingBarConfiguration, keepAwake: KeepAwakeEye, now: Date)
     func setAppearance(_ appearance: NSAppearance?)
     func screensChanged()
     func stop()
@@ -233,7 +233,7 @@ final class RingBarController: RingBarPresenting {
 
     // MARK: RingBarPresenting
 
-    func update(groups: [RingBarGroup], configuration new: RingBarConfiguration, now: Date) {
+    func update(groups: [RingBarGroup], configuration new: RingBarConfiguration, keepAwake: KeepAwakeEye, now: Date) {
         guard !stopped else { return }
         let old = configuration
         configuration = new
@@ -246,6 +246,7 @@ final class RingBarController: RingBarPresenting {
         if model.style != new.style { model.style = new.style }
         if model.edge != new.edge { model.edge = new.edge }
         if model.displaysRemaining != new.displaysRemaining { model.displaysRemaining = new.displaysRemaining }
+        if model.keepAwake != keepAwake { model.keepAwake = keepAwake }
         if Int(model.now.timeIntervalSince1970 / 60) != Int(now.timeIntervalSince1970 / 60) { model.now = now }
         if resize == nil, model.scale != new.scale { model.scale = new.scale }
 

@@ -22,6 +22,6 @@ final class RingBarSettingsTests: XCTestCase {
         XCTAssertEqual(SettingsSectionTitle.ringBar(locale: Locale(identifier: "fr")), "Barre d’anneaux")
         XCTAssertEqual(SettingsSectionTitle.ringBar(locale: Locale(identifier: "uk")), "Панель кілець")
         XCTAssertTrue(SettingsSectionTitle.all(locale: Locale(identifier: "en")).contains("Ring Bar"))
-        XCTAssertEqual(SettingsSidebar.fixedSelections, [.general, .display, .features, .warmUp, .alerts, .claudeCode])
+        XCTAssertEqual(SettingsSidebar.fixedSelections, [.general, .display, .features, .warmUp, .alerts, .claudeCode, .codex])
     }
 }

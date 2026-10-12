@@ -34,8 +34,18 @@ final class ClaudeCodeModelTests: XCTestCase {
         state.autoSwitchEnabled = auto
         state.autoSwitchPaused = paused
         state.notify = notify
-        let stateStore = JSONFileStore(fileURL: directory.appending(path: "claude-code-switch.json"), defaultValue: ClaudeCodeState())
         try await stateStore.save(state)
+        let model = makeUnstartedModel(observer: observer)
+        await model.start()
+        return model
+    }
+
+    private var stateStore: JSONFileStore<ClaudeCodeState> {
+        JSONFileStore(fileURL: directory.appending(path: "claude-code-switch.json"), defaultValue: ClaudeCodeState())
+    }
+
+    /// The model before `start()`: its state file not loaded yet.
+    private func makeUnstartedModel(observer: (any ClaudeCodeWriteObserver)? = nil) -> ClaudeCodeModel {
         let model = ClaudeCodeModel(dependencies: .init(
             switcher: ClaudeCodeSwitcher(entry: ClaudeCodeKeychainEntry(tool: tool, user: "me"), config: config, store: store,
                                          journal: InMemoryJournal(), now: { [now] in now }, confirmDelay: 0),
@@ -44,7 +54,6 @@ final class ClaudeCodeModelTests: XCTestCase {
         ), now: { [now] in now })
         model.bridge = bridge
         model.writeObserver = observer
-        await model.start()
         return model
     }
 
@@ -376,6 +385,63 @@ final class ClaudeCodeModelTests: XCTestCase {
         await model.waitUntilIdle()
         XCTAssertEqual(model.state.links["acc-B"], idA, "the user's choice stays")
         XCTAssertNil(model.state.links["acc-A"], "idA is taken")
+    }
+
+    // MARK: Before start()
+
+    /// AppModel starts — and emits snapshots — before `start()` has loaded
+    /// `claude-code-switch.json`. Until it has, nothing links, decides or
+    /// persists over the saved state; the latest candidates are replayed
+    /// once it is loaded. The Codex model works the same way.
+    func testCandidatesBeforeStartNeverOverwriteTheSavedState() async throws {
+        var saved = ClaudeCodeState()
+        saved.rule = ClaudeCodeAutoSwitch.Rule(percent: 60, kind: .weekly)
+        saved.notify = false
+        saved.dismissedPrompts = ["acc-Z"]
+        try await stateStore.save(saved)
+        config.date = now
+        let model = makeUnstartedModel()
+
+        model.usageDidChange(candidates(a: 0.1), now: now)
+        await model.waitUntilIdle()
+        model.usageDidChange(candidates(a: 0.1), now: now)
+        await model.waitUntilIdle()
+        let before = try await stateStore.load()
+        XCTAssertEqual(before, saved, "nothing written before start()")
+        XCTAssertTrue(model.state.links.isEmpty, "nothing linked before start()")
+
+        await model.start()
+        await model.waitUntilIdle()
+        let after = try await stateStore.load()
+        XCTAssertEqual(after.rule, ClaudeCodeAutoSwitch.Rule(percent: 60, kind: .weekly))
+        XCTAssertFalse(after.notify)
+        XCTAssertEqual(after.dismissedPrompts, ["acc-Z"])
+        XCTAssertEqual(after.links, ["acc-A": idA, "acc-B": idB], "the replayed candidates linked the sign-ins")
+        XCTAssertEqual(model.state, after)
+        XCTAssertEqual(model.candidates.map(\.accountID), [idA, idB], "replayed")
+    }
+
+    /// Before `start()` no action changes anything: the saved state is not loaded.
+    func testNoActionPersistsBeforeStart() async throws {
+        var saved = ClaudeCodeState()
+        saved.links = ["acc-A": idA, "acc-B": idB]
+        saved.notify = false
+        try await stateStore.save(saved)
+        let model = makeUnstartedModel()
+        await model.setNotify(true)
+        await model.link("acc-B", to: nil)
+        await model.setAutoSwitch(enabled: true, rule: ClaudeCodeAutoSwitch.Rule(percent: 50, kind: .weekly))
+        await model.resumeAutoSwitch()
+        await model.dismissPrompt()
+        await model.accountRemoved(idA)
+        await model.useInClaudeCode(accountID: idB)
+        await model.rememberCurrent(linkTo: idA)
+        await model.forget("acc-B")
+        await model.forgetAll()
+        let after = try await stateStore.load()
+        XCTAssertEqual(after, saved)
+        XCTAssertEqual(try store.all().map(\.uuid), ["acc-A", "acc-B"], "nothing remembered or forgotten")
+        XCTAssertEqual(config.writeCount, 0, "nothing switched")
     }
 
     // MARK: Focus line

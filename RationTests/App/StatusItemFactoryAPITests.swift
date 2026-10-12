@@ -12,16 +12,16 @@ final class StatusItemFactoryAPITests: XCTestCase {
     }
 
     func testUsedAndRemainingCopy() {
-        let used = StatusItemFactory.toolTip(for: [api(.anthropic, label: "IZZY", exact: "78.2")], displaysRemaining: false, locale: en)
-        XCTAssertTrue(used.contains("Anthropic API IZZY 78% of monthly budget spent"), used)
-        let left = StatusItemFactory.toolTip(for: [api(.anthropic, label: "IZZY", exact: "78.2", remaining: true)], displaysRemaining: true, locale: en)
+        let used = StatusItemFactory.toolTip(for: [api(.anthropic, label: "Client", exact: "78.2")], displaysRemaining: false, locale: en)
+        XCTAssertTrue(used.contains("Anthropic API Client 78% of monthly budget spent"), used)
+        let left = StatusItemFactory.toolTip(for: [api(.anthropic, label: "Client", exact: "78.2", remaining: true)], displaysRemaining: true, locale: en)
         XCTAssertTrue(left.contains("22% of monthly budget left"), left)
     }
 
     func testLowerBoundDirections() {
-        let used = StatusItemFactory.toolTip(for: [api(.anthropic, label: "IZZY", exact: "78.6", lowerBound: true)], displaysRemaining: false, locale: en)
+        let used = StatusItemFactory.toolTip(for: [api(.anthropic, label: "Client", exact: "78.6", lowerBound: true)], displaysRemaining: false, locale: en)
         XCTAssertTrue(used.contains("at least 78%"), used)          // floored
-        let left = StatusItemFactory.toolTip(for: [api(.anthropic, label: "IZZY", exact: "78.6", lowerBound: true, remaining: true)], displaysRemaining: true, locale: en)
+        let left = StatusItemFactory.toolTip(for: [api(.anthropic, label: "Client", exact: "78.6", lowerBound: true, remaining: true)], displaysRemaining: true, locale: en)
         XCTAssertTrue(left.contains("at most 22%"), left)           // ceil(21.4)
     }
 

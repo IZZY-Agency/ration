@@ -19,12 +19,21 @@ struct FeatureSwitches: Equatable, Sendable {
     var inUse: Bool
     /// Legacy default for every provider's Credits switch.
     var usageCredits: Bool = true
+    /// Keep the Mac from idle sleep while an account is in use (on the power
+    /// adapter). The one switch that starts OFF: it changes the Mac's
+    /// behaviour beyond the app.
+    var keepAwake: Bool = false
 
+    /// Every switch at its default — all on, keep-awake off.
     static let allOn = FeatureSwitches(resets: true, switchAdvice: true, warmUp: true, inUse: true, usageCredits: true)
 
     /// Switch advice is built on in-use detection (its `from` account is the
     /// in-use one), so it is live only when both switches are on.
     var switchAdviceEffective: Bool { switchAdvice && inUse }
+
+    /// The automatic keep-awake hold follows the IN USE phase, so it is live
+    /// only when both switches are on.
+    var keepAwakeEffective: Bool { keepAwake && inUse }
 }
 
 /// One global switch, for the Settings → General → Features rows. Credits
@@ -33,6 +42,7 @@ enum FeatureSwitch: String, CaseIterable, Identifiable, Sendable {
     case switchAdvice
     case warmUp
     case inUse
+    case keepAwake
 
     var id: String { rawValue }
 
@@ -43,6 +53,7 @@ enum FeatureSwitch: String, CaseIterable, Identifiable, Sendable {
         case .switchAdvice: .featureSwitchTitleSwitchAdvice
         case .warmUp: .featureSwitchTitleWarmUp
         case .inUse: .featureSwitchTitleInUse
+        case .keepAwake: .featureSwitchTitleKeepAwake
         }
         return resource.string(in: locale)
     }
@@ -54,14 +65,16 @@ enum FeatureSwitch: String, CaseIterable, Identifiable, Sendable {
         case .switchAdvice: .featureSwitchSummarySwitchAdvice
         case .warmUp: .featureSwitchSummaryWarmUp
         case .inUse: .featureSwitchSummaryInUse
+        case .keepAwake: .featureSwitchSummaryKeepAwake
         }
         return resource.string(in: locale)
     }
 
-    /// Shown under a switch that cannot take effect on its own.
-    static var switchAdviceNeedsInUseNote: String { switchAdviceNeedsInUseNote(locale: .current) }
+    /// Shown under a switch built on in-use detection while that is off
+    /// (switch suggestions, keep awake).
+    static var needsInUseNote: String { needsInUseNote(locale: .current) }
 
-    static func switchAdviceNeedsInUseNote(locale: Locale) -> String {
+    static func needsInUseNote(locale: Locale) -> String {
         LocalizedStringResource.featureSwitchNoteSwitchAdviceNeedsInUse.string(in: locale)
     }
 
@@ -77,13 +90,17 @@ enum FeatureSwitch: String, CaseIterable, Identifiable, Sendable {
         case .switchAdvice: features.switchAdvice
         case .warmUp: features.warmUp
         case .inUse: features.inUse
+        case .keepAwake: features.keepAwake
         }
     }
 
-    /// Whether the row's toggle can be changed. Switch suggestions are built
-    /// on in-use detection, so their toggle is locked while it is off (the
-    /// stored choice is kept for when it comes back).
+    /// Whether the row's toggle can be changed. Switch suggestions and keep
+    /// awake are built on in-use detection, so their toggles are locked while
+    /// it is off (the stored choice is kept for when it comes back).
     func isAvailable(in features: FeatureSwitches) -> Bool {
-        self == .switchAdvice ? features.inUse : true
+        switch self {
+        case .switchAdvice, .keepAwake: features.inUse
+        case .warmUp, .inUse: true
+        }
     }
 }

@@ -8,7 +8,12 @@ import Foundation
 @MainActor
 final class NoopSystemPowerObserver: SystemPowerObserving {
     var onShouldReleaseIdleResources: (@MainActor () -> Void)?
+    var onPowerSourceChanged: (@MainActor () -> Void)?
     var isLowPowerModeEnabled = false
+    var powerSource: PowerSource = .external
     func start() {}
     func stop() {}
+
+    /// Simulate the adapter being plugged or pulled (after setting `powerSource`).
+    func firePowerSourceChanged() { onPowerSourceChanged?() }
 }

@@ -13,15 +13,15 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
     func testFeatureSwitchTitlesInEveryLanguage() {
         XCTAssertEqual(
             FeatureSwitch.allCases.map { $0.title(locale: L10n.en) },
-            ["Switch suggestions", "Claude warm-up", "In-use detection"]
+            ["Switch suggestions", "Claude warm-up", "In-use detection", "Keep awake"]
         )
         XCTAssertEqual(
             FeatureSwitch.allCases.map { $0.title(locale: L10n.fr) },
-            ["Suggestions de changement", "Préchauffage de Claude", "Détection du compte en cours"]
+            ["Suggestions de changement", "Préchauffage de Claude", "Détection du compte en cours", "Garder le Mac éveillé"]
         )
         XCTAssertEqual(
             FeatureSwitch.allCases.map { $0.title(locale: L10n.uk) },
-            ["Поради щодо перемикання", "Розігрів Claude", "Визначення активного облікового запису"]
+            ["Поради щодо перемикання", "Розігрів Claude", "Визначення активного облікового запису", "Не давати Mac заснути"]
         )
     }
 
@@ -32,6 +32,7 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
                 "Suggests which account to move to when the one you're on nears its limit.",
                 "Starts Claude 5-hour windows automatically for accounts with Auto-start on.",
                 "Marks the account you're working in: IN USE tags, menu-bar dots, Focus hero.",
+                "Keeps the Mac from idle sleep while an account is in use, on the power adapter; the display still sleeps then. The eye button holds it for a set time with the display on. A closed lid still sleeps the Mac.",
             ]
         )
         XCTAssertEqual(
@@ -40,6 +41,7 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
                 "Suggère le compte vers lequel passer quand celui que vous utilisez approche de sa limite.",
                 "Démarre automatiquement les fenêtres de 5\(nb)heures de Claude pour les comptes où le démarrage auto est activé.",
                 "Signale le compte sur lequel vous travaillez\(nb): étiquettes EN COURS, points dans la barre des menus, compte mis en avant dans Focus.",
+                "Empêche la mise en veille automatique du Mac tant qu'un compte est en cours, sur secteur\(nb); l'écran s'éteint quand même alors. Le bouton en forme d'œil le garde éveillé pour une durée choisie, écran allumé. Le capot fermé met toujours en veille.",
             ]
         )
         XCTAssertEqual(
@@ -48,6 +50,7 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
                 "Підказує, на який обліковий запис перейти, коли поточний наближається до ліміту.",
                 "Автоматично запускає 5-годинні вікна Claude для облікових записів з увімкненим автозапуском.",
                 "Позначає обліковий запис, з яким ви працюєте: мітки АКТИВНИЙ, крапки в рядку меню, головний блок у режимі «Фокус».",
+                "Не дає Mac заснути від бездіяльності, поки обліковий запис активний, від адаптера живлення; екран тоді все одно вимикається. Кнопка з оком тримає його на обраний час з увімкненим екраном. Закрита кришка так само присипляє Mac.",
             ]
         )
     }
@@ -63,9 +66,9 @@ final class SettingsAndErrorCopyLocalizationTests: XCTestCase {
     }
 
     func testFeatureSwitchNotesInEveryLanguage() {
-        XCTAssertEqual(FeatureSwitch.switchAdviceNeedsInUseNote(locale: L10n.en), "Needs in-use detection")
-        XCTAssertEqual(FeatureSwitch.switchAdviceNeedsInUseNote(locale: L10n.fr), "Nécessite la détection du compte en cours")
-        XCTAssertEqual(FeatureSwitch.switchAdviceNeedsInUseNote(locale: L10n.uk), "Потрібне визначення активного облікового запису")
+        XCTAssertEqual(FeatureSwitch.needsInUseNote(locale: L10n.en), "Needs in-use detection")
+        XCTAssertEqual(FeatureSwitch.needsInUseNote(locale: L10n.fr), "Nécessite la détection du compte en cours")
+        XCTAssertEqual(FeatureSwitch.needsInUseNote(locale: L10n.uk), "Потрібне визначення активного облікового запису")
 
         XCTAssertEqual(FeatureSwitch.warmUpOffNote(locale: L10n.en), "Warm-up is off in Features")
         XCTAssertEqual(FeatureSwitch.warmUpOffNote(locale: L10n.fr), "Le préchauffage est désactivé dans Fonctionnalités")

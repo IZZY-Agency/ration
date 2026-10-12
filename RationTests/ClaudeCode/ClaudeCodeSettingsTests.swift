@@ -9,7 +9,7 @@ final class ClaudeCodeSettingsTests: XCTestCase {
 
     func testTheSidebarListsClaudeCodeAfterAlerts() {
         let order = SettingsSidebar.fixedGroups(locale: Locale(identifier: "en")).flatMap { $0.map(\.selection) }
-        XCTAssertEqual(order, [.general, .display, .features, .warmUp, .alerts, .claudeCode])
+        XCTAssertEqual(order, [.general, .display, .features, .warmUp, .alerts, .claudeCode, .codex])
         let item = SettingsSidebar.fixedGroups(locale: Locale(identifier: "en")).flatMap { $0 }.first { $0.selection == .claudeCode }
         XCTAssertEqual(item?.title, "Claude Code")
         XCTAssertEqual(item?.accessibilityIdentifier, "claudeCodeSettingsItem")

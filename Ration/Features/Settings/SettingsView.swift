@@ -27,6 +27,8 @@ struct SettingsView: View {
     var apiSpend: APISpendModel? = nil
     /// Claude Code switching's pane.
     var claudeCode: ClaudeCodeModel? = nil
+    /// Codex switching's pane.
+    var codex: CodexModel? = nil
     /// Opens with the Add API Account sheet up (tests).
     var startsAddingAPIAccount = false
 
@@ -292,6 +294,10 @@ struct SettingsView: View {
         case .claudeCode:
             if let claudeCode {
                 ClaudeCodeDetailView(model: claudeCode)
+            }
+        case .codex:
+            if let codex {
+                CodexDetailView(model: codex)
             }
         case .alerts:
             AlertsDetailView(

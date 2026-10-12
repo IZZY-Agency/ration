@@ -30,12 +30,24 @@ shows, from your own signed-in session, on your Mac.
   restart. Optionally, switch automatically when the account in use passes a
   limit you choose (75% of the weekly limit by default), to the remembered
   account with the most room.
+- **Codex account switching.** Move Codex to another of your ChatGPT accounts
+  in one click, with SWITCH on the account's card or in the Focus layout.
+  Optionally, switch automatically when the account in use passes the share
+  of its weekly limit you choose (75% by default), to the remembered account
+  with the most room. A switch applies to new Codex sessions: restart the
+  running ones, the ChatGPT app's Codex too. Remembered sign-ins stay in your
+  login Keychain.
 - **Live meters per window.** Claude 5-hour, weekly and Fable weekly (Max
   plans); ChatGPT / Codex 5-hour and weekly; Cursor's usage-based spend for the
   current billing period.
 - **Rings in the menu bar.** One ring per account, filled in the provider's
   colour, with a green dot on the account you are using right now. The Ration
   icon steps aside while rings show.
+- **The ring bar** (off until you turn it on). The same gauges in a glass bar
+  at any edge of the screen, as a thin rail or as capsules with each
+  account's name and share left. Hover a gauge for its limits and resets,
+  click it to open Ration. It never takes focus, can hide until the pointer
+  reaches its edge, and resizes like the Dock.
 - **Reset countdowns**, and a soonest-reset summary at the top of the popover.
 - **Alerts at your thresholds.** A warning and a critical percentage per
   window, dollar thresholds for Cursor. Each crossing goes to a notification,
@@ -75,9 +87,19 @@ shows, from your own signed-in session, on your Mac.
   total for all your Claude accounts over the last 30 days, each account's
   share since Ration started tracking (the logs don't say which account did
   the work), a breakdown by model and tokens, and daily bars in History.
-- **Feature switches.** Switch suggestions, Claude warm-up and in-use
-  detection can each be turned off in Settings, and credits, resets and token
-  burn can be shown or hidden per provider; Claude plan value starts off.
+- **Keep awake.** Keep awake (off until you turn it on) holds the Mac from
+  idle sleep while an account is in use, so an agent run does not end in a
+  sleeping Mac; it applies on the power adapter, the display still sleeps,
+  and a closed lid still sleeps the Mac. The popover's eye holds the Mac for
+  30 minutes to 8 hours, or until you turn it off, whether or not anything
+  is in use, with the display kept on; a banner shows the hold, and it ends
+  with the app or with the switch. While the switch is on, the menu bar and
+  the ring bar carry the same eye: a grey outline at rest, filled blue while
+  the Mac is being kept awake.
+- **Feature switches.** Switch suggestions, Claude warm-up, in-use detection
+  and keep awake can each be turned off in Settings, and credits, resets and
+  token burn can be shown or hidden per provider; Claude plan value and keep
+  awake start off.
 - **English, French and Ukrainian.** Follows your macOS language, or pick one
   in Settings → General → Language.
 - **Light or dark.** Follows macOS, or pick Light or Dark in Settings. Every
@@ -110,6 +132,17 @@ the entry is large it goes on that tool's command line, where other processes
 on your Mac can see it for the moment it runs, as they can each time Claude
 Code saves it. Forget all sign-ins deletes Ration's copies.
 
+Codex switching works on your Mac only too. When you remember a Codex sign-in,
+Ration keeps a copy of it in your login Keychain (not synced). To switch, it
+reads and writes `~/.codex/auth.json`, which the ChatGPT app's Codex also uses,
+directly: no command line carries a token, and Ration sends none of the
+remembered sign-ins anywhere. Its own folder keeps the sign-in ids, their links
+to your accounts and its last 500 switches. Forget all sign-ins deletes
+Ration's copies, the links and the switch history; Codex stays signed in to
+whatever it uses now. A remembered copy can stop working if that account is
+refreshed elsewhere (the ChatGPT app, another Mac); Ration then asks you to
+sign in and Remember again.
+
 Claude plan value is off until you agree to it and choose Claude Code's
 projects folder. Ration then reads Claude Code's local session logs in that
 folder and the account section of `~/.claude.json`. From each reply it keeps
@@ -118,6 +151,12 @@ search counts; from the sign-in, which Claude account and organization it was,
 whether it was a subscription or an API key, and when it was read or switched.
 It never keeps prompts, replies, code, keys or file and project names. Stop and
 forget deletes everything it counted and the folder permission.
+
+Keep awake asks macOS, through the app's own process, to hold off idle sleep
+(the same request `caffeinate -i` makes); the eye button's hold also keeps
+the display on (`caffeinate -d`). It changes no setting, writes nothing, and
+ends when Ration quits or crashes. `pmset -g assertions` lists the hold under
+Ration while it is live.
 
 ## Install
 

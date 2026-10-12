@@ -30,7 +30,7 @@ class APISpendModelTestCase: XCTestCase {
         let id = UUID()
         keys.seed("sk-ant-admin01-SENTINELSENTINEL", for: id)
         var state = APISpendState()
-        state.orgs = [APIOrgRecord(id: id, vendor: .anthropic, vendorOrgID: "org-1", label: "IZZY", monthlyBudgetCents: budget, isPaused: paused, displayOrder: 0, createdAt: now)]
+        state.orgs = [APIOrgRecord(id: id, vendor: .anthropic, vendorOrgID: "org-1", label: "Client", monthlyBudgetCents: budget, isPaused: paused, displayOrder: 0, createdAt: now)]
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(state).write(to: dir.appending(path: "api-spend.json"))

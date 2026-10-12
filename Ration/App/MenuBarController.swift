@@ -29,6 +29,7 @@ final class MenuBarController: NSObject {
     /// API spend: its gauges and drop rows join the subscription ones.
     private let apiSpend: APISpendModel?
     private let claudeCode: ClaudeCodeModel?
+    private let codex: CodexModel?
     private let appRefresh: AppRefresh?
     private let launchAtLogin: LaunchAtLoginController
     private let appearance: AppearanceController
@@ -141,6 +142,7 @@ final class MenuBarController: NSObject {
         refreshAll: (() -> Void)? = nil,
         apiSpend: APISpendModel? = nil,
         claudeCode: ClaudeCodeModel? = nil,
+        codex: CodexModel? = nil,
         appRefresh: AppRefresh? = nil,
         // An ordinary Quit: it drops a pending relaunch first.
         terminateApp: @escaping () -> Void = { AppRelauncher.shared.quitWithoutRelaunch() },
@@ -161,6 +163,7 @@ final class MenuBarController: NSObject {
         self.makePopoverHotKeyRegistrar = makePopoverHotKeyRegistrar
         self.apiSpend = apiSpend
         self.claudeCode = claudeCode
+        self.codex = codex
         self.appRefresh = appRefresh
         self.refreshAction = refreshAll ?? { [model] in
             Task { await model.refreshAll() }
@@ -802,11 +805,15 @@ final class MenuBarController: NSObject {
             )
         }
 
+        // The bars follow the Features switch: no eye while Keep awake is off,
+        // the outline while it is on, the filled eye while a hold is live.
+        let keepAwake = KeepAwakeEye.forBars(enabled: settings.features.keepAwakeEffective, status: model.keepAwakeStatus)
         ringBar?.update(
             groups: settings.ringBarEnabled
                 ? GaugeFeed.ringBarGroups(GaugeFeed.visible(entries, on: .ringBar, shows: settings.shows), savedOrder: savedOrder)
                 : [],
             configuration: RingBarConfiguration(settings: settings),
+            keepAwake: keepAwake,
             now: at
         )
 
@@ -816,6 +823,7 @@ final class MenuBarController: NSObject {
                 ? GaugeFeed.menuBarOrder(GaugeFeed.visible(entries, on: .menuBar, shows: settings.shows), savedOrder: savedOrder)
                 : [],
             displaysRemaining: displaysRemaining,
+            keepAwake: keepAwake,
             to: button
         )
     }
@@ -1069,7 +1077,8 @@ final class MenuBarController: NSObject {
                     self?.refreshAction()
                 },
                 apiSpend: apiSpend,
-                claudeCode: claudeCode
+                claudeCode: claudeCode,
+                codex: codex
             )
         )
         settingsWindowController = controller
@@ -1252,7 +1261,8 @@ final class MenuBarController: NSObject {
         )
     }
 
-    private func makeMenuBarContent(pinSnapshot: AccountPinSnapshot) -> MenuBarContent {
+    /// Internal, not private: tests check the models reach the popover.
+    func makeMenuBarContent(pinSnapshot: AccountPinSnapshot) -> MenuBarContent {
         MenuBarContent(
             model: model,
             history: model.history,
@@ -1291,6 +1301,7 @@ final class MenuBarController: NSObject {
             },
             apiSpend: apiSpend,
             claudeCode: claudeCode,
+            codex: codex,
             appRefresh: appRefresh
         )
     }

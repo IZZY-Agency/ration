@@ -47,54 +47,72 @@ enum StatusItemFactory {
     /// accounts in the bright IN USE phase — the icon hidden while rings show
     /// (the rings already mark the item) — or back to the
     /// bare template icon when there are no gauges (no accounts, toggle off,
-    /// or no account reports a rate window). The tooltip and accessibility label carry the names and
-    /// exact values — the ring alone never has to be decoded.
+    /// or no account reports a rate window). While Keep awake is on, the eye
+    /// trails the rings (or sits beside the icon when there are none): the
+    /// outline at rest, the filled glyph in the reset blue while a hold is
+    /// live — gold is Claude's ring colour, so the footer's gold stays there. The tooltip and accessibility
+    /// label carry the names and exact values, and the hold — the ring alone
+    /// never has to be decoded.
     static func applyGauges(
         _ gauges: [MenuBarGauge],
         displaysRemaining: Bool,
+        keepAwake: KeepAwakeEye = .hidden,
         to button: NSStatusBarButton
     ) {
+        // The menu bar's own appearance, not the app's: a forced-Dark app
+        // still sits in a light menu bar (and vice versa), and macOS tints
+        // the bar per wallpaper.
+        button.attributedTitle = ringsTitle(
+            for: gauges, keepAwake: keepAwake, appearance: button.effectiveAppearance
+        )
         if gauges.isEmpty {
-            button.attributedTitle = NSAttributedString()
-            button.imagePosition = .imageOnly
+            // The eye alone keeps the icon beside it; nothing at all is the
+            // bare icon again.
+            button.imagePosition = keepAwake.isShown ? .imageLeading : .imageOnly
         } else {
-            // The menu bar's own appearance, not the app's: a forced-Dark app
-            // still sits in a light menu bar (and vice versa), and macOS tints
-            // the bar per wallpaper.
-            button.attributedTitle = ringsTitle(
-                for: gauges, appearance: button.effectiveAppearance
-            )
             // The image stays on the button, so no gauges brings it back.
             button.imagePosition = .noImage
         }
-        let toolTip = toolTip(for: gauges, displaysRemaining: displaysRemaining)
+        let toolTip = toolTip(for: gauges, displaysRemaining: displaysRemaining, keepAwake: keepAwake)
         button.toolTip = toolTip
         button.setAccessibilityLabel(toolTip)
     }
 
     static let ringPointSize: CGFloat = 13
+    /// The eye's box: an 11 pt `eye.fill` is wider than it is tall.
+    static let keepAwakeWidth: CGFloat = 16
 
     static func ringsTitle(
         for gauges: [MenuBarGauge],
+        keepAwake: KeepAwakeEye = .hidden,
         appearance: NSAppearance
     ) -> NSAttributedString {
-        let title = NSMutableAttributedString()
-        for (index, gauge) in gauges.enumerated() {
-            let attachment = NSTextAttachment()
-            attachment.image = gaugeImage(
-                fraction: gauge.fraction,
-                color: gauge.source.accentNS,
-                shape: gauge.source.gaugeShape,
-                inUse: gauge.inUse,
-                appearance: appearance
+        var glyphs: [(image: NSImage, width: CGFloat)] = gauges.map { gauge in
+            (
+                gaugeImage(
+                    fraction: gauge.fraction,
+                    color: gauge.source.accentNS,
+                    shape: gauge.source.gaugeShape,
+                    inUse: gauge.inUse,
+                    appearance: appearance
+                ),
+                ringPointSize
             )
+        }
+        if keepAwake.isShown {
+            glyphs.append((keepAwakeImage(keepAwake, appearance: appearance), keepAwakeWidth))
+        }
+        let title = NSMutableAttributedString()
+        for (index, glyph) in glyphs.enumerated() {
+            let attachment = NSTextAttachment()
+            attachment.image = glyph.image
             // Dropped baseline so the ring sits optically centred in the bar.
             attachment.bounds = CGRect(
-                x: 0, y: -2.5, width: ringPointSize, height: ringPointSize
+                x: 0, y: -2.5, width: glyph.width, height: ringPointSize
             )
             let ring = NSMutableAttributedString(attachment: attachment)
-            if index < gauges.count - 1 {
-                // Kern trails each glyph, so the last ring stays flush.
+            if index < glyphs.count - 1 {
+                // Kern trails each glyph, so the last one stays flush.
                 ring.addAttribute(
                     .kern, value: 3, range: NSRange(location: 0, length: ring.length)
                 )
@@ -102,6 +120,30 @@ enum StatusItemFactory {
             title.append(ring)
         }
         return title
+    }
+
+    /// The menu bar's Keep awake mark: the footer's glyph for the state —
+    /// the outline in the quiet grey at rest, the filled eye in the reset
+    /// blue while held — resolved for the bar's appearance at draw time like
+    /// the rings.
+    static func keepAwakeImage(_ eye: KeepAwakeEye, appearance: NSAppearance) -> NSImage {
+        let name = MenuBarView.keepAwakeGlyph(eye.status)
+        let tint: NSColor = eye.status == .off ? Theme.creamDimNS : Theme.resetAccentNS
+        return NSImage(size: NSSize(width: keepAwakeWidth, height: ringPointSize), flipped: false) { rect in
+            appearance.performAsCurrentDrawingAppearance {
+                let configuration = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+                guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(configuration) else { return }
+                let size = symbol.size
+                symbol.draw(in: NSRect(
+                    x: rect.midX - size.width / 2, y: rect.midY - size.height / 2,
+                    width: size.width, height: size.height
+                ))
+                tint.set()
+                rect.fill(using: .sourceAtop)
+            }
+            return true
+        }
     }
 
     /// A ring whose arc sweeps clockwise from 12 o'clock in proportion to
@@ -230,13 +272,19 @@ enum StatusItemFactory {
     static func toolTip(
         for gauges: [MenuBarGauge],
         displaysRemaining: Bool,
+        keepAwake: KeepAwakeEye = .hidden,
         locale: Locale = .current
     ) -> String {
-        guard !gauges.isEmpty else { return "Ration" }
         var parts: [String] = []
         for gauge in gauges {
             parts.append(toolTipEntry(gauge, displaysRemaining: displaysRemaining, locale: locale))
         }
+        // The popover banner's line while held, so the eye reads the same
+        // everywhere; the idle eye says nothing — there is no hold to name.
+        if let banner = KeepAwakeCopy.banner(keepAwake.status, locale: locale) {
+            parts.append(banner)
+        }
+        guard !parts.isEmpty else { return "Ration" }
         return "Ration — " + parts.joined(separator: " · ")
     }
 

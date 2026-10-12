@@ -573,6 +573,9 @@ final class AppModel: ObservableObject {
     /// Claude Code account switching, beside this model like API spend. Fed the
     /// Claude accounts on every snapshot/state pass; told about removals.
     weak var claudeCode: ClaudeCodeModel?
+    /// Codex account switching, its twin: fed the ChatGPT accounts (with the
+    /// identity each one's latest fetch read) on every pass; told about removals.
+    weak var codex: CodexModel?
     /// "Claude plan value" (token burn); the app owns it.
     weak var tokenBurn: TokenBurnModel?
 
@@ -611,7 +614,19 @@ final class AppModel: ObservableObject {
     private let sessionManager: AccountSessionManager
     private let refreshCoordinator: UsageRefreshCoordinator
     private let systemPowerObserver: any SystemPowerObserving
+    /// The one idle-sleep hold (keep awake while in use, and the override).
+    private let keepAwake: KeepAwakeController
+    /// The user's keep-awake override. In memory only; ends with the process.
+    private var manualKeepAwake: ManualKeepAwake?
+    /// Set by `stop()`: a recompute queued before it, or a late publisher,
+    /// must not take the hold back behind a stopped model.
+    private var keepAwakeStopped = false
+    /// The popover's view of the hold — see `evaluateKeepAwake`.
+    @Published private(set) var keepAwakeStatus: KeepAwakeStatus = .off
     private let now: @MainActor () -> Date
+    /// The override's clock (`MonotonicClock.now`); injected so tests can
+    /// move it apart from `now`.
+    private let monotonicNow: @MainActor () -> TimeInterval
     private let beforeSignInPersistence: @MainActor () async -> Void
     /// Test-only interleave seam for the startup readiness barrier (see
     /// `alertsHydrated`'s doc): a no-op in production. `load()` awaits this
@@ -1020,12 +1035,14 @@ final class AppModel: ObservableObject {
         messageSender: ClaudeMessageSender = ClaudeMessageSender(),
         notificationScheduler: any NotificationScheduling = UserNotificationScheduler(),
         now: @escaping @MainActor () -> Date = { .now },
+        monotonicNow: @escaping @MainActor () -> TimeInterval = { MonotonicClock.now },
         beforeSignInPersistence: @escaping @MainActor () async -> Void = {},
         beforeAlertsHydrationCompletes: @escaping @MainActor () async -> Void = {},
         beforeAutoStartCommit: @escaping @MainActor () async -> Void = {},
         beforeSignInResumeRefresh: @escaping @MainActor () async -> Void = {},
         beforeProfileCleanupDeletion: @escaping @MainActor (UUID) async -> Void = { _ in },
         systemPowerObserver: any SystemPowerObserving = SystemPowerObserver(),
+        idleSleepAssertion: any IdleSleepAssertionHolding = ProcessInfoIdleSleepAssertion(),
         pendingEdits: PendingEditRegistry = PendingEditRegistry(),
         refreshSleep: @escaping UsageRefreshCoordinator.Sleep = { duration in
             try await Task.sleep(for: duration)
@@ -1045,12 +1062,14 @@ final class AppModel: ObservableObject {
         self.cursorHistoryStore = cursorHistoryStore
         self.notificationScheduler = notificationScheduler
         self.now = now
+        self.monotonicNow = monotonicNow
         self.beforeSignInPersistence = beforeSignInPersistence
         self.beforeAlertsHydrationCompletes = beforeAlertsHydrationCompletes
         self.beforeAutoStartCommit = beforeAutoStartCommit
         self.beforeSignInResumeRefresh = beforeSignInResumeRefresh
         self.beforeProfileCleanupDeletion = beforeProfileCleanupDeletion
         self.systemPowerObserver = systemPowerObserver
+        self.keepAwake = KeepAwakeController(assertion: idleSleepAssertion)
 
         let sessionManager = AccountSessionManager(
             profileManager: profileManager,
@@ -1165,6 +1184,7 @@ final class AppModel: ObservableObject {
             self.recomputeSwitchAdvice(snapshots: snapshots, states: states, now: self.now())
             // Ungated like advice: switching has its own switch and pause.
             self.claudeCode?.usageDidChange(self.claudeCodeCandidates(snapshots: snapshots, states: states), now: self.now())
+            self.codex?.usageDidChange(self.codexCandidates(snapshots: snapshots, states: states), now: self.now())
             self.tokenBurn?.accountsDidChange(self.tokenBurnAccounts(snapshots: snapshots))
             guard self.appSettings.usageAlertsEnabled else { return }
             // `refreshableAccounts` (not `accounts`) excludes accounts currently
@@ -1247,6 +1267,19 @@ final class AppModel: ObservableObject {
             // rate-limit window synchronously, so overlapping events cannot stack.
             Task { @MainActor [weak self] in await self?.purgeIdleCachesIfDue() }
         }
+
+        // Keep awake re-reads its inputs when the power source flips (the
+        // automatic hold is adapter-only) and when a switch changes; the
+        // refresh pass and the 60 s tick cover the rest (`recomputeSwitchAdvice`).
+        systemPowerObserver.onPowerSourceChanged = { [weak self] in
+            self?.evaluateKeepAwake()
+        }
+        // The delivered switches, not a re-read: `@Published` emits from
+        // `willSet`, so the store still holds the old value in this sink.
+        appSettings.featuresPublisher
+            .dropFirst()
+            .sink { [weak self] features in self?.evaluateKeepAwake(features: features) }
+            .store(in: &cancellables)
     }
 
     /// Release every cached WebView except those backing in-flight work
@@ -3408,6 +3441,7 @@ final class AppModel: ObservableObject {
             await performLaunchProfileHygiene()
             // Begin observing sleep / memory-pressure to release idle WebViews.
             systemPowerObserver.start()
+            keepAwakeStopped = false
             startSwitchAdviceTimer()
 
             guard startBackgroundRefresh else { return }
@@ -3517,6 +3551,70 @@ final class AppModel: ObservableObject {
         if advice != switchAdvice {
             switchAdvice = advice
         }
+        // Rides the same two triggers (a refresh pass, the 60 s tick) with
+        // the same lookahead, so a burn holds the Mac in the pass that saw it.
+        evaluateKeepAwake(now: date, snapshots: snapshots)
+    }
+
+    // MARK: - Keep awake
+
+    /// Starts the user's override: the Mac is kept from idle sleep for
+    /// `duration` seconds, or until `stopKeepAwake` when nil. Starting again
+    /// replaces the running override.
+    func startKeepAwake(for duration: TimeInterval?) {
+        // Refused while the switch is off: the footer's eye is disabled then,
+        // and nothing else may start a hold the user turned off in Settings.
+        guard appSettings.features.keepAwakeEffective else { return }
+        let date = now()
+        manualKeepAwake = ManualKeepAwake(startedAt: monotonicNow(), duration: duration)
+        evaluateKeepAwake(now: date)
+    }
+
+    func stopKeepAwake() {
+        manualKeepAwake = nil
+        evaluateKeepAwake()
+    }
+
+    /// Re-reads every input of the hold and updates the controller: the two
+    /// switches, the power source, the in-use activity as of `now` (with
+    /// `snapshots` as lookahead when a refresh pass supplies them) and the
+    /// override. An override past its end is forgotten here, so the popover's
+    /// banner and the hold end together. In-memory reads only.
+    private func evaluateKeepAwake(
+        now date: Date? = nil,
+        snapshots: [UUID: UsageSnapshot]? = nil,
+        features: FeatureSwitches? = nil
+    ) {
+        let date = date ?? now()
+        let monotonic = monotonicNow()
+        let features = features ?? appSettings.features
+        // The switch governs the whole feature: off, a running override is
+        // forgotten (not paused — the switch coming back does not revive it).
+        if let manual = manualKeepAwake, !features.keepAwakeEffective || !manual.isLive(monotonic: monotonic) {
+            manualKeepAwake = nil
+        }
+        var automaticUntil: Date?
+        // Fails closed on `.unknown`: external power was never established.
+        if !keepAwakeStopped, features.keepAwakeEffective, systemPowerObserver.powerSource == .external {
+            let activity: [UUID: ActiveUsage] = ActiveUsageMap.computePerAccount(
+                accounts: visibleAccounts,
+                history: historyStore,
+                now: date,
+                including: snapshots
+            )
+            automaticUntil = KeepAwakePolicy.holdUntil(activity: activity, now: date)
+        }
+        keepAwake.update(
+            automaticUntil: automaticUntil, manual: keepAwakeStopped ? nil : manualKeepAwake, now: date, monotonicNow: monotonic
+        )
+        let status: KeepAwakeStatus = switch keepAwake.source {
+        case .manual: .manual(until: manualKeepAwake?.until(wall: date, monotonic: monotonic))
+        case .automatic: .automatic
+        case nil: .off
+        }
+        if status != keepAwakeStatus {
+            keepAwakeStatus = status
+        }
     }
 
     private func computeSwitchAdvice(
@@ -3598,6 +3696,35 @@ final class AppModel: ObservableObject {
                 organizationID: snapshot?.organizationID,
                 isPaused: account.isPaused || pausingAccountIDs.contains(account.id),
                 usable: UsageHeadroom.isUsableState(state),
+                snapshot: snapshot,
+                planUnits: plan.map { Int($0.capacityUnits) },
+                order: index
+            )
+        }
+    }
+
+    /// Every ChatGPT account for Codex switching, like `claudeCodeCandidates`:
+    /// paused ones flagged, in card order, each with the identity its latest
+    /// snapshot's own fetch read (memory only; nil until one has). No
+    /// identity while the account's state is not usable (signed out,
+    /// blocked): the snapshot is kept for its usage, but who it was is not
+    /// who the session is now.
+    func codexCandidates(
+        snapshots: [UUID: UsageSnapshot],
+        states: [UUID: AccountViewState]
+    ) -> [CodexCandidate] {
+        accounts.enumerated().compactMap { index, account in
+            guard account.provider == .chatGPT, !removingAccountIDs.contains(account.id) else { return nil }
+            let snapshot = snapshots[account.id]
+            let state = states[account.id] ?? (snapshot == nil ? .unavailable : .current)
+            let plan = withLatestDetectedPlan(account, snapshot: snapshot).effectivePlan
+            let usable = UsageHeadroom.isUsableState(state)
+            return CodexCandidate(
+                accountID: account.id,
+                label: account.label,
+                identity: usable ? snapshot?.chatGPTIdentity : nil,
+                isPaused: account.isPaused || pausingAccountIDs.contains(account.id),
+                usable: usable,
                 snapshot: snapshot,
                 planUnits: plan.map { Int($0.capacityUnits) },
                 order: index
@@ -3769,6 +3896,12 @@ final class AppModel: ObservableObject {
         systemPowerObserver.stop()
         switchAdviceTimer?.invalidate()
         switchAdviceTimer = nil
+        keepAwakeStopped = true
+        keepAwake.stop()
+        manualKeepAwake = nil
+        if keepAwakeStatus != .off {
+            keepAwakeStatus = .off
+        }
     }
 
     func snapshot(for accountID: UUID) -> UsageSnapshot? {
@@ -4341,6 +4474,8 @@ final class AppModel: ObservableObject {
             // this directly): its Claude Code sign-in is unlinked, never
             // deleted (spec §4.2).
             await claudeCode?.accountRemoved(id)
+            // Its Codex login likewise: unlinked, the copy kept.
+            await codex?.accountRemoved(id)
         }
     }
 

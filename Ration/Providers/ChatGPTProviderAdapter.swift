@@ -44,7 +44,9 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
                 fetchedAt: fetchedAt
             ),
             planDetection: PlanDetection.chatGPT(planType: read.payload.planType),
-            codexCredits: Self.codexCredits(from: read.payload.credits, fetchedAt: fetchedAt)
+            codexCredits: Self.codexCredits(from: read.payload.credits, fetchedAt: fetchedAt),
+            chatGPTIdentity: read.identity,
+            unreadableWindowKinds: read.unreadable
         )
     }
 
@@ -66,17 +68,22 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
         fiveHour: UsageWindow?,
         weekly: UsageWindow?,
         payload: ChatGPTUsagePayload,
-        resetCredits: WebResponseEnvelope?
+        resetCredits: WebResponseEnvelope?,
+        identity: ChatGPTIdentity?,
+        unreadable: Set<UsageWindowKind>
     ) {
-        let (body, resetCredits) = try await fetchResult(in: webView)
+        let (body, resetCredits, identity) = try await fetchResult(in: webView)
         let payload: ChatGPTUsagePayload = try await decode(body)
+        var unreadable: Set<UsageWindowKind> = []
         let primary = try usageWindow(
             from: payload.rateLimit?.primaryWindow,
-            fallbackKind: .fiveHour
+            fallbackKind: .fiveHour,
+            unreadable: &unreadable
         )
         let secondary = try usageWindow(
             from: payload.rateLimit?.secondaryWindow,
-            fallbackKind: .weekly
+            fallbackKind: .weekly,
+            unreadable: &unreadable
         )
         if let primary, let secondary, primary.kind == secondary.kind {
             throw ProviderError.integrationChanged
@@ -90,16 +97,16 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
         guard fiveHour != nil || weekly != nil else {
             throw ProviderError.integrationChanged
         }
-        return (fiveHour, weekly, payload, resetCredits)
+        return (fiveHour, weekly, payload, resetCredits, identity, unreadable)
     }
 
     private func fetchResult(
         in webView: WKWebView
-    ) async throws -> (body: String, resetCredits: WebResponseEnvelope?) {
+    ) async throws -> (body: String, resetCredits: WebResponseEnvelope?, identity: ChatGPTIdentity?) {
         do {
             let result = try await client.fetchChatGPT(in: webView)
             let body = try ProviderResponseValidator.body(from: result.usage, now: now())
-            return (body, result.resetCredits)
+            return (body, result.resetCredits, result.identity)
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as ProviderError {
@@ -125,15 +132,21 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
         }
     }
 
+    /// nil when the slot is absent, or reported without its used percent or
+    /// reset time — not a failed fetch (it may be a legitimate "no limit"),
+    /// but its kind goes into `unreadable` so a rule never takes it for
+    /// absent. A whole window that is invalid throws.
     private func usageWindow(
         from payload: ChatGPTUsageWindowPayload?,
-        fallbackKind: UsageWindowKind
+        fallbackKind: UsageWindowKind,
+        unreadable: inout Set<UsageWindowKind>
     ) throws -> UsageWindow? {
         guard let payload else { return nil }
         guard
             let usedPercent = payload.usedPercent,
             let resetTimestamp = payload.resetAt
         else {
+            unreadable.insert(Self.kind(ofWindowSeconds: payload.limitWindowSeconds) ?? fallbackKind)
             return nil
         }
         guard
@@ -145,14 +158,11 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
             throw ProviderError.integrationChanged
         }
         let kind: UsageWindowKind
-        switch payload.limitWindowSeconds {
-        case nil:
+        if payload.limitWindowSeconds == nil {
             kind = fallbackKind
-        case 5 * 60 * 60:
-            kind = .fiveHour
-        case 7 * 24 * 60 * 60:
-            kind = .weekly
-        default:
+        } else if let known = Self.kind(ofWindowSeconds: payload.limitWindowSeconds) {
+            kind = known
+        } else {
             throw ProviderError.integrationChanged
         }
 
@@ -161,6 +171,15 @@ struct ChatGPTProviderAdapter: ProviderAdapter {
             remainingFraction: 1 - (usedPercent / 100),
             resetsAt: Date(timeIntervalSince1970: resetTimestamp)
         )
+    }
+
+    /// The window a `limit_window_seconds` names; nil when absent or unknown.
+    private static func kind(ofWindowSeconds seconds: Int?) -> UsageWindowKind? {
+        switch seconds {
+        case 5 * 60 * 60: .fiveHour
+        case 7 * 24 * 60 * 60: .weekly
+        default: nil
+        }
     }
 
     /// `nil` = not read this fetch (non-2xx usage, abort, oversized, or wrong

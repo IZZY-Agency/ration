@@ -57,6 +57,28 @@ final class SettingsSelectionTests: XCTestCase {
         XCTAssertEqual(SettingsSelection.normalized(.alerts, accounts: []), .alerts)
     }
 
+    /// Settings › Codex is a fixed pane: adding or removing an account must
+    /// not move the user off it.
+    @MainActor
+    func testCodexSurvivesAccountListChanges() {
+        XCTAssertEqual(SettingsSelection.normalized(.codex, accounts: [account(order: 0)]), .codex)
+        XCTAssertEqual(SettingsSelection.normalized(.codex, accounts: []), .codex)
+        XCTAssertEqual(
+            SettingsSelectionRequest.resolve(.init(serial: 1, selection: .codex), appliedSerial: 0, accounts: [])?.selection,
+            .codex
+        )
+    }
+
+    /// Codex's row comes right after Claude Code's, in the same group.
+    func testTheSidebarListsCodexAfterClaudeCode() {
+        let groups = SettingsSidebar.fixedGroups(locale: Locale(identifier: "en"))
+        XCTAssertEqual(groups.last?.map(\.selection), [.alerts, .claudeCode, .codex])
+        let item = groups.flatMap { $0 }.first { $0.selection == .codex }
+        XCTAssertEqual(item?.title, "Codex")
+        XCTAssertEqual(item?.accessibilityIdentifier, "codexSettingsItem")
+        XCTAssertEqual(item?.systemImage, "chevron.left.forwardslash.chevron.right")
+    }
+
     func testGeneralIsPreserved() {
         XCTAssertEqual(SettingsSelection.normalized(.general, accounts: []), .general)
         XCTAssertEqual(SettingsSelection.normalized(.general, accounts: [account(order: 0)]), .general)

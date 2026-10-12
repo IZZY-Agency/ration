@@ -72,12 +72,21 @@ final class ClaudeCodeModel: ObservableObject {
     weak var bridge: AlertDeliveryBridge?
     weak var writeObserver: (any ClaudeCodeWriteObserver)?
 
+    /// `start()` has loaded `claude-code-switch.json` and run launch
+    /// recovery. AppModel starts — and emits snapshots — before that: until
+    /// then nothing links, decides or persists (a write would put the default
+    /// state over the saved one), and every action is a no-op (as in
+    /// `CodexModel`).
+    private(set) var isHydrated = false
+
     private let deps: Dependencies
     private let now: () -> Date
     private let queue = SerializedMutationQueue()
     private var lastConfigDate: Date?
     private var lastCopyRefresh: Date?
     private var automaticPending = false
+    /// The latest candidates handed in before `start()`, replayed once by it.
+    private var pendingUsage: (candidates: [ClaudeCodeCandidate], now: Date)?
 
     /// How often Ration re-saves Claude Code's current sign-in when renewed.
     static let copyRefreshInterval: TimeInterval = 600
@@ -199,12 +208,15 @@ final class ClaudeCodeModel: ObservableObject {
 
     // MARK: Lifecycle
 
+    /// Loads the state, runs launch recovery, reads Claude Code's sign-in,
+    /// then replays the latest candidates `AppModel` handed in meanwhile.
     func start() async {
         state = (try? await deps.stateStore.load()) ?? ClaudeCodeState()
         let switcher = deps.switcher
         await writeObserver?.claudeCodeWillWrite()
         let recovery = await Task.detached(operation: { switcher.recoverIfNeeded() }).value
         await writeObserver?.claudeCodeDidWrite(at: recovery == .none ? nil : now())
+        isHydrated = true
         switch recovery {
         case .needsAttention:
             state.status = .needsAttention(at: now())
@@ -216,6 +228,10 @@ final class ClaudeCodeModel: ObservableObject {
             break
         }
         await reload()
+        if let pending = pendingUsage {
+            pendingUsage = nil
+            usageDidChange(pending.candidates, now: pending.now)
+        }
     }
 
     func reload() async {
@@ -237,6 +253,12 @@ final class ClaudeCodeModel: ObservableObject {
     // MARK: Usage (from AppModel's snapshot/state sink)
 
     func usageDidChange(_ candidates: [ClaudeCodeCandidate], now date: Date) {
+        guard isHydrated else {
+            // Before `start()`: kept for its replay, nothing else.
+            pendingUsage = (candidates, date)
+            return
+        }
+        pendingUsage = nil
         if candidates != self.candidates { self.candidates = candidates }
         linkUnlinkedSignIns()
         let configDate = deps.switcher.config.modificationDate()
@@ -351,14 +373,14 @@ final class ClaudeCodeModel: ObservableObject {
 
     func useInClaudeCode(accountID: UUID) async {
         try? await queue.run { [weak self] in
-            guard let self, !self.isPaused(accountID), let uuid = self.signInUUID(linkedTo: accountID) else { return }
+            guard let self, self.isHydrated, !self.isPaused(accountID), let uuid = self.signInUUID(linkedTo: accountID) else { return }
             await self.performSwitch(to: accountID, signIn: uuid, expecting: nil, automatic: false, usedPercent: nil)
         }
     }
 
     func rememberCurrent(linkTo accountID: UUID?) async {
         try? await queue.run { [weak self] in
-            guard let self else { return }
+            guard let self, self.isHydrated else { return }
             let switcher = self.deps.switcher
             let result = await Task.detached {
                 Result { try switcher.remember() }
@@ -379,6 +401,7 @@ final class ClaudeCodeModel: ObservableObject {
     /// The user's choice in Settings. None is kept: the sign-in is not linked
     /// automatically again until the user links it.
     func link(_ uuid: String, to accountID: UUID?) async {
+        guard isHydrated else { return }
         setLink(uuid, to: accountID)
         if accountID == nil, !state.keptUnlinked.contains(uuid) { state.keptUnlinked.append(uuid) }
         _ = await persistState()
@@ -396,7 +419,7 @@ final class ClaudeCodeModel: ObservableObject {
 
     func forget(_ uuid: String) async {
         try? await queue.run { [weak self] in
-            guard let self else { return }
+            guard let self, self.isHydrated else { return }
             let store = self.deps.switcher.store
             do {
                 try await Task.detached(operation: { try store.delete(accountUUID: uuid) }).value
@@ -414,7 +437,7 @@ final class ClaudeCodeModel: ObservableObject {
     /// automatic switching off.
     func forgetAll() async {
         try? await queue.run { [weak self] in
-            guard let self else { return }
+            guard let self, self.isHydrated else { return }
             let store = self.deps.switcher.store
             let uuids = self.remembered.map(\.uuid)
             let failed = await Task.detached { () -> Bool in
@@ -431,6 +454,7 @@ final class ClaudeCodeModel: ObservableObject {
     }
 
     func setAutoSwitch(enabled: Bool, rule: ClaudeCodeAutoSwitch.Rule) async {
+        guard isHydrated else { return }
         // Only turning it on lifts a pause; a rule edit is not Resume.
         if enabled && !state.autoSwitchEnabled { state.autoSwitchPaused = false }
         state.autoSwitchEnabled = enabled
@@ -440,6 +464,7 @@ final class ClaudeCodeModel: ObservableObject {
     }
 
     func resumeAutoSwitch() async {
+        guard isHydrated else { return }
         state.autoSwitchPaused = false
         switch state.status {
         case .failed, .conflict, .paused, .needsAttention: state.status = nil
@@ -449,18 +474,20 @@ final class ClaudeCodeModel: ObservableObject {
     }
 
     func setNotify(_ on: Bool) async {
+        guard isHydrated else { return }
         state.notify = on
         _ = await persistState()
     }
 
     func dismissPrompt() async {
-        guard let current, !state.dismissedPrompts.contains(current.uuid) else { return }
+        guard isHydrated, let current, !state.dismissedPrompts.contains(current.uuid) else { return }
         state.dismissedPrompts.append(current.uuid)
         _ = await persistState()
     }
 
     /// Spec §4.2: a removed Ration account's sign-in is unlinked, not deleted.
     func accountRemoved(_ accountID: UUID) async {
+        guard isHydrated else { return }
         let before = state.links
         state.links = state.links.filter { $0.value != accountID }
         guard state.links != before else { return }
@@ -535,8 +562,11 @@ final class ClaudeCodeModel: ObservableObject {
 
     // MARK: Persistence and notifications
 
+    /// Never before `start()` has loaded the state: that write would put an
+    /// unloaded (default) state over the saved one.
     @discardableResult
     private func persistState() async -> Bool {
+        guard isHydrated else { return false }
         do {
             try await deps.stateStore.save(state)
             if stateSaveFailed { stateSaveFailed = false }

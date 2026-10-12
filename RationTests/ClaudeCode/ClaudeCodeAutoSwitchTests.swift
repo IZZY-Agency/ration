@@ -104,6 +104,84 @@ final class ClaudeCodeAutoSwitchTests: XCTestCase {
     func testNoOtherAccountIsNoRoom() {
         XCTAssertEqual(decide(candidate(1, snap(week: 0.8)), []), .noRoom(usedPercent: 80, candidates: []))
     }
+
+    // MARK: - Window policy (Codex switch spec §4.5)
+
+    private func codex(_ current: Auto.Candidate, _ others: [Auto.Candidate]) -> Auto.Decision {
+        Auto.decide(current: current, others: others, rule: weekly, policy: .codex, now: now)
+    }
+
+    /// ChatGPT often reports only a weekly limit: absent is not unknown.
+    func testCodexPolicyIgnoresAMissingFiveHourWindow() {
+        let target = candidate(2, snap(week: 0.2, five: nil))
+        XCTAssertEqual(codex(candidate(1, snap(week: 0.8, five: nil)), [target]),
+                       .switchTo(signInUUID: "acc-2", accountID: target.accountID, usedPercent: 80))
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.8, five: nil)), [target]), .waiting(usedPercent: 80),
+                       "Claude Code still requires the 5-hour window")
+    }
+
+    /// A 5-hour window that is reported counts like a required one.
+    func testCodexPolicyStillRefusesAFullFiveHourWindowWhenReported() {
+        let fullFiveHour = candidate(2, snap(week: 0.1, five: 0.9))
+        let weeklyOnly = candidate(3, snap(week: 0.5, five: nil))
+        XCTAssertEqual(codex(candidate(1, snap(week: 0.8)), [fullFiveHour, weeklyOnly]),
+                       .switchTo(signInUUID: "acc-3", accountID: weeklyOnly.accountID, usedPercent: 80))
+        XCTAssertEqual(codex(candidate(1, snap(week: 0.8)), [fullFiveHour]), .noRoom(usedPercent: 80, candidates: ["acc-2"]))
+    }
+
+    /// A reported 5-hour window that is not current is unknown, not absent.
+    func testCodexPolicyTreatsAStaleFiveHourWindowAsUnknown() {
+        let fetched = now.addingTimeInterval(-600)
+        let overtaken = UsageSnapshot(
+            accountID: UUID(), fetchedAt: fetched,
+            fiveHour: UsageWindow(kind: .fiveHour, remainingFraction: 0.9, resetsAt: now.addingTimeInterval(-300)),
+            weekly: UsageWindow(kind: .weekly, remainingFraction: 0.9, resetsAt: now.addingTimeInterval(3 * 86_400))
+        )
+        XCTAssertEqual(codex(candidate(1, snap(week: 0.8)), [candidate(2, overtaken)]), .waiting(usedPercent: 80))
+    }
+
+    /// A 5-hour window the account reported but the fetch could not
+    /// read (no used percent or reset time) is unknown, never "optional and
+    /// absent".
+    func testCodexPolicyTreatsAnUnreadableFiveHourWindowAsUnknown() {
+        let base = snap(week: 0.2, five: nil)
+        let unreadable = UsageSnapshot(accountID: base.accountID, fetchedAt: base.fetchedAt, fiveHour: nil, weekly: base.weekly,
+                                       unreadableWindowKinds: [.fiveHour])
+        XCTAssertEqual(codex(candidate(1, snap(week: 0.8)), [candidate(2, unreadable)]), .waiting(usedPercent: 80))
+        let readable = candidate(3, snap(week: 0.5, five: nil))
+        XCTAssertEqual(codex(candidate(1, snap(week: 0.8)), [candidate(2, unreadable), readable]),
+                       .switchTo(signInUUID: "acc-3", accountID: readable.accountID, usedPercent: 80), "another can still take over")
+    }
+
+    func testCodexPolicyTreatsAMissingWeeklyAsUnknown() {
+        XCTAssertEqual(codex(candidate(1, snap(week: 0.8)), [candidate(2, snap(week: nil, five: 0.1))]), .waiting(usedPercent: 80))
+        XCTAssertEqual(codex(candidate(1, snap(week: nil, five: 0.9)), [candidate(2, snap(week: 0.1))]), .none,
+                       "no weekly on the current account: nothing to measure the rule on")
+    }
+
+    /// The Claude policy is the old behaviour, Fable included: an account with
+    /// no Fable limit is ineligible for a Fable rule, not unknown.
+    func testTheClaudePolicyIsUnchanged() {
+        let fable = Auto.Rule(percent: 75, kind: .modelWeekly)
+        XCTAssertEqual(Auto.Policy.claudeCode(for: weekly), Auto.Policy(required: [.weekly, .fiveHour], optional: []))
+        XCTAssertEqual(Auto.Policy.claudeCode(for: fable), Auto.Policy(required: [.weekly, .fiveHour, .modelWeekly], optional: []))
+        XCTAssertEqual(Auto.Policy.codex, Auto.Policy(required: [.weekly], optional: [.fiveHour]))
+
+        let current = candidate(1, snap(week: 0.3, fable: 0.8))
+        let noFable = candidate(2, snap(week: 0.1))
+        XCTAssertEqual(Auto.decide(current: current, others: [noFable], rule: fable, policy: .claudeCode(for: fable), now: now),
+                       .noRoom(usedPercent: 80, candidates: ["acc-2"]))
+        XCTAssertEqual(decide(current, [noFable], rule: fable), .noRoom(usedPercent: 80, candidates: ["acc-2"]))
+        let scenarios: [(Auto.Candidate, [Auto.Candidate])] = [
+            (candidate(1, snap(week: 0.8)), [candidate(2, snap(week: 0.2, five: nil))]),
+            (candidate(1, snap(week: 0.8)), [candidate(2, snap(week: 0.1, five: 0.9)), candidate(3, snap(week: 0.4))]),
+            (candidate(1, snap(week: 0.8)), [candidate(2, snap(week: 0.9))]),
+        ]
+        for (current, others) in scenarios {
+            XCTAssertEqual(Auto.decide(current: current, others: others, rule: weekly, policy: .claudeCode(for: weekly), now: now),
+                           decide(current, others))
+        }
+    }
 }
 
 private extension ClaudeCodeAutoSwitch.Decision {

@@ -9,6 +9,7 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
     /// API spend: threaded to the menu bar; stopped on quit.
     weak var apiSpend: APISpendModel?
     weak var claudeCode: ClaudeCodeModel?
+    weak var codex: CodexModel?
     private var appRefresh: AppRefresh?
     private var hotKeyRegistrar: (any GlobalHotKeyRegistering)?
     /// Dock + ⌘-Tab presence while any Ration window is open — see `DockPresence`.
@@ -55,12 +56,14 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
         hotKeyRegistrar: any GlobalHotKeyRegistering = CarbonHotKeyRegistrar(),
         apiSpend: APISpendModel? = nil,
         claudeCode: ClaudeCodeModel? = nil,
+        codex: CodexModel? = nil,
         appRefresh: AppRefresh? = nil
     ) {
         self.model = model
         self.launchAtLogin = launchAtLogin
         self.apiSpend = apiSpend
         self.claudeCode = claudeCode
+        self.codex = codex
         self.appRefresh = appRefresh
         self.hotKeyRegistrar = hotKeyRegistrar
         startMenuBarIfReady()
@@ -249,6 +252,7 @@ final class RationApplicationDelegate: NSObject, NSApplicationDelegate {
             refreshAll: appRefresh?.refreshAll,
             apiSpend: apiSpend,
             claudeCode: claudeCode,
+            codex: codex,
             appRefresh: appRefresh
         )
         menuBarController = controller
@@ -267,6 +271,7 @@ struct RationApp: App {
     @StateObject private var launchAtLogin: LaunchAtLoginController
     @StateObject private var apiSpend: APISpendModel
     @StateObject private var claudeCode: ClaudeCodeModel
+    @StateObject private var codex: CodexModel
     @StateObject private var tokenBurn: TokenBurnModel
     private let isUITesting: Bool
 
@@ -330,6 +335,12 @@ struct RationApp: App {
         claudeCode.bridge = model
         model.claudeCode = claudeCode
         _claudeCode = StateObject(wrappedValue: claudeCode)
+        // Codex switching, the same way: nothing touches the Keychain or
+        // ~/.codex/auth.json until `start()`.
+        let codex = CodexModel.live(stateDirectory: apiBase)
+        codex.bridge = model
+        model.codex = codex
+        _codex = StateObject(wrappedValue: codex)
         // Claude plan value: off until the user consents and grants the
         // folder; `start()` reads nothing while it is off.
         let tokenBurn = TokenBurnModel.live(directory: apiBase)
@@ -359,6 +370,7 @@ struct RationApp: App {
             launchAtLogin: launchAtLogin,
             apiSpend: apiSpend,
             claudeCode: claudeCode,
+            codex: codex,
             appRefresh: appRefresh
         )
 
@@ -377,6 +389,7 @@ struct RationApp: App {
                 // After AppModel's start (its alert gate reads `alertsReady`).
                 await apiSpend.start()
                 await claudeCode.start()
+                await codex.start()
                 await tokenBurn.start()
                 // Only now can the wizard's predicate be answered: `start()`
                 // is what loads `AppSettings`.
@@ -425,7 +438,8 @@ struct RationApp: App {
                 appearance: appDelegate.appearance,
                 onOpenSetupGuide: openSetupGuide,
                 apiSpend: apiSpend,
-                claudeCode: claudeCode
+                claudeCode: claudeCode,
+                codex: codex
             )
         }
         .defaultSize(width: SettingsView.minimumWindowWidth, height: 564)
@@ -524,9 +538,18 @@ struct MenuBarContent: View {
     var apiSpend: APISpendModel? = nil
     /// Claude Code switching: the row on Claude cards, the status line.
     var claudeCode: ClaudeCodeModel? = nil
+    /// Codex switching: the row on ChatGPT cards, the status line.
+    var codex: CodexModel? = nil
     var appRefresh: AppRefresh? = nil
 
     var body: some View {
+        menuBarView
+            .tint(Theme.gold)
+    }
+
+    /// The popover this content shows — separate so a test can check the
+    /// wiring without a window.
+    var menuBarView: MenuBarView {
         MenuBarView(
             presentations: AccountVisibility.visible(model.presentations),
             isRefreshing: model.isRefreshing,
@@ -619,6 +642,10 @@ struct MenuBarContent: View {
             onDismissAttentionDrop: onDismissAttentionDrop,
             switchAdvice: model.switchAdvice,
             layout: settings.popoverLayout,
+            keepAwake: model.keepAwakeStatus,
+            onStartKeepAwake: { model.startKeepAwake(for: $0.seconds) },
+            onStopKeepAwake: { model.stopKeepAwake() },
+            keepAwakeAvailable: settings.features.keepAwakeEffective,
             focusModel: { [pinned = pinSnapshot.focusHeroID] in
                 model.focusModel(now: $0, pinnedHeroID: pinned)
             },
@@ -634,8 +661,10 @@ struct MenuBarContent: View {
         .withClaudeCode(claudeCode, onStatus: {
             if let onSettingsSelecting { onSettingsSelecting(.claudeCode) } else { onSettings() }
         })
+        .withCodex(codex, onStatus: {
+            if let onSettingsSelecting { onSettingsSelecting(.codex) } else { onSettings() }
+        })
         .withTokenBurn(model.tokenBurn)
-        .tint(Theme.gold)
     }
 
     /// The header's STALE / OFFLINE click: the account to fix in Settings,
@@ -778,6 +807,7 @@ struct SettingsWindowContent: View {
     let onOpenSetupGuide: () -> Void
     var apiSpend: APISpendModel? = nil
     var claudeCode: ClaudeCodeModel? = nil
+    var codex: CodexModel? = nil
 
     var body: some View {
         settingsView
@@ -802,7 +832,8 @@ struct SettingsWindowContent: View {
             },
             onOpenSetupGuide: onOpenSetupGuide,
             apiSpend: apiSpend,
-            claudeCode: claudeCode
+            claudeCode: claudeCode,
+            codex: codex
         )
     }
 }

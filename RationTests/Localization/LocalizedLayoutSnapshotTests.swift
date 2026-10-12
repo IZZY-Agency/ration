@@ -113,6 +113,19 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         }
     }
 
+    /// The keep-awake banner (an override with an end, and the automatic
+    /// hold) above the cards, and the filled footer glyph.
+    func testPopoverKeepAwake() throws {
+        let dir = try directory
+        let accounts = sampleAccounts()
+        for (scheme, suffix) in Self.schemes {
+            let timed: KeepAwakeStatus = .manual(until: now.addingTimeInterval(3_600 + 12 * 60))
+            try write(render(popover(accounts, layout: .standard, keepAwake: timed), scheme), dir, "popover-keep-awake-\(suffix).png")
+            try write(render(popover(accounts, layout: .standard, keepAwake: .automatic), scheme), dir, "popover-keep-awake-auto-\(suffix).png")
+            try write(render(popover(accounts, layout: .standard, keepAwakeAvailable: false), scheme), dir, "popover-keep-awake-off-in-settings-\(suffix).png")
+        }
+    }
+
     func testPopoverFocus() throws {
         let dir = try directory
         let accounts = sampleAccounts()
@@ -860,7 +873,8 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
     private func popover(
         _ presentations: [AccountPresentation], layout: PopoverLayout, advice: [SwitchAdvice] = [],
         focus: FocusModel? = nil, dropShowing: Bool = false, problem: NotificationAccess.Problem? = nil,
-        showsFreshnessHelp: Bool = false, layoutProbe: PopoverLayoutProbe? = nil
+        showsFreshnessHelp: Bool = false, layoutProbe: PopoverLayoutProbe? = nil,
+        keepAwake: KeepAwakeStatus = .off, keepAwakeAvailable: Bool = true
     ) -> MenuBarView {
         MenuBarView(
             presentations: AccountVisibility.visible(presentations),
@@ -875,6 +889,8 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             attentionDropShowing: dropShowing,
             switchAdvice: advice,
             layout: layout,
+            keepAwake: keepAwake,
+            keepAwakeAvailable: keepAwakeAvailable,
             focusModel: { [focus] date in
                 focus ?? FocusModel.make(presentations: [], phases: [:], advice: [],
                                          fableCounts: { _ in false }, now: date)
@@ -1190,7 +1206,7 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         let model = try await makeClaudeCodeModel(workID: work.id)
         let lines: [ClaudeCodeStatusLine] = [
             .needsAttention, .paused, .failed, .noRoom,
-            .rememberPrompt(organization: "ai@izzy.agency's Organization"),
+            .rememberPrompt(organization: "client@example.com's Organization"),
             .switched(to: "Personal", automatic: true), .switched(to: "Personal", automatic: false),
         ]
         let popover = VStack(alignment: .leading, spacing: 10) {
@@ -1211,7 +1227,7 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             FocusView(model: focus, now: now, onShowHero: { _ in }, onReauthenticate: { _ in },
                       claudeCode: ClaudeCodeFocusLine(currentLabel: "Client", target: .init(accountID: byLabel["Personal"]!, label: "Personal")))
             FocusView(model: focus, now: now, onShowHero: { _ in }, onReauthenticate: { _ in },
-                      claudeCode: ClaudeCodeFocusLine(currentLabel: "ai@izzy.agency's Organization", target: nil))
+                      claudeCode: ClaudeCodeFocusLine(currentLabel: "client@example.com's Organization", target: nil))
         }
         .frame(width: 540, alignment: .leading)
         .background(Theme.ink)
@@ -1222,6 +1238,113 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
                       dir, "settings-claude-code-\(suffix).png")
             try write(await renderHosted(ClaudeCodeRememberSheet(model: model, onDone: {}).background(Color(nsColor: .windowBackgroundColor)), width: 480, height: 460, scheme),
                       dir, "settings-claude-code-remember-\(suffix).png")
+        }
+    }
+
+    // MARK: Codex switching
+
+    /// A ChatGPT card with the CODEX tag, with SWITCH and switching, every
+    /// Codex status line; the Focus line under Claude Code's, with and
+    /// without a target, with the status line under it, and the status line
+    /// alone (no login to name).
+    func testCodexPopoverAndFocus() throws {
+        let dir = try directory
+        let accounts = sampleAccounts()
+        let byLabel = Dictionary(uniqueKeysWithValues: accounts.map { ($0.account.label, $0.id) })
+        let gpt20 = try XCTUnwrap(accounts.first { $0.account.label == "20x" })
+        let lines: [CodexStatusLine] = [
+            .needsAttention, .damaged, .paused, .failed, .stale(account: "5x"), .noRoom, .waiting,
+            .rememberPrompt(email: "client@example.com"),
+            .switched(to: "5x", automatic: true), .switched(to: "5x", automatic: false),
+            .switched(to: "5x", automatic: false, verified: false), .switched(to: "5x", automatic: false, sameWorkspace: true),
+        ]
+        let popover = VStack(alignment: .leading, spacing: 10) {
+            AccountCardView(presentation: gpt20, onReauthenticate: {}, now: now, codex: .current)
+            AccountCardView(presentation: gpt20, onReauthenticate: {}, now: now, codex: .canSwitch(sameWorkspace: false))
+            AccountCardView(presentation: gpt20, onReauthenticate: {}, now: now, codex: .switching, codexBusy: true)
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in CodexStatusLineView(line: line, action: {}) }
+        }
+        .padding(.vertical, 8)
+        .frame(width: 540, alignment: .leading)
+        .background(Theme.ink)
+        let focus = FocusModel.make(presentations: accounts, phases: [byLabel["Client"]!: .inUse(age: 60), byLabel["20x"]!: .inUse(age: 60)],
+                                    advice: [], fableCounts: { _ in false }, now: now)
+        let focusViews = VStack(alignment: .leading, spacing: 10) {
+            FocusView(model: focus, now: now, onShowHero: { _ in }, onReauthenticate: { _ in },
+                      claudeCode: ClaudeCodeFocusLine(currentLabel: "Client", target: .init(accountID: byLabel["Personal"]!, label: "Personal")),
+                      codex: CodexFocusLine(currentLabel: "20x", target: .init(accountID: byLabel["5x"]!, label: "5x")))
+            FocusView(model: focus, now: now, onShowHero: { _ in }, onReauthenticate: { _ in },
+                      codex: CodexFocusLine(currentLabel: "20x", target: nil),
+                      codexStatus: .switched(to: "20x", automatic: false))
+            FocusView(model: focus, now: now, onShowHero: { _ in }, onReauthenticate: { _ in },
+                      codexStatus: .needsAttention)
+        }
+        .frame(width: 540, alignment: .leading)
+        .background(Theme.ink)
+        for (scheme, suffix) in Self.schemes {
+            try write(render(popover, scheme), dir, "popover-codex-\(suffix).png")
+            try write(render(focusViews, scheme), dir, "focus-codex-\(suffix).png")
+        }
+    }
+
+    /// The popover over a live `CodexModel` on the fakes: the CODEX tag on
+    /// 20x (Codex's login), SWITCH on 5x, and the status line under the
+    /// ChatGPT header (an automatic switch two minutes ago).
+    func testCodexPopoverLive() async throws {
+        let dir = try directory
+        let accounts = sampleAccounts()
+        let gpt20 = try XCTUnwrap(accounts.first { $0.account.label == "20x" })
+        let gpt5 = try XCTUnwrap(accounts.first { $0.account.label == "5x" })
+        var state = CodexState()
+        state.links = [CodexLiveFixture.loginA: gpt20.id, CodexLiveFixture.loginB: gpt5.id]
+        state.status = .switched(at: now.addingTimeInterval(-120), from: CodexLiveFixture.loginB, to: CodexLiveFixture.loginA,
+                                 automatic: true)
+        let codex = try await CodexLiveFixture.make(now: now, state: state, candidates: [
+            CodexLiveFixture.candidate(gpt20.id, "20x", identity: CodexLiveFixture.identityA, used: 0.75,
+                                       order: gpt20.account.displayOrder, now: now),
+            CodexLiveFixture.candidate(gpt5.id, "5x", identity: CodexLiveFixture.identityB, used: 0,
+                                       order: gpt5.account.displayOrder, now: now),
+        ])
+        defer { try? FileManager.default.removeItem(at: codex.directory) }
+        XCTAssertEqual(codex.model.cardState(for: gpt20.id), .current)
+        XCTAssertEqual(codex.model.cardState(for: gpt5.id), .canSwitch(sameWorkspace: false))
+        for (scheme, suffix) in Self.schemes {
+            // Two Claude cards fewer, so both ChatGPT cards sit inside the four-card cap.
+            let shown = accounts.filter { !["Personal", "Work"].contains($0.account.label) }
+            try write(await renderHosted(popover(shown, layout: .standard).withCodex(codex.model, onStatus: {}),
+                                         width: 540, height: 1150, scheme),
+                      dir, "popover-codex-live-\(suffix).png")
+        }
+    }
+
+    /// Settings › Codex over a live model: Codex on 20x (remembered,
+    /// verified), 5x linked by choice and saved 8 days ago (validity
+    /// unknown), the acknowledgement not given, automatic switching paused,
+    /// a stale status; and the Remember sheet.
+    func testCodexSettings() async throws {
+        let dir = try directory
+        let accounts = sampleAccounts()
+        let gpt20 = try XCTUnwrap(accounts.first { $0.account.label == "20x" })
+        let gpt5 = try XCTUnwrap(accounts.first { $0.account.label == "5x" })
+        var state = CodexState()
+        state.links = [CodexLiveFixture.loginA: gpt20.id, CodexLiveFixture.loginB: gpt5.id]
+        state.autoSwitchPaused = true
+        state.status = .stale(at: now.addingTimeInterval(-300), login: CodexLiveFixture.loginB)
+        let codex = try await CodexLiveFixture.make(now: now, state: state, bSavedAgo: 8 * 86_400, candidates: [
+            CodexLiveFixture.candidate(gpt20.id, "20x", identity: CodexLiveFixture.identityA, used: 0.75,
+                                       order: gpt20.account.displayOrder, now: now),
+            CodexLiveFixture.candidate(gpt5.id, "5x", identity: nil, used: 0, order: gpt5.account.displayOrder, now: now),
+        ])
+        defer { try? FileManager.default.removeItem(at: codex.directory) }
+        XCTAssertEqual(codex.model.signIns.map(\.verified), [true, false])
+        XCTAssertEqual(codex.model.signIns.map(\.validityUnknown), [false, true])
+        for (scheme, suffix) in Self.schemes {
+            try write(await renderHosted(CodexDetailView(model: codex.model), width: 520, height: 1700, scheme),
+                      dir, "settings-codex-\(suffix).png")
+            try write(await renderHosted(CodexRememberSheet(model: codex.model, onDone: {})
+                                            .background(Color(nsColor: .windowBackgroundColor)),
+                                         width: 480, height: 480, scheme),
+                      dir, "settings-codex-remember-\(suffix).png")
         }
     }
 
@@ -1344,7 +1467,7 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         order += 1
         let id = UUID()
         let record = AccountRecord(
-            id: id, provider: .typeSafe, label: "IZZY Agency", webProfileID: UUID(), displayOrder: order,
+            id: id, provider: .typeSafe, label: "Work", webProfileID: UUID(), displayOrder: order,
             createdAt: now.addingTimeInterval(-10 * 86_400), billingRenewalDay: nil
         )
         var calendar = Calendar(identifier: .gregorian)
@@ -1495,6 +1618,10 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
                 let sources = style == .rail ? groups.map(\.source) : [groups[1].source]
                 let view = RingBarSegmentView(model: model, sources: sources, segment: 0).background(Theme.panel)
                 try write(render(view, scheme), dir, "ringbar-\(style.rawValue)-\(suffix).png")
+                model.keepAwake = .idle
+                try write(render(view, scheme), dir, "ringbar-\(style.rawValue)-eye-idle-\(suffix).png")
+                model.keepAwake = .held(.manual(until: nil))
+                try write(render(view, scheme), dir, "ringbar-\(style.rawValue)-kept-awake-\(suffix).png")
             }
             let card = RingBarText.card(for: claude, displaysRemaining: true, now: now)
             try write(render(RingBarCardView(card: card), scheme), dir, "ringbar-card-\(suffix).png")

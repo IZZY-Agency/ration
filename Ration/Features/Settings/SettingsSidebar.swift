@@ -95,6 +95,12 @@ struct SettingsSidebar: View {
                 systemImage: "terminal",
                 accessibilityIdentifier: "claudeCodeSettingsItem"
             ),
+            FixedItem(
+                selection: .codex,
+                title: LocalizedStringResource.settingsSidebarCodex.string(in: locale),
+                systemImage: CodexSymbol.name,
+                accessibilityIdentifier: "codexSettingsItem"
+            ),
         ],
     ] }
 

@@ -93,6 +93,9 @@ struct AppSettingsData: Codable, Equatable, Sendable {
     var featureWarmUpEnabled: Bool
     var featureInUseEnabled: Bool
     var featureUsageCreditsEnabled: Bool
+    /// Keep awake while in use. The one switch that starts OFF; missing or
+    /// malformed → OFF.
+    var featureKeepAwakeEnabled: Bool
     /// The ring bar (Settings › General › Ring Bar): the menu bar's gauges in
     /// a glass bar at a screen edge. Off by default; independent of the
     /// menu-bar rings. Missing or malformed → the defaults below, one field at
@@ -128,7 +131,8 @@ struct AppSettingsData: Codable, Equatable, Sendable {
             switchAdvice: featureSwitchAdviceEnabled,
             warmUp: featureWarmUpEnabled,
             inUse: featureInUseEnabled,
-            usageCredits: featureUsageCreditsEnabled
+            usageCredits: featureUsageCreditsEnabled,
+            keepAwake: featureKeepAwakeEnabled
         )
     }
 
@@ -225,6 +229,7 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         featureWarmUpEnabled: Bool = true,
         featureInUseEnabled: Bool = true,
         featureUsageCreditsEnabled: Bool = true,
+        featureKeepAwakeEnabled: Bool = false,
         ringBarEnabled: Bool = false,
         ringBarStyle: RingBarStyle = .rail,
         ringBarEdge: RingBarEdge = .left,
@@ -254,6 +259,7 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         self.featureWarmUpEnabled = featureWarmUpEnabled
         self.featureInUseEnabled = featureInUseEnabled
         self.featureUsageCreditsEnabled = featureUsageCreditsEnabled
+        self.featureKeepAwakeEnabled = featureKeepAwakeEnabled
         self.ringBarEnabled = ringBarEnabled
         self.ringBarStyle = ringBarStyle
         self.ringBarEdge = ringBarEdge
@@ -289,6 +295,7 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         case featureWarmUpEnabled
         case featureInUseEnabled
         case featureUsageCreditsEnabled
+        case featureKeepAwakeEnabled
         case ringBarEnabled
         case ringBarStyle
         case ringBarEdge
@@ -356,6 +363,9 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         featureWarmUpEnabled = feature(.featureWarmUpEnabled)
         featureInUseEnabled = feature(.featureInUseEnabled)
         featureUsageCreditsEnabled = feature(.featureUsageCreditsEnabled)
+        // Starts OFF, unlike the others: it changes the Mac's behaviour
+        // beyond the app. Lenient like them.
+        featureKeepAwakeEnabled = ((try? container.decodeIfPresent(Bool.self, forKey: .featureKeepAwakeEnabled)) ?? nil) ?? false
         // Lenient like `popoverLayout`: one unknown value (a newer build, a
         // hand edit) falls back alone instead of resetting every setting.
         ringBarEnabled = ((try? container.decodeIfPresent(Bool.self, forKey: .ringBarEnabled)) ?? nil) ?? false
@@ -416,6 +426,7 @@ final class AppSettings: ObservableObject {
     @Published private(set) var featureWarmUpEnabled: Bool = true
     @Published private(set) var featureInUseEnabled: Bool = true
     @Published private(set) var featureUsageCreditsEnabled: Bool = true
+    @Published private(set) var featureKeepAwakeEnabled: Bool = false
     @Published private(set) var ringBarEnabled: Bool = false
     @Published private(set) var ringBarStyle: RingBarStyle = .rail
     @Published private(set) var ringBarEdge: RingBarEdge = .left
@@ -432,16 +443,17 @@ final class AppSettings: ObservableObject {
         gaugeVisibility[id.uuidString]?.shows(surface) ?? true
     }
 
-    /// The four switches as they change (current value first). For views that
+    /// The switches as they change (current value first). For views that
     /// hold `AppModel` rather than observing `AppSettings` directly — values
     /// come from the `@Published` projections, so they are the NEW values even
     /// though `@Published` emits from `willSet`.
     var featuresPublisher: AnyPublisher<FeatureSwitches, Never> {
-        Publishers.CombineLatest(
+        Publishers.CombineLatest3(
             Publishers.CombineLatest4($featureResetsEnabled, $featureSwitchAdviceEnabled, $featureWarmUpEnabled, $featureInUseEnabled),
-            $featureUsageCreditsEnabled
+            $featureUsageCreditsEnabled,
+            $featureKeepAwakeEnabled
         )
-            .map { FeatureSwitches(resets: $0.0, switchAdvice: $0.1, warmUp: $0.2, inUse: $0.3, usageCredits: $1) }
+            .map { FeatureSwitches(resets: $0.0, switchAdvice: $0.1, warmUp: $0.2, inUse: $0.3, usageCredits: $1, keepAwake: $2) }
             .removeDuplicates()
             .eraseToAnyPublisher()
     }
@@ -489,6 +501,7 @@ final class AppSettings: ObservableObject {
             featureWarmUpEnabled: featureWarmUpEnabled,
             featureInUseEnabled: featureInUseEnabled,
             featureUsageCreditsEnabled: featureUsageCreditsEnabled,
+            featureKeepAwakeEnabled: featureKeepAwakeEnabled,
             ringBarEnabled: ringBarEnabled,
             ringBarStyle: ringBarStyle,
             ringBarEdge: ringBarEdge,
@@ -545,6 +558,7 @@ final class AppSettings: ObservableObject {
         case .switchAdvice: try await setFeatureSwitchAdviceEnabled(value)
         case .warmUp: try await setFeatureWarmUpEnabled(value)
         case .inUse: try await setFeatureInUseEnabled(value)
+        case .keepAwake: try await setFeatureKeepAwakeEnabled(value)
         }
     }
 
@@ -566,6 +580,10 @@ final class AppSettings: ObservableObject {
 
     func setFeatureUsageCreditsEnabled(_ value: Bool) async throws {
         try await mutate { $0.featureUsageCreditsEnabled = value }
+    }
+
+    func setFeatureKeepAwakeEnabled(_ value: Bool) async throws {
+        try await mutate { $0.featureKeepAwakeEnabled = value }
     }
 
     func setUsageAlertsEnabled(_ value: Bool) async throws {
@@ -972,6 +990,9 @@ final class AppSettings: ObservableObject {
         }
         if featureUsageCreditsEnabled != data.featureUsageCreditsEnabled {
             featureUsageCreditsEnabled = data.featureUsageCreditsEnabled
+        }
+        if featureKeepAwakeEnabled != data.featureKeepAwakeEnabled {
+            featureKeepAwakeEnabled = data.featureKeepAwakeEnabled
         }
         if ringBarEnabled != data.ringBarEnabled {
             ringBarEnabled = data.ringBarEnabled

@@ -92,6 +92,147 @@ final class StatusItemFactoryTests: XCTestCase {
         XCTAssertEqual(button.accessibilityLabel(), button.toolTip)
     }
 
+    /// A live hold adds a gold eye after the rings — the same glyph as the
+    /// popover's footer — and the tooltip says what the banner says.
+    func testKeptAwakeAppendsAnEyeAfterTheRings() throws {
+        let statusBar = NSStatusBar.system
+        let statusItem = StatusItemFactory.make(in: statusBar)
+        defer { statusBar.removeStatusItem(statusItem) }
+        let button = try XCTUnwrap(statusItem.button)
+
+        StatusItemFactory.applyGauges(
+            [
+                MenuBarGauge(provider: .claude, label: "AI",
+                             fraction: 0.86, windowKind: .fiveHour, inUse: true),
+                MenuBarGauge(provider: .chatGPT, label: "ChatGPT",
+                             fraction: 0.13, windowKind: .weekly, inUse: false)
+            ],
+            displaysRemaining: false,
+            keepAwake: .held(.manual(until: nil)),
+            to: button
+        )
+
+        XCTAssertEqual(button.attributedTitle.string, attachmentChar + attachmentChar + attachmentChar)
+        let eye = try XCTUnwrap(
+            button.attributedTitle.attribute(.attachment, at: 2, effectiveRange: nil) as? NSTextAttachment
+        )
+        XCTAssertNotNil(eye.image, "the eye has no image")
+        // The last ring now trails kern too; the eye is what stays flush.
+        XCTAssertEqual(button.attributedTitle.attribute(.kern, at: 1, effectiveRange: nil) as? CGFloat, 3)
+        XCTAssertNil(button.attributedTitle.attribute(.kern, at: 2, effectiveRange: nil))
+        XCTAssertEqual(button.imagePosition, .noImage)
+        XCTAssertEqual(
+            button.toolTip,
+            "Ration — Claude AI 5h 86% used (in use)"
+                + " · ChatGPT weekly 13% used"
+                + " · Mac kept awake until you turn it off"
+        )
+        XCTAssertEqual(button.accessibilityLabel(), button.toolTip)
+    }
+
+    /// Rings off (or none to show) but kept awake: the icon stays and the
+    /// eye sits beside it, so the hold is visible from the menu bar alone.
+    func testKeptAwakeWithoutRingsPutsTheEyeBesideTheIcon() throws {
+        let statusBar = NSStatusBar.system
+        let statusItem = StatusItemFactory.make(in: statusBar)
+        defer { statusBar.removeStatusItem(statusItem) }
+        let button = try XCTUnwrap(statusItem.button)
+
+        StatusItemFactory.applyGauges([], displaysRemaining: false, keepAwake: .held(.automatic), to: button)
+
+        XCTAssertEqual(button.attributedTitle.string, attachmentChar)
+        XCTAssertEqual(button.imagePosition, .imageLeading)
+        XCTAssertNotNil(button.image)
+        XCTAssertEqual(button.toolTip, "Ration — Mac kept awake while an account is in use")
+        XCTAssertEqual(button.accessibilityLabel(), button.toolTip)
+
+        StatusItemFactory.applyGauges([], displaysRemaining: false, keepAwake: .hidden, to: button)
+
+        XCTAssertEqual(button.attributedTitle.string, "")
+        XCTAssertEqual(button.imagePosition, .imageOnly)
+        XCTAssertEqual(button.toolTip, "Ration")
+    }
+
+    /// Keep awake on but nothing held: the outline eye is there (the switch
+    /// is on, like the popover's footer) and the tooltip says nothing of a
+    /// hold, because there is none.
+    func testTheIdleEyeShowsWhileKeepAwakeIsOnWithoutAHold() throws {
+        let statusBar = NSStatusBar.system
+        let statusItem = StatusItemFactory.make(in: statusBar)
+        defer { statusBar.removeStatusItem(statusItem) }
+        let button = try XCTUnwrap(statusItem.button)
+
+        StatusItemFactory.applyGauges(
+            [MenuBarGauge(provider: .claude, label: "AI", fraction: 0.5, windowKind: .fiveHour, inUse: false)],
+            displaysRemaining: false,
+            keepAwake: .idle,
+            to: button
+        )
+
+        XCTAssertEqual(button.attributedTitle.string, attachmentChar + attachmentChar, "ring, then the outline eye")
+        XCTAssertEqual(button.imagePosition, .noImage)
+        XCTAssertEqual(button.toolTip, "Ration — Claude AI 5h 50% used")
+        XCTAssertEqual(button.accessibilityLabel(), button.toolTip)
+
+        StatusItemFactory.applyGauges([], displaysRemaining: false, keepAwake: .idle, to: button)
+
+        XCTAssertEqual(button.attributedTitle.string, attachmentChar)
+        XCTAssertEqual(button.imagePosition, .imageLeading)
+        XCTAssertEqual(button.toolTip, "Ration")
+    }
+
+    /// The eye is drawn, and drawn in its state's colour — the quiet grey at
+    /// rest, the reset blue while held (gold is Claude's ring colour) —
+    /// resolved for the bar's own appearance, light or dark.
+    func testKeepAwakeImageRasterizesItsStateColoursInBothAppearances() throws {
+        let states: [(KeepAwakeEye, NSColor, String)] = [
+            (.idle, Theme.creamDimNS, "idle"),
+            (.held(.manual(until: nil)), Theme.resetAccentNS, "held"),
+        ]
+        for name in [NSAppearance.Name.darkAqua, .aqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            for (eye, token, label) in states {
+                let image = StatusItemFactory.keepAwakeImage(eye, appearance: appearance)
+                let (count, average) = try Self.opaquePixels(of: image)
+                XCTAssertGreaterThan(count, 10, "\(name.rawValue) \(label): the eye draws something")
+                var expected = NSColor.black
+                appearance.performAsCurrentDrawingAppearance {
+                    expected = token.usingColorSpace(.deviceRGB) ?? .black
+                }
+                XCTAssertEqual(average.redComponent, expected.redComponent, accuracy: 0.06, "\(name.rawValue) \(label)")
+                XCTAssertEqual(average.greenComponent, expected.greenComponent, accuracy: 0.06, "\(name.rawValue) \(label)")
+                XCTAssertEqual(average.blueComponent, expected.blueComponent, accuracy: 0.06, "\(name.rawValue) \(label)")
+            }
+        }
+    }
+
+    /// Draws `image` at 3× (the outline eye's strokes are under a pixel wide
+    /// at 1×) and averages its fully opaque pixels.
+    private static func opaquePixels(of image: NSImage) throws -> (count: Int, average: NSColor) {
+        let width = Int(image.size.width) * 3, height = Int(image.size.height) * 3
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+        NSGraphicsContext.restoreGraphicsState()
+        var red = 0.0, green = 0.0, blue = 0.0, count = 0
+        for y in 0..<height {
+            for x in 0..<width {
+                guard let color = rep.colorAt(x: x, y: y), color.alphaComponent > 0.95 else { continue }
+                red += color.redComponent
+                green += color.greenComponent
+                blue += color.blueComponent
+                count += 1
+            }
+        }
+        guard count > 0 else { return (0, .clear) }
+        let n = Double(count)
+        return (count, NSColor(deviceRed: red / n, green: green / n, blue: blue / n, alpha: 1))
+    }
+
     func testApplyNoGaugesCollapsesToIconOnly() throws {
         let statusBar = NSStatusBar.system
         let statusItem = StatusItemFactory.make(in: statusBar)

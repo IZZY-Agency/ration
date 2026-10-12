@@ -97,6 +97,18 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
     let typeSafeSpend: TypeSafeSpend?
     /// TypeSafe's per-day usage. nil = not read this fetch; carried forward.
     let typeSafeDailyUsage: TypeSafeDailyUsage?
+    /// Who the ChatGPT web session was, read by this very fetch (the same
+    /// `/api/auth/session` read that authorised the usage request) — IN
+    /// MEMORY ONLY, like `organizationID`: absent from `CodingKeys`, so it is
+    /// never encoded and decodes as nil. nil = no identity this fetch (signed
+    /// out, reauthenticating, or a session without both ids); never carried
+    /// forward, so a stale identity cannot sit beside fresh usage.
+    let chatGPTIdentity: ChatGPTIdentity?
+    /// Windows this fetch saw reported but could not read (no used percent
+    /// or reset time: maybe a legitimate "no limit", maybe not) — IN MEMORY
+    /// ONLY, like `chatGPTIdentity`: never encoded, empty after a decode. The
+    /// Codex rule treats such a kind as unknown, never as absent.
+    let unreadableWindowKinds: Set<UsageWindowKind>
 
     enum CodingKeys: String, CodingKey {
         case accountID, fetchedAt, fiveHour, weekly, modelWeekly, cursorSpend, resetCredits
@@ -117,7 +129,9 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         usageCreditsEnabled: Bool? = nil,
         codexCredits: CodexCredits? = nil,
         typeSafeSpend: TypeSafeSpend? = nil,
-        typeSafeDailyUsage: TypeSafeDailyUsage? = nil
+        typeSafeDailyUsage: TypeSafeDailyUsage? = nil,
+        chatGPTIdentity: ChatGPTIdentity? = nil,
+        unreadableWindowKinds: Set<UsageWindowKind> = []
     ) {
         self.accountID = accountID
         self.fetchedAt = fetchedAt
@@ -133,6 +147,8 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         self.codexCredits = codexCredits
         self.typeSafeSpend = typeSafeSpend
         self.typeSafeDailyUsage = typeSafeDailyUsage
+        self.chatGPTIdentity = chatGPTIdentity
+        self.unreadableWindowKinds = unreadableWindowKinds
     }
 
     init(from decoder: any Decoder) throws {
@@ -153,6 +169,8 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         typeSafeDailyUsage = (try? c.decodeIfPresent(TypeSafeDailyUsage.self, forKey: .typeSafeDailyUsage)) ?? nil
         organizationID = nil
         planDetection = nil
+        chatGPTIdentity = nil
+        unreadableWindowKinds = []
     }
 
     func window(for kind: UsageWindowKind) -> UsageWindow? {
@@ -214,6 +232,18 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         replacing(resetCredits: resetCredits, usageCredits: usageCredits, usageCreditsEnabled: usageCreditsEnabled, codexCredits: credits, typeSafeSpend: typeSafeSpend)
     }
 
+    /// Same snapshot, different ChatGPT session identity.
+    func replacingChatGPTIdentity(_ identity: ChatGPTIdentity?) -> UsageSnapshot {
+        UsageSnapshot(
+            accountID: accountID, fetchedAt: fetchedAt, fiveHour: fiveHour, weekly: weekly,
+            modelWeekly: modelWeekly, cursorSpend: cursorSpend, organizationID: organizationID,
+            resetCredits: resetCredits, planDetection: planDetection, usageCredits: usageCredits,
+            usageCreditsEnabled: usageCreditsEnabled, codexCredits: codexCredits,
+            typeSafeSpend: typeSafeSpend, typeSafeDailyUsage: typeSafeDailyUsage,
+            chatGPTIdentity: identity, unreadableWindowKinds: unreadableWindowKinds
+        )
+    }
+
     /// The one rebuild every `replacing…` goes through, so a new field is
     /// added in one place and none of them can drop it.
     private func replacing(
@@ -238,7 +268,9 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
             usageCreditsEnabled: usageCreditsEnabled,
             codexCredits: codexCredits,
             typeSafeSpend: typeSafeSpend,
-            typeSafeDailyUsage: typeSafeDailyUsage ?? self.typeSafeDailyUsage
+            typeSafeDailyUsage: typeSafeDailyUsage ?? self.typeSafeDailyUsage,
+            chatGPTIdentity: chatGPTIdentity,
+            unreadableWindowKinds: unreadableWindowKinds
         )
     }
 
@@ -249,7 +281,8 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
             modelWeekly: modelWeekly, cursorSpend: cursorSpend, organizationID: organizationID,
             resetCredits: resetCredits, planDetection: planDetection, usageCredits: usageCredits,
             usageCreditsEnabled: usageCreditsEnabled, codexCredits: codexCredits,
-            typeSafeSpend: typeSafeSpend, typeSafeDailyUsage: usage
+            typeSafeSpend: typeSafeSpend, typeSafeDailyUsage: usage,
+            chatGPTIdentity: chatGPTIdentity, unreadableWindowKinds: unreadableWindowKinds
         )
     }
 }

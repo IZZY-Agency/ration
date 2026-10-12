@@ -4,7 +4,7 @@ import XCTest
 final class APIOrgSettingsCopyTests: XCTestCase {
     private let locales = ["en", "fr", "uk"].map(Locale.init(identifier:))
     private let errors: [APIOrgEditError] = [
-        .invalidKey, .regularKey(.anthropic), .regularKey(.openAI), .duplicate(label: "IZZY"), .secondOpenAIWithoutIdentity,
+        .invalidKey, .regularKey(.anthropic), .regularKey(.openAI), .duplicate(label: "Client"), .secondOpenAIWithoutIdentity,
         .identityMismatch, .replaceUnavailable, .busy, .validation(.keyRejected), .keychain(.keyMissing), .saveFailed,
     ]
 
@@ -23,7 +23,7 @@ final class APIOrgSettingsCopyTests: XCTestCase {
             XCTAssertTrue(APIOrgEditError.regularKey(.anthropic).message(locale: locale).contains("Claude Console"))
             XCTAssertTrue(APIOrgEditError.regularKey(.openAI).message(locale: locale).contains("OpenAI Platform"))
         }
-        XCTAssertTrue(APIOrgEditError.duplicate(label: "IZZY").message(locale: Locale(identifier: "en")).contains("IZZY"))
+        XCTAssertTrue(APIOrgEditError.duplicate(label: "Client").message(locale: Locale(identifier: "en")).contains("Client"))
     }
 
     /// Token counts in the org pane follow the app language, like its dollars.

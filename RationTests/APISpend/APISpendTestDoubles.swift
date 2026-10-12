@@ -7,7 +7,7 @@ final class FakeSpendClient: APISpendClient, @unchecked Sendable {
     private let lock = NSLock()
     var costResults: [Result<APICostReport, APISpendError>] = []
     var tokenResults: [Result<APITokenReport, APISpendError>] = []
-    var identityResult: Result<OrgIdentity?, APISpendError> = .success(OrgIdentity(id: "org-1", name: "IZZY"))
+    var identityResult: Result<OrgIdentity?, APISpendError> = .success(OrgIdentity(id: "org-1", name: "Client"))
     private(set) var costCalls = 0
     private(set) var keysSeen: [String] = []
     var suspendNextCost = false

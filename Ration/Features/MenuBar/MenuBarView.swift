@@ -71,6 +71,14 @@ struct MenuBarView: View {
     /// `AppSettingsData.popoverLayout`. Focus replaces the card list with
     /// `FocusView`; header, banners and footer are shared.
     var layout: PopoverLayout = .standard
+    /// `AppModel.keepAwakeStatus`: the banner and the footer glyph's fill.
+    var keepAwake: KeepAwakeStatus = .off
+    /// The footer's Keep awake menu: start an override of that length.
+    var onStartKeepAwake: (KeepAwakeDuration) -> Void = { _ in }
+    var onStopKeepAwake: () -> Void = {}
+    /// `FeatureSwitches.keepAwakeEffective`: off in Settings, the footer's
+    /// eye is disabled — faint, no menu — and its tooltip says why.
+    var keepAwakeAvailable: Bool = true
     /// Focus content AS OF a moment — driven by a `TimelineView`, since IN
     /// USE ages with the clock, which publishes nothing.
     var focusModel: (Date) -> FocusModel = { date in
@@ -94,6 +102,10 @@ struct MenuBarView: View {
     /// Plan value: the line on Claude cards.
     var tokenBurn: TokenBurnModel? = nil
     var onClaudeCodeStatus: () -> Void = {}
+    /// Codex switching (`withCodex`): the CODEX tag and SWITCH on ChatGPT
+    /// cards, the Focus line, and the status line whose click opens Settings.
+    var codex: CodexModel? = nil
+    var onCodexStatus: () -> Void = {}
     /// A click on the header's STALE / OFFLINE word: open Settings on the
     /// account to fix, or refresh everything.
     var onFreshnessAction: (FreshnessHelp.Target) -> Void = { _ in }
@@ -177,6 +189,20 @@ struct MenuBarView: View {
                 } else {
                     EmptyView()
                 }
+            }
+
+            // The reminder that the Mac is being kept awake — gold for the
+            // user's override (easy to forget), quiet for the automatic hold.
+            if let keepAwakeBanner = KeepAwakeCopy.banner(keepAwake) {
+                bannerLabel(
+                    keepAwakeBanner,
+                    symbol: Self.keepAwakeGlyph(keepAwake),
+                    tint: keepAwake == .automatic ? Theme.creamDim : Theme.gold
+                )
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
+                .accessibilityIdentifier("popoverKeepAwakeBanner")
+                Divider().overlay(Theme.line)
             }
 
             if attentionDropSnoozed && !attentionDropShowing {
@@ -597,7 +623,17 @@ struct MenuBarView: View {
     @ViewBuilder
     private var focusBody: some View {
         if let claudeCode {
-            ClaudeCodeReader(model: claudeCode) { focusTimeline }
+            ClaudeCodeReader(model: claudeCode) { codexAwareFocus }
+        } else {
+            codexAwareFocus
+        }
+    }
+
+    /// Observes the Codex model when there is one, for its Focus line.
+    @ViewBuilder
+    private var codexAwareFocus: some View {
+        if let codex {
+            CodexReader(model: codex) { focusTimeline }
         } else {
             focusTimeline
         }
@@ -624,7 +660,15 @@ struct MenuBarView: View {
                     claudeCodeBusy: claudeCode?.isSwitching ?? false,
                     onClaudeCodeSwitch: { [claudeCode] accountID in
                         Task { await claudeCode?.useInClaudeCode(accountID: accountID) }
-                    }
+                    },
+                    codex: codex?.focusLine(now: context.date),
+                    codexBusy: codex?.isSwitching ?? false,
+                    onCodexSwitch: { [codex] accountID in
+                        Task { await codex?.useInCodex(accountID: accountID) }
+                    },
+                    // Whether or not Codex has a login to name.
+                    codexStatus: codexStatus(now: context.date),
+                    onCodexStatus: onCodexStatus
                 )
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -721,7 +765,16 @@ struct MenuBarView: View {
     @ViewBuilder
     private var claudeCodeAwareList: some View {
         if let claudeCode {
-            ClaudeCodeReader(model: claudeCode) { apiAwareList }
+            ClaudeCodeReader(model: claudeCode) { codexAwareList }
+        } else {
+            codexAwareList
+        }
+    }
+
+    @ViewBuilder
+    private var codexAwareList: some View {
+        if let codex {
+            CodexReader(model: codex) { apiAwareList }
         } else {
             apiAwareList
         }
@@ -767,6 +820,9 @@ struct MenuBarView: View {
                                 TokenBurnTotalLineView(text: TokenBurnCopy.totalLine(total, choice: tokenBurn.period))
                             }
                             claudeCodeStatusLine(now: now)
+                        }
+                        if provider == .chatGPT, run.id == runs.first(where: { $0.kind == .provider(.chatGPT) })?.id {
+                            codexStatusLine(now: now)
                         }
                         ForEach(Array(run.subscriptions.enumerated()), id: \.element.id) { index, presentation in
                             accountCard(presentation)
@@ -827,6 +883,11 @@ struct MenuBarView: View {
             onUseInClaudeCode: { [claudeCode] in
                 Task { await claudeCode?.useInClaudeCode(accountID: presentation.id) }
             },
+            codex: codex?.cardState(for: presentation.id) ?? .none,
+            codexBusy: codex?.isSwitching ?? false,
+            onUseInCodex: { [codex] in
+                Task { await codex?.useInCodex(accountID: presentation.id) }
+            },
             planValue: presentation.account.provider == .claude && tokenBurn?.isEnabled == true
                 && providerShow.shows(.tokenBurn, for: .claude)
                 ? TokenBurnCardLine.make(tokenBurn?.values[presentation.id], trackingSince: tokenBurn?.trackingSince,
@@ -846,6 +907,26 @@ struct MenuBarView: View {
            ) {
             ClaudeCodeStatusLineView(line: line, action: onClaudeCodeStatus)
         }
+    }
+
+    /// Under the first ChatGPT section header, as Claude Code's sits under
+    /// Claude's. A login without an email is named by its id, never dropped.
+    @ViewBuilder
+    private func codexStatusLine(now: Date) -> some View {
+        if let line = codexStatus(now: now) {
+            CodexStatusLineView(line: line, action: onCodexStatus)
+        }
+    }
+
+    /// The one Codex status line, for the list and for Focus.
+    private func codexStatus(now: Date) -> CodexStatusLine? {
+        guard let codex else { return nil }
+        return CodexStatusLine.make(
+            state: codex.state,
+            rememberPrompt: codex.rememberPrompt.map { $0.email ?? $0.id },
+            label: codex.displayLabel(forSignIn:),
+            now: now
+        )
     }
 
     /// Where a card ends, for the four-card cap.
@@ -888,6 +969,7 @@ struct MenuBarView: View {
         HStack(spacing: 15) {
             footerButton("Add Account", systemImage: "plus", action: onAddAccount)
             footerButton("Refresh", systemImage: "arrow.clockwise", shortcut: "r", action: onRefresh)
+            keepAwakeButton
             footerButton("History", systemImage: "chart.xyaxis.line", action: onHistory)
             footerButton("Settings", systemImage: "gearshape", shortcut: ",", action: onSettings)
             footerButton("About", systemImage: "info.circle", action: onAbout)
@@ -927,6 +1009,54 @@ struct MenuBarView: View {
     static func footerHelp(_ label: String, shortcut: Character?) -> String {
         guard let shortcut else { return label }
         return "\(label) (⌘\(String(shortcut).uppercased()))"
+    }
+
+    /// The footer's eye: open outline while off, filled while a hold is live,
+    /// whatever backs it.
+    static func keepAwakeGlyph(_ status: KeepAwakeStatus) -> String {
+        status == .off ? "eye" : "eye.fill"
+    }
+
+    /// The footer eye's colour: faint while the switch is off in Settings,
+    /// dim at rest, gold while a hold is live.
+    static func keepAwakeTint(_ status: KeepAwakeStatus, available: Bool) -> Color {
+        guard available else { return Theme.creamFaint }
+        return status == .off ? Theme.creamDim : Theme.gold
+    }
+
+    /// Keep awake: a menu of durations behind a footer glyph. While an
+    /// override runs the menu leads with its time left and Stop. The time
+    /// left is read when the menu opens (its content is built then), from
+    /// the pinned instant in snapshots.
+    private var keepAwakeButton: some View {
+        let label: String = KeepAwakeCopy.buttonLabel()
+        return Menu {
+            if case let .manual(until) = keepAwake {
+                if let until {
+                    Text(KeepAwakeCopy.timeLeft(until: until, now: pinnedNow ?? .now))
+                }
+                Button(KeepAwakeCopy.stopTitle(), action: onStopKeepAwake)
+                    .accessibilityIdentifier("popoverKeepAwakeStop")
+                Divider()
+            }
+            ForEach(KeepAwakeDuration.allCases) { duration in
+                Button(duration.title()) { onStartKeepAwake(duration) }
+                    .accessibilityIdentifier("popoverKeepAwake-\(duration.rawValue)")
+            }
+        } label: {
+            Image(systemName: Self.keepAwakeGlyph(keepAwake))
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Self.keepAwakeTint(keepAwake, available: keepAwakeAvailable))
+                .frame(width: 22, height: 22)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .disabled(!keepAwakeAvailable)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("popoverKeepAwakeButton")
+        .help(keepAwakeAvailable ? label : KeepAwakeCopy.offInSettings())
     }
 }
 
@@ -1217,6 +1347,15 @@ extension MenuBarView {
         return copy
     }
 
+    /// Codex switching: the card controls, the Focus line, and the status
+    /// line whose click opens Settings.
+    func withCodex(_ model: CodexModel?, onStatus: @escaping () -> Void) -> MenuBarView {
+        var copy = self
+        copy.codex = model
+        copy.onCodexStatus = onStatus
+        return copy
+    }
+
     func withTokenBurn(_ model: TokenBurnModel?) -> MenuBarView {
         var copy = self
         copy.tokenBurn = model
@@ -1227,6 +1366,14 @@ extension MenuBarView {
 /// Re-renders its content whenever the Claude Code model publishes.
 private struct ClaudeCodeReader<Content: View>: View {
     @ObservedObject var model: ClaudeCodeModel
+    @ViewBuilder let content: () -> Content
+
+    var body: some View { content() }
+}
+
+/// Re-renders its content whenever the Codex model publishes.
+private struct CodexReader<Content: View>: View {
+    @ObservedObject var model: CodexModel
     @ViewBuilder let content: () -> Content
 
     var body: some View { content() }

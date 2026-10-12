@@ -109,9 +109,9 @@ final class APISpendClientTests: XCTestCase {
     }
 
     func testAnthropicIdentityFromMe() async throws {
-        StubURLProtocol.enqueue("/v1/organizations/me", .init(body: Data(#"{"type":"organization","id":"org-1","name":"IZZY"}"#.utf8)))
+        StubURLProtocol.enqueue("/v1/organizations/me", .init(body: Data(#"{"type":"organization","id":"org-1","name":"Client"}"#.utf8)))
         let identity = try await AnthropicSpendClient(http: http, now: clock()).identity(key: key)
-        XCTAssertEqual(identity, OrgIdentity(id: "org-1", name: "IZZY"))
+        XCTAssertEqual(identity, OrgIdentity(id: "org-1", name: "Client"))
     }
 
     func testOpenAIUsesBearerAndReadsTheOrganizationHeader() async throws {

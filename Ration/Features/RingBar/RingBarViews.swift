@@ -63,6 +63,10 @@ struct RingBarSegmentView: View {
         let groups = sources.compactMap(model.group)
         let scale = model.scale
         stack(scale: scale) {
+            // Once, at the head of the bar: the first segment only.
+            if segment == 0, model.keepAwake.isShown {
+                keepAwakeMark(scale: scale)
+            }
             ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
                 if index > 0 { divider(scale: scale) }
                 mark(group.source, scale: scale)
@@ -129,6 +133,28 @@ struct RingBarSegmentView: View {
             }
             .padding(.top, capsule && !model.edge.isVertical ? 6 * scale : 0)
             .accessibilityHidden(true)
+    }
+
+    /// The eye while Keep awake is on — the popover footer's glyph: the
+    /// outline in the quiet grey at rest, the filled eye in the reset accent
+    /// (gold is Claude's) while a hold is live — sized and placed like a
+    /// provider's letter; the capsule gives it a chip like the letter's.
+    /// VoiceOver reads the banner's line while held, the button's name at rest.
+    private func keepAwakeMark(scale: Double) -> some View {
+        let capsule = model.style == .capsules
+        let status = model.keepAwake.status
+        let tint: Color = status == .off ? Theme.creamDim : Theme.resetAccent
+        return Image(systemName: MenuBarView.keepAwakeGlyph(status))
+            .font(.system(size: (capsule ? 10 : 11) * scale, weight: .medium))
+            .foregroundStyle(tint)
+            .frame(width: (capsule ? 18 : 20) * scale, height: (capsule ? 18 : 12) * scale)
+            .background {
+                if capsule {
+                    RoundedRectangle(cornerRadius: 6 * scale).fill(tint.opacity(0.2))
+                }
+            }
+            .padding(.top, capsule && !model.edge.isVertical ? 6 * scale : 0)
+            .accessibilityLabel(KeepAwakeCopy.banner(status) ?? KeepAwakeCopy.buttonLabel())
     }
 
     /// A hairline between providers; each kind has its own glass, so this

@@ -464,7 +464,7 @@ final class AttentionDropModelTests: XCTestCase {
     /// Honest caveat, because it would be easy to over-claim this one: no test
     /// can prove the sort is stable. `sorted` is deterministic, so for any
     /// fixed input it returns a fixed order — removing the discovery-index
-    /// tie-break leaves this test green (verified by mutation). Stability is a
+    /// tie-break leaves this test green. Stability is a
     /// correctness-by-construction property of the comparator, not something
     /// observable from outside for a given input.
     ///

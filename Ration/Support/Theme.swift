@@ -205,6 +205,17 @@ enum Theme {
     /// Label colour on a `claudeCode` fill. Dark: ink; light: white.
     static let onClaudeCodeNS = dynamic(dark: 0x141519, light: 0xFFFFFF)
     static let onClaudeCode = Color(nsColor: onClaudeCodeNS)
+    /// Codex's switch controls: the CODEX tag on the ChatGPT card whose login
+    /// Codex uses, the SWITCH button on the others, the Focus line. Teal,
+    /// clear of the ChatGPT green provider chip on the same card (ΔE76 ≈ 18
+    /// in both appearances) and of Claude Code's lavender. On ink: 9.23 : 1
+    /// dark, 5.14 : 1 light.
+    static let codexNS = dynamic(dark: 0x5FC9C2, light: 0x176D69)
+    static let codex = Color(nsColor: codexNS)
+    /// Label colour on a `codex` fill. Dark: ink (9.23 : 1); light: white
+    /// (6.13 : 1).
+    static let onCodexNS = dynamic(dark: 0x141519, light: 0xFFFFFF)
+    static let onCodex = Color(nsColor: onCodexNS)
 
     // MARK: Fonts (registered PostScript names)
     //

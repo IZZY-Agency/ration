@@ -15,17 +15,17 @@ final class AlertMessageBudgetTests: XCTestCase {
         for (language, phrase) in expected {
             let locale = Locale(identifier: language)
             for lowerBound in [false, true] {
-                let body = AlertMessage.text(for: event(lowerBound: lowerBound, coversToday: false), accountLabel: "IZZY", locale: locale, now: fetched).body
+                let body = AlertMessage.text(for: event(lowerBound: lowerBound, coversToday: false), accountLabel: "Client", locale: locale, now: fetched).body
                 XCTAssertTrue(body.contains(phrase), "\(language) lowerBound=\(lowerBound): \(body)")
             }
-            let covered = AlertMessage.text(for: event(), accountLabel: "IZZY", locale: locale, now: fetched).body
+            let covered = AlertMessage.text(for: event(), accountLabel: "Client", locale: locale, now: fetched).body
             XCTAssertFalse(covered.contains(phrase), "\(language): a report covering today keeps the plain body: \(covered)")
         }
     }
 
     func testPlainCopyNamesLabelThresholdAmountsAndAsOf() {
-        let text = AlertMessage.text(for: event(), accountLabel: "IZZY", locale: en, now: fetched.addingTimeInterval(600))
-        XCTAssertTrue(text.title.contains("IZZY"), text.title)
+        let text = AlertMessage.text(for: event(), accountLabel: "Client", locale: en, now: fetched.addingTimeInterval(600))
+        XCTAssertTrue(text.title.contains("Client"), text.title)
         XCTAssertTrue(text.title.contains("75"), text.title)
         XCTAssertTrue(text.body.contains("$468.20"), text.body)
         XCTAssertTrue(text.body.contains("$600"), text.body)
@@ -33,14 +33,14 @@ final class AlertMessageBudgetTests: XCTestCase {
     }
 
     func testLowerBoundCopySaysAtLeastAndPriorityTier() {
-        let body = AlertMessage.text(for: event(lowerBound: true), accountLabel: "IZZY", locale: en, now: fetched).body
+        let body = AlertMessage.text(for: event(lowerBound: true), accountLabel: "Client", locale: en, now: fetched).body
         XCTAssertTrue(body.lowercased().contains("at least"), body)
         XCTAssertTrue(body.contains("Priority Tier"), body)
     }
 
     func testRedactedCopyHasNoLabelOrNumbers() {
-        let text = AlertMessage.text(for: event(), accountLabel: "IZZY", redacted: true, locale: en)
-        XCTAssertFalse(text.body.contains("IZZY"))
+        let text = AlertMessage.text(for: event(), accountLabel: "Client", redacted: true, locale: en)
+        XCTAssertFalse(text.body.contains("Client"))
         XCTAssertFalse(text.body.contains("$"))
         XCTAssertEqual(text.title, "Ration")
     }

@@ -16,6 +16,9 @@ final class RingBarModel: ObservableObject {
     @Published var style: RingBarStyle = .rail
     @Published var edge: RingBarEdge = .left
     @Published var displaysRemaining = false
+    /// `KeepAwakeEye.forBars`: while Keep awake is on, an eye heads the bar —
+    /// outline at rest, filled blue while a hold is live.
+    @Published var keepAwake: KeepAwakeEye = .hidden
     /// For the gauges' VoiceOver details (reset countdowns); moves by the
     /// minute, so updates within a minute re-render nothing for it.
     @Published var now: Date = .distantPast

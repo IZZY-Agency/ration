@@ -14,6 +14,8 @@ enum SettingsSelection: Hashable {
     case alerts
     /// Claude Code account switching.
     case claudeCode
+    /// Codex account switching.
+    case codex
 
     /// The item to select when the window opens, and after the selected
     /// account is removed: always the General pane.
@@ -42,6 +44,8 @@ enum SettingsSelection: Hashable {
             return .alerts
         case .claudeCode:
             return .claudeCode
+        case .codex:
+            return .codex
         case let .account(id) where accounts.contains(where: { $0.id == id }):
             return .account(id)
         case let .apiOrg(id) where apiOrgIDs.contains(id):

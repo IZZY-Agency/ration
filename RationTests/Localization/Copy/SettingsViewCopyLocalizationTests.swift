@@ -31,9 +31,9 @@ final class SettingsViewCopyLocalizationTests: XCTestCase {
     /// "General" is quoted by the warm-up-off note (Général / «Загальні»):
     /// the sidebar item must carry the same name.
     func testSidebarItemsInEveryLanguage() {
-        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.en), ["General", "Display", "Features", "Warm-up", "Alerts", "Claude Code"])
-        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.fr), ["Général", "Affichage", "Fonctionnalités", "Préchauffage", "Alertes", "Claude Code"])
-        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.uk), ["Загальні", "Відображення", "Функції", "Розігрів", "Сповіщення", "Claude Code"])
+        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.en), ["General", "Display", "Features", "Warm-up", "Alerts", "Claude Code", "Codex"])
+        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.fr), ["Général", "Affichage", "Fonctionnalités", "Préchauffage", "Alertes", "Claude Code", "Codex"])
+        XCTAssertEqual(SettingsSidebar.fixedTitles(locale: L10n.uk), ["Загальні", "Відображення", "Функції", "Розігрів", "Сповіщення", "Claude Code", "Codex"])
         XCTAssertTrue(
             FeatureSwitch.warmUpOffNote(locale: L10n.uk).contains("«\(SettingsSidebar.fixedTitles(locale: L10n.uk)[2])»")
         )
@@ -277,7 +277,7 @@ final class SettingsViewCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(hourHelp.string(in: L10n.uk), "Перемкнути 09:00 для всіх днів")
     }
 
-    // MARK: Cursor spend input (R3)
+    // MARK: Cursor spend input
 
     func testSpendFieldShowsTheLanguagesDecimalSeparator() {
         XCTAssertEqual(CursorSpendFieldParsing.dollarsText(fromCents: 1234, locale: L10n.en), "12.34")

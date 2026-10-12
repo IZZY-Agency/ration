@@ -459,4 +459,57 @@ final class PopoverCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(resource.string(in: L10n.fr), "3 en pause — gérer dans les Réglages")
         XCTAssertEqual(resource.string(in: L10n.uk), "Призупинено: 3 — керувати в Параметрах")
     }
+
+    // MARK: Keep awake
+
+    /// 2026-10-11 15:40:00 UTC.
+    private let keepAwakeUntil = Date(timeIntervalSince1970: 1_791_733_200)
+    private let utc = TimeZone(identifier: "UTC")!
+
+    func testKeepAwakeFooterCopyInEveryLanguage() {
+        XCTAssertEqual(KeepAwakeCopy.buttonLabel(locale: L10n.fr), "Garder éveillé")
+        XCTAssertEqual(KeepAwakeCopy.buttonLabel(locale: L10n.uk), "Не давати заснути")
+        XCTAssertEqual(KeepAwakeCopy.stopTitle(locale: L10n.fr), "Désactiver")
+        XCTAssertEqual(KeepAwakeCopy.stopTitle(locale: L10n.uk), "Вимкнути")
+        XCTAssertEqual(KeepAwakeCopy.offInSettings(locale: L10n.fr), "Garder éveillé est désactivé dans les Réglages")
+        XCTAssertEqual(KeepAwakeCopy.offInSettings(locale: L10n.uk), "«Не давати заснути» вимкнено в Налаштуваннях")
+        XCTAssertEqual(
+            KeepAwakeDuration.allCases.map { $0.title(locale: L10n.fr) },
+            ["30 minutes", "1 heure", "2 heures", "4 heures", "8 heures", "Jusqu'à ce que je l'arrête"]
+        )
+        XCTAssertEqual(
+            KeepAwakeDuration.allCases.map { $0.title(locale: L10n.uk) },
+            ["30 хвилин", "1 година", "2 години", "4 години", "8 годин", "Поки я не вимкну"]
+        )
+        let now = keepAwakeUntil.addingTimeInterval(-(3_600 + 12 * 60))
+        XCTAssertEqual(KeepAwakeCopy.timeLeft(until: keepAwakeUntil, now: now, locale: L10n.fr), "Encore 1\(nb)h 12\(nb)min")
+        XCTAssertEqual(KeepAwakeCopy.timeLeft(until: keepAwakeUntil, now: now, locale: L10n.uk), "Залишилося 1\(nb)год 12\(nb)хв")
+    }
+
+    func testKeepAwakeBannerInEveryLanguage() {
+        XCTAssertEqual(
+            KeepAwakeCopy.banner(.automatic, locale: L10n.fr, timeZone: utc),
+            "Mac maintenu éveillé tant qu'un compte est en cours"
+        )
+        XCTAssertEqual(
+            KeepAwakeCopy.banner(.automatic, locale: L10n.uk, timeZone: utc),
+            "Mac не засне, поки обліковий запис активний"
+        )
+        XCTAssertEqual(
+            KeepAwakeCopy.banner(.manual(until: keepAwakeUntil), locale: L10n.fr, timeZone: utc),
+            "Mac maintenu éveillé jusqu'à 15:40"
+        )
+        XCTAssertEqual(
+            KeepAwakeCopy.banner(.manual(until: keepAwakeUntil), locale: L10n.uk, timeZone: utc),
+            "Mac не засне до 15:40"
+        )
+        XCTAssertEqual(
+            KeepAwakeCopy.banner(.manual(until: nil), locale: L10n.fr, timeZone: utc),
+            "Mac maintenu éveillé jusqu'à ce que vous l'arrêtiez"
+        )
+        XCTAssertEqual(
+            KeepAwakeCopy.banner(.manual(until: nil), locale: L10n.uk, timeZone: utc),
+            "Mac не засне, поки ви не вимкнете"
+        )
+    }
 }

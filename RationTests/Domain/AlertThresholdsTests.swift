@@ -67,8 +67,8 @@ final class AlertThresholdsTests: XCTestCase {
     }
 
     // `SpendThresholds` yields the warning when it is not STRICTLY below
-    // critical — the equality case is the boundary that a `>=` → `>` mutation
-    // would silently pass.
+    // critical — the equality case is the one boundary that tells `>=`
+    // from `>`.
     func testSpendThresholdsDropWarningWhenEqualToCritical() {
         let spend = SpendThresholds(warningCents: 5_000, criticalCents: 5_000)
         XCTAssertNil(spend.warningCents)

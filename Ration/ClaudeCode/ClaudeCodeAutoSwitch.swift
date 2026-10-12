@@ -38,7 +38,28 @@ enum ClaudeCodeAutoSwitch {
         rule.kind == .modelWeekly ? [.weekly, .fiveHour, .modelWeekly] : [.weekly, .fiveHour]
     }
 
+    /// Which windows a target must have room on (Codex switch spec §4.5).
+    /// Claude Code: the 5-hour and weekly always (plus Fable for a Fable rule).
+    /// Codex: the weekly always, the 5-hour only when the account reports one —
+    /// ChatGPT often reports only a weekly limit. A reported-but-invalid
+    /// window fails the fetch, and one reported without its numbers is named
+    /// in `UsageSnapshot.unreadableWindowKinds` and counts as unknown, so an
+    /// absent window is truly absent.
+    struct Policy: Equatable, Sendable {
+        /// Missing → unknown usage (Fable: no Fable limit → ineligible).
+        let required: [UsageWindowKind]
+        /// Considered only when reported; then current and below the threshold like a required one.
+        let optional: [UsageWindowKind]
+
+        static func claudeCode(for rule: Rule) -> Policy { Policy(required: consideredKinds(for: rule), optional: []) }
+        static let codex = Policy(required: [.weekly], optional: [.fiveHour])
+    }
+
     static func decide(current: Candidate, others: [Candidate], rule: Rule, now: Date) -> Decision {
+        decide(current: current, others: others, rule: rule, policy: .claudeCode(for: rule), now: now)
+    }
+
+    static func decide(current: Candidate, others: [Candidate], rule: Rule, policy: Policy, now: Date) -> Decision {
         guard current.verified, current.usable, let snapshot = current.snapshot,
               let window = snapshot.window(for: rule.kind),
               UsageEvidence.isCurrent(snapshot: snapshot, windowResetsAt: window.resetsAt, now: now)
@@ -47,17 +68,19 @@ enum ClaudeCodeAutoSwitch {
         guard used * 100 >= Double(rule.percent) else { return .none }
         let usedPercent = Int((used * 100).rounded(.down))
 
-        let kinds = consideredKinds(for: rule)
         let pool = others.filter { $0.verified && !$0.isPaused && $0.signInUUID != current.signInUUID }
         var eligible: [(candidate: Candidate, remaining: Double)] = []
         var unknown = false
         for candidate in pool {
             guard let snapshot = candidate.snapshot else { unknown = true; continue }
-            let missing = kinds.filter { snapshot.window(for: $0) == nil }
-            // A 5-hour or weekly window not reported is unknown usage; no Fable
-            // window means the account has no Fable limit — ineligible.
+            // Reported but unreadable: unknown, never "optional and absent".
+            if !snapshot.unreadableWindowKinds.isDisjoint(with: policy.required + policy.optional) { unknown = true; continue }
+            let missing = policy.required.filter { snapshot.window(for: $0) == nil }
+            // A required 5-hour or weekly window not reported is unknown usage;
+            // no Fable window means the account has no Fable limit — ineligible.
             if missing.contains(where: { $0 != .modelWeekly }) { unknown = true; continue }
             if !missing.isEmpty { continue }
+            let kinds = policy.required + policy.optional.filter { snapshot.window(for: $0) != nil }
             let standing = UsageHeadroom.assess(snapshot, kinds: kinds, now: now)
             if standing.hasUnknown { unknown = true; continue }
             guard candidate.usable, standing.known.count == kinds.count,

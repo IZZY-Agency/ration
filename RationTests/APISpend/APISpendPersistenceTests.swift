@@ -16,7 +16,7 @@ final class APISpendPersistenceTests: XCTestCase {
         let persistence = APISpendPersistence(stateURL: dir.appending(path: "api-spend.json"), snapshotsURL: dir.appending(path: "api-spend-snapshots.json"))
         var state = APISpendState()
         let id = UUID()
-        state.orgs = [APIOrgRecord(id: id, vendor: .anthropic, vendorOrgID: "org-1", label: "IZZY", monthlyBudgetCents: 60_000, isPaused: false, displayOrder: 0, createdAt: Date(timeIntervalSince1970: 0))]
+        state.orgs = [APIOrgRecord(id: id, vendor: .anthropic, vendorOrgID: "org-1", label: "Client", monthlyBudgetCents: 60_000, isPaused: false, displayOrder: 0, createdAt: Date(timeIntervalSince1970: 0))]
         state.memory[id] = BudgetAlertMemory(evaluatedMonthKey: "2026-09", notifiedTier: .warning, dismissedTier: nil)
         state.pendingKeyDeletions = [UUID()]
         let snapshot = state

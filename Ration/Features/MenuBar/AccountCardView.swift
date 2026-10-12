@@ -25,6 +25,10 @@ struct AccountCardView: View {
     var claudeCode: ClaudeCodeCardState = .none
     var claudeCodeBusy = false
     var onUseInClaudeCode: () -> Void = {}
+    /// Codex switching (Codex spec §4.4): the tag or the button, ChatGPT only.
+    var codex: CodexCardState = .none
+    var codexBusy = false
+    var onUseInCodex: () -> Void = {}
     /// Plan value: dollars at API list prices for the chosen period (Claude
     /// cards while the feature is on).
     var planValue: TokenBurnCardLine? = nil
@@ -120,6 +124,12 @@ struct AccountCardView: View {
                     // The name truncates before the control does.
                     ClaudeCodeCardRow(state: claudeCode, accountLabel: presentation.account.label,
                                       busy: claudeCodeBusy, action: onUseInClaudeCode)
+                        .fixedSize()
+                        .layoutPriority(1)
+                }
+                if codex != .none {
+                    CodexCardRow(state: codex, accountLabel: presentation.account.label,
+                                 busy: codexBusy, action: onUseInCodex)
                         .fixedSize()
                         .layoutPriority(1)
                 }

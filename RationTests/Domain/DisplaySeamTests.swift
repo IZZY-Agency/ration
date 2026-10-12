@@ -17,7 +17,7 @@ final class DisplaySeamTests: XCTestCase {
 
     func testAPIRowHasNoAccountIDAndDistinctIdentity() {
         let id = UUID()
-        let api = AttentionRow(owner: .apiOrg(id), accountLabel: "IZZY", source: .api(.anthropic), subject: .apiBudget, tier: .warning,
+        let api = AttentionRow(owner: .apiOrg(id), accountLabel: "Client", source: .api(.anthropic), subject: .apiBudget, tier: .warning,
                                usedPercent: 78, spentCents: 46_820, thresholdPercent: 75, thresholdCents: nil, resetsAt: nil,
                                resetCount: nil, resetCreditIDs: [], budgetCents: 60_000, isLowerBound: false)
         XCTAssertNil(api.accountID)

@@ -110,6 +110,8 @@ final class FeatureSwitchesTests: XCTestCase {
         XCTAssertEqual(decoded.features, FeatureSwitches(resets: false, switchAdvice: true, warmUp: true, inUse: false))
     }
 
+    /// Each switch flipped away from its default moves alone, survives a
+    /// reload, and flipping it back restores the defaults.
     func testEachSwitchPersistsAndReloadsIndependently() async throws {
         for feature in FeatureSwitch.allCases {
             let directory = try makeTemporaryDirectory()
@@ -117,19 +119,70 @@ final class FeatureSwitchesTests: XCTestCase {
             let fileURL = directory.appending(path: "settings.json")
             let store = AppSettings(fileURL: fileURL)
             try await store.load()
+            let defaultValue = feature.isOn(in: .allOn)
 
-            try await store.setFeature(feature, enabled: false)
+            try await store.setFeature(feature, enabled: !defaultValue)
 
             for other in FeatureSwitch.allCases {
-                XCTAssertEqual(other.isOn(in: store.features), other != feature, "\(feature) → \(other)")
+                let expected = other == feature ? !defaultValue : other.isOn(in: .allOn)
+                XCTAssertEqual(other.isOn(in: store.features), expected, "\(feature) → \(other)")
             }
             let restored = AppSettings(fileURL: fileURL)
             try await restored.load()
             XCTAssertEqual(restored.features, store.features, "\(feature)")
 
-            try await restored.setFeature(feature, enabled: true)
-            XCTAssertEqual(restored.features, .allOn, "\(feature) back on")
+            try await restored.setFeature(feature, enabled: defaultValue)
+            XCTAssertEqual(restored.features, .allOn, "\(feature) back to its default")
         }
+    }
+
+    // MARK: Keep awake
+
+    /// The one switch that starts OFF: it changes the Mac's behaviour beyond
+    /// the app. Missing or malformed → off, without costing other settings.
+    func testKeepAwakeStartsOffAndDecodesLeniently() throws {
+        XCTAssertFalse(FeatureSwitches.allOn.keepAwake)
+        XCTAssertFalse(AppSettingsData().featureKeepAwakeEnabled)
+        let on = try JSONDecoder().decode(AppSettingsData.self, from: Data(#"{"featureKeepAwakeEnabled":true}"#.utf8))
+        XCTAssertTrue(on.features.keepAwake)
+        let malformed = try JSONDecoder().decode(
+            AppSettingsData.self,
+            from: Data(#"{"featureKeepAwakeEnabled":"yes","popoverLayout":"focus"}"#.utf8)
+        )
+        XCTAssertFalse(malformed.features.keepAwake)
+        XCTAssertEqual(malformed.popoverLayout, .focus, "one bad switch must not cost the other settings")
+    }
+
+    func testKeepAwakeSwitchPersistsAndPublishes() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appending(path: "settings.json")
+        let store = AppSettings(fileURL: fileURL)
+        try await store.load()
+        var received: [Bool] = []
+        let cancellable = store.featuresPublisher.sink { received.append($0.keepAwake) }
+        defer { cancellable.cancel() }
+
+        try await store.setFeature(.keepAwake, enabled: true)
+
+        XCTAssertEqual(received, [false, true])
+        XCTAssertTrue(store.features.keepAwake)
+        let reloaded = AppSettings(fileURL: fileURL)
+        try await reloaded.load()
+        XCTAssertTrue(reloaded.features.keepAwake)
+    }
+
+    func testKeepAwakeIsTheLastSwitchAndNeedsInUse() {
+        XCTAssertEqual(FeatureSwitch.allCases, [.switchAdvice, .warmUp, .inUse, .keepAwake])
+        var features = FeatureSwitches.allOn
+        features.keepAwake = true
+        XCTAssertTrue(FeatureSwitch.keepAwake.isAvailable(in: features))
+        XCTAssertTrue(features.keepAwakeEffective)
+
+        features.inUse = false
+        XCTAssertFalse(FeatureSwitch.keepAwake.isAvailable(in: features))
+        XCTAssertFalse(features.keepAwakeEffective)
+        XCTAssertTrue(FeatureSwitch.keepAwake.isOn(in: features), "the stored choice is kept")
     }
 
     func testFeaturesPublisherEmitsCurrentThenChanges() async throws {
@@ -157,7 +210,7 @@ final class FeatureSwitchesTests: XCTestCase {
         XCTAssertFalse(features.switchAdviceEffective)
         XCTAssertFalse(FeatureSwitch.switchAdvice.isAvailable(in: features))
         XCTAssertTrue(FeatureSwitch.switchAdvice.isOn(in: features), "the stored choice is kept")
-        for other in FeatureSwitch.allCases where other != .switchAdvice {
+        for other in FeatureSwitch.allCases where other != .switchAdvice && other != .keepAwake {
             XCTAssertTrue(other.isAvailable(in: features))
         }
 
@@ -168,12 +221,15 @@ final class FeatureSwitchesTests: XCTestCase {
 
     func testFeaturesSectionTitleAndCopy() {
         XCTAssertTrue(SettingsSectionTitle.all.contains("Features"))
-        XCTAssertEqual(FeatureSwitch.allCases.map(\.title), ["Switch suggestions", "Claude warm-up", "In-use detection"])
+        XCTAssertEqual(
+            FeatureSwitch.allCases.map(\.title),
+            ["Switch suggestions", "Claude warm-up", "In-use detection", "Keep awake"]
+        )
         for feature in FeatureSwitch.allCases {
             XCTAssertFalse(feature.summary.isEmpty)
             XCTAssertFalse(feature.summary.contains("\n"), "one line")
         }
-        XCTAssertEqual(FeatureSwitch.switchAdviceNeedsInUseNote, "Needs in-use detection")
+        XCTAssertEqual(FeatureSwitch.needsInUseNote, "Needs in-use detection")
         XCTAssertEqual(FeatureSwitch.warmUpOffNote, "Warm-up is off in Features")
     }
 

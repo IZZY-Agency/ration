@@ -299,9 +299,8 @@ final class AppModelResetCreditsTests: XCTestCase {
         // `expiryHandled` to true from data it never told the user about,
         // and the genuine first fresh read after relaunch would then stay
         // silent. This is the exact scenario the `prime ? nil :` gate in
-        // `decideAlerts` exists for — see mutation-check evidence in the
-        // task report for confirmation this test actually reaches that gate
-        // (unlike its predecessor, which passed with or without it).
+        // `decideAlerts` exists for, and this test reaches that gate: it
+        // fails without it.
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = try makeAlertsFixture(directory: directory)
