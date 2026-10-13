@@ -41,6 +41,11 @@ final class MenuBarController: NSObject {
     private let hotKeyRegistrar: any GlobalHotKeyRegistering
     private let popoverPin: AccountPinSnapshot
     private let fallbackPin: AccountPinSnapshot
+    /// How tall each surface may be on the screen it opens on — one per
+    /// surface, like the pins: the popover and the ⌥⌘U window can open on
+    /// different screens.
+    private let popoverRoom = PopoverRoom()
+    private let fallbackRoom = PopoverRoom()
     private var hotKeyController: GlobalHotKeyController?
     private var fallbackWindowController: NSWindowController?
     private var addAccountWindowController: NSWindowController?
@@ -77,6 +82,9 @@ final class MenuBarController: NSObject {
     /// Whether the status item sits in the menu bar where a popover can hang
     /// from it. Nil: ask the real geometry.
     private let statusItemIsAnchoredOverride: (() -> Bool)?
+    /// The visible frame of the screen a surface opens on, for both surfaces.
+    /// Nil: ask the real screens.
+    private let screenVisibleFrameOverride: (() -> NSRect)?
     private var attentionPresenceCancellable: AnyCancellable?
     private var inUseCancellables: Set<AnyCancellable> = []
     /// Test seam: the periodic tick that expires a dot on its own once the
@@ -147,6 +155,7 @@ final class MenuBarController: NSObject {
         // An ordinary Quit: it drops a pending relaunch first.
         terminateApp: @escaping () -> Void = { AppRelauncher.shared.quitWithoutRelaunch() },
         statusItemIsAnchored: (() -> Bool)? = nil,
+        screenVisibleFrame: (() -> NSRect)? = nil,
         popoverKeyCode: @escaping @MainActor (PopoverShortcut) -> UInt32 = ShortcutKeyCodeResolver.liveKeyCode,
         makeRingBar: @escaping @MainActor (RingBarActions) -> (any RingBarPresenting)? = {
             RingBarController.makeForProduction(actions: $0)
@@ -170,6 +179,7 @@ final class MenuBarController: NSObject {
         }
         self.terminateApp = terminateApp
         self.statusItemIsAnchoredOverride = statusItemIsAnchored
+        self.screenVisibleFrameOverride = screenVisibleFrame
         self.popoverKeyCode = popoverKeyCode
         self.makeRingBar = makeRingBar
         super.init()
@@ -198,7 +208,7 @@ final class MenuBarController: NSObject {
         popover.behavior = .transient
         popover.delegate = self
         popover.contentViewController = NSHostingController(
-            rootView: makeMenuBarContent(pinSnapshot: popoverPin)
+            rootView: makeMenuBarContent(pinSnapshot: popoverPin, room: popoverRoom)
         )
         popover.appearance = popoverAppearance()
         // The popover chrome is translucent Liquid Glass: its appearance
@@ -325,17 +335,20 @@ final class MenuBarController: NSObject {
             ) {
                 capturePin(fallbackPin)
             }
+            fallbackRoom.update(visibleFrame: fallbackVisibleFrame(fallbackWindowController.window))
             focus(fallbackWindowController)
             return
         }
 
         capturePin(fallbackPin)
+        // Before the window exists, so its first layout already fits.
+        fallbackRoom.update(visibleFrame: fallbackVisibleFrame(nil))
         let controller = makeWindowController(
             title: "Ration",
             defaultSize: NSSize(width: 400, height: 470),
             minimumSize: NSSize(width: 400, height: 320),
             styleMask: standardWindowStyle,
-            rootView: makeMenuBarContent(pinSnapshot: fallbackPin)
+            rootView: makeMenuBarContent(pinSnapshot: fallbackPin, room: fallbackRoom)
         )
         fallbackWindowController = controller
         observeClose(of: controller) { [weak self, weak controller] in
@@ -343,6 +356,14 @@ final class MenuBarController: NSObject {
             self?.fallbackWindowController = nil
         }
         focus(controller)
+    }
+
+    /// The visible frame of the screen the ⌥⌘U window shows on: its own
+    /// screen once it has one, else the main screen, where a new window is
+    /// centred.
+    private func fallbackVisibleFrame(_ window: NSWindow?) -> NSRect {
+        if let screenVisibleFrameOverride { return screenVisibleFrameOverride() }
+        return (window?.screen ?? NSScreen.main)?.visibleFrame ?? currentVisibleFrame()
     }
 
     /// Wires the in-use dots to everything that can change them: a new burn
@@ -934,6 +955,9 @@ final class MenuBarController: NSObject {
     /// `popoverDidShow`, so a show AppKit never performs claims nothing.
     private func presentPopover(from button: NSStatusBarButton) {
         capturePin(popoverPin)
+        // The room on the status item's screen, asked on every show: the
+        // menu bar the user clicked can be on another screen than last time.
+        popoverRoom.update(visibleFrame: screenVisibleFrameOverride?() ?? currentVisibleFrame())
         popover.appearance = popoverAppearance()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
@@ -1144,6 +1168,7 @@ final class MenuBarController: NSObject {
     var settingsWindowForTesting: NSWindow? { settingsWindowController?.window }
 
     var hasFallbackWindow: Bool { fallbackWindowController != nil }
+    var fallbackWindowForTesting: NSWindow? { fallbackWindowController?.window }
 
     /// Test seam: a click on a drop row.
     func openPopoverFromDropForTesting() {
@@ -1262,7 +1287,11 @@ final class MenuBarController: NSObject {
     }
 
     /// Internal, not private: tests check the models reach the popover.
-    func makeMenuBarContent(pinSnapshot: AccountPinSnapshot) -> MenuBarContent {
+    /// `room`: the surface's own (`popoverRoom`, `fallbackRoom`).
+    func makeMenuBarContent(
+        pinSnapshot: AccountPinSnapshot,
+        room: PopoverRoom = PopoverRoom()
+    ) -> MenuBarContent {
         MenuBarContent(
             model: model,
             history: model.history,
@@ -1302,7 +1331,8 @@ final class MenuBarController: NSObject {
             apiSpend: apiSpend,
             claudeCode: claudeCode,
             codex: codex,
-            appRefresh: appRefresh
+            appRefresh: appRefresh,
+            room: room
         )
     }
 

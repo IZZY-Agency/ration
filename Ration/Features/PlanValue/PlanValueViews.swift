@@ -1,24 +1,6 @@
 import Charts
 import SwiftUI
 
-/// Plan value on a Claude card: dollars at API list prices for the period
-/// chosen in Settings.
-struct TokenBurnCardLine: Equatable {
-    let text: String
-    let hasUse: Bool
-
-    static func make(_ values: TokenBurnAccountValues?, trackingSince: Date?, grantLost: Bool = false,
-                     locale: Locale = .current) -> TokenBurnCardLine? {
-        // A lost grant is said on the card too: its figure stopped moving.
-        if grantLost {
-            return TokenBurnCardLine(text: LocalizedStringResource.tokenBurnCardGrantLost.string(in: locale), hasUse: false)
-        }
-        guard let current = values?.current else { return nil }
-        return TokenBurnCardLine(text: TokenBurnCopy.cardLine(current, trackingSince: trackingSince, locale: locale),
-                                 hasUse: current.value.replies > 0)
-    }
-}
-
 /// The popover's line under the Claude header: all Claude Code use in the
 /// period, whichever account it was (exact without tracking).
 struct TokenBurnTotalLineView: View {
@@ -37,16 +19,28 @@ struct TokenBurnTotalLineView: View {
     }
 }
 
-struct TokenBurnCardLineView: View {
-    let line: TokenBurnCardLine
+/// The footer under the Claude accounts: their plan values in one place
+/// (`TokenBurnSectionFooter`), which the compact rows no longer carry.
+/// Wraps rather than clips when several accounts share the line.
+struct TokenBurnSectionFooterView: View {
+    let lines: [String]
 
     var body: some View {
-        Text(line.text)
-            .font(Theme.mono(12))
-            .monospacedDigit()
-            .foregroundStyle(line.hasUse ? Theme.cream : Theme.creamFaint)
-            .lineLimit(1)
-            .accessibilityIdentifier("planValueLine")
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(Theme.mono(12))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.creamDim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, AccountListMetrics.cardInset)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("planValueFooter")
     }
 }
 

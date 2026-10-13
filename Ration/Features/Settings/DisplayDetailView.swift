@@ -19,6 +19,7 @@ struct DisplayDetailView: View {
     var onSetRingBarHidesAtEdge: (Bool) -> Void = { _ in }
     var onSetRingBarScale: (Double) -> Void = { _ in }
     var onSetShows: (GaugeSurface, UUID, Bool) -> Void = { _, _, _ in }
+    var onSetFoldsAccountsNotInUse: (Bool) -> Void = { _ in }
 
     var body: some View {
         Form {
@@ -33,6 +34,15 @@ struct DisplayDetailView: View {
                 .accessibilityIdentifier("popoverLayoutPicker")
 
                 Text("Focus shows the account you're on as one number, where to go next, and the rest in a line. Applies to the popover and the ⌥⌘U window.")
+                    .font(Theme.mono(12))
+                    .foregroundStyle(Theme.creamDim)
+
+                Toggle(isOn: Self.foldBinding(settings: settings, onSet: onSetFoldsAccountsNotInUse)) {
+                    Text(LocalizedStringResource.settingsPopoverFoldAccounts)
+                }
+                .accessibilityIdentifier("popoverFoldAccountsToggle")
+
+                Text(LocalizedStringResource.settingsPopoverFoldAccountsNote)
                     .font(Theme.mono(12))
                     .foregroundStyle(Theme.creamDim)
 
@@ -198,6 +208,12 @@ struct DisplayDetailView: View {
     /// bar, so they stay while either is on.
     static func showsSharedGaugeRows(_ settings: AppSettings) -> Bool {
         settings.wantsGauges
+    }
+
+    /// "Fold accounts not in use": reads the published setting, writes only
+    /// through the callback (which persists via `AppModel`).
+    static func foldBinding(settings: AppSettings, onSet: @escaping (Bool) -> Void) -> Binding<Bool> {
+        Binding(get: { settings.popoverFoldsAccountsNotInUse }, set: { onSet($0) })
     }
 
     /// The Layout picker's selection: reads the published setting, writes

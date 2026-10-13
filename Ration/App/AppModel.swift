@@ -2121,6 +2121,16 @@ final class AppModel: ObservableObject {
         try await appSettings.setPopoverLayout(value)
     }
 
+    /// Settings › Display › Popover › Fold accounts not in use.
+    func setPopoverFoldsAccountsNotInUse(_ value: Bool) async throws {
+        try await appSettings.setPopoverFoldsAccountsNotInUse(value)
+    }
+
+    /// A popover row's chevron: remember this account expanded (or not).
+    func setPopoverAccountExpanded(_ id: UUID, _ expanded: Bool) async throws {
+        try await appSettings.setPopoverAccountExpanded(id, expanded)
+    }
+
     /// Settings → General → Features. Presentation/gating only: nothing is
     /// re-evaluated or re-primed here — switch advice recomputes through the
     /// existing settings subscription, everything else reads the switch live.

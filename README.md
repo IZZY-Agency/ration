@@ -25,13 +25,13 @@ shows, from your own signed-in session, on your Mac.
 ## What it does
 
 - **Claude Code account switching.** Move Claude Code to another of your
-  Claude accounts in one click, from the account's card or the Focus layout;
-  open Claude Code sessions follow within 30 seconds, with no new login and no
-  restart. Optionally, switch automatically when the account in use passes a
-  limit you choose (75% of the weekly limit by default), to the remembered
-  account with the most room.
+  Claude accounts in one click, from the account's row in the popover or the
+  Focus layout; open Claude Code sessions follow within 30 seconds, with no
+  new login and no restart. Optionally, switch automatically when the account
+  in use passes a limit you choose (75% of the weekly limit by default), to
+  the remembered account with the most room.
 - **Codex account switching.** Move Codex to another of your ChatGPT accounts
-  in one click, with SWITCH on the account's card or in the Focus layout.
+  in one click, with SWITCH on the account's row or in the Focus layout.
   Optionally, switch automatically when the account in use passes the share
   of its weekly limit you choose (75% by default), to the remembered account
   with the most room. A switch applies to new Codex sessions: restart the
@@ -40,6 +40,11 @@ shows, from your own signed-in session, on your Mac.
 - **Live meters per window.** Claude 5-hour, weekly and Fable weekly (Max
   plans); ChatGPT / Codex 5-hour and weekly; Cursor's usage-based spend for the
   current billing period.
+- **A compact popover.** Each account takes two lines: its name, then every
+  limit as a thin bar with its percent and reset side by side. Accounts you're
+  not using fold to one line around their tightest limit; click one to unfold
+  it. The list grows with your accounts and scrolls only when the screen runs
+  out.
 - **Rings in the menu bar.** One ring per account, filled in the provider's
   colour, with a green dot on the account you are using right now. The Ration
   icon steps aside while rings show.
@@ -55,13 +60,13 @@ shows, from your own signed-in session, on your Mac.
   crossing and re-arms when the window resets. Privacy mode keeps account
   labels and exact usage out of notifications.
 - **Usage-limit resets.** The free resets Claude and Codex give you, with
-  their expiry, on each account card. An alert when one arrives and again a
-  set number of days before it expires. Ration only shows them: you use them
-  on the provider's own page.
-- **Credits.** A Claude account's usage credits (the money that pays for Claude
-  past a plan limit) on its card, marked off when claude.ai won't spend them,
-  with each grant and its expiry in Settings and a warning before one expires;
-  a ChatGPT account's Codex credits on its card.
+  their expiry, under each account in the popover. An alert when one arrives
+  and again a set number of days before it expires. Ration only shows them:
+  you use them on the provider's own page.
+- **Credits.** A Claude account's usage credits (the money that pays for
+  Claude past a plan limit) under the account, marked off when claude.ai won't
+  spend them, with each grant and its expiry in Settings and a warning before
+  one expires; a ChatGPT account's Codex credits under the account.
 - **History.** Daily burn for one account or all of them overlaid, an
   hour-of-day heatmap, and a burn-rate projection.
 - **Billing-cycle utilisation.** How much of the plan you used since your
@@ -89,13 +94,13 @@ shows, from your own signed-in session, on your Mac.
   the work), a breakdown by model and tokens, and daily bars in History.
 - **Keep awake.** Keep awake (off until you turn it on) holds the Mac from
   idle sleep while an account is in use, so an agent run does not end in a
-  sleeping Mac; it applies on the power adapter, the display still sleeps,
-  and a closed lid still sleeps the Mac. The popover's eye holds the Mac for
-  30 minutes to 8 hours, or until you turn it off, whether or not anything
-  is in use, with the display kept on; a banner shows the hold, and it ends
-  with the app or with the switch. While the switch is on, the menu bar and
-  the ring bar carry the same eye: a grey outline at rest, filled blue while
-  the Mac is being kept awake.
+  sleeping Mac; it applies on the power adapter, the display still sleeps, and
+  a closed lid still sleeps the Mac. The popover's eye holds the Mac for 30
+  minutes to 8 hours, or until you turn it off, whether or not anything is in
+  use, with the display kept on; the popover's status strip shows the hold,
+  and it ends with the app or with the switch. While the switch is on, the
+  menu bar and the ring bar carry the same eye: a grey outline at rest, filled
+  blue while the Mac is being kept awake.
 - **Feature switches.** Switch suggestions, Claude warm-up, in-use detection
   and keep awake can each be turned off in Settings, and credits, resets and
   token burn can be shown or hidden per provider; Claude plan value and keep

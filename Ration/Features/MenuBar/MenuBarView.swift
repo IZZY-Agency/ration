@@ -112,9 +112,23 @@ struct MenuBarView: View {
     /// Test seam: draw the header's hover card as if the pointer rested on
     /// the status word.
     var showsFreshnessHelp: Bool = false
+    /// Test seam: draw every banner's message expanded, as after a click on
+    /// its Details.
+    var bannersStartExpanded: Bool = false
     /// Test seam: receives the drawn frames (window coordinates) of the
     /// popover, its header row and the hover card.
     var layoutProbe: PopoverLayoutProbe? = nil
+    /// Settings › Display › Popover › Fold accounts not in use: each
+    /// subscription row that is not in use folds to one line
+    /// (`AccountRowMode`). Off by default here; the app passes the setting.
+    var foldsAccountsNotInUse: Bool = false
+    /// The In-use detection switch. Off: nothing is in use, so nothing folds.
+    var inUseDetection: Bool = true
+    /// Accounts whose folded row the user expanded (remembered in Settings).
+    var expandedAccountIDs: Set<UUID> = []
+    /// A row's chevron (or a click on it): remember the account expanded or
+    /// folded.
+    var onSetAccountExpanded: (UUID, Bool) -> Void = { _, _ in }
 
     /// The pointer is over the status word (its hover highlight).
     @State private var freshnessHovered = false
@@ -130,6 +144,14 @@ struct MenuBarView: View {
     /// Measured, to flip the badge hint above a badge near the bottom edge.
     @State private var popoverHeight: CGFloat = 0
     @State private var badgeHintHeight: CGFloat = 30
+    /// How tall the popover may be on the screen it opens on
+    /// (`MenuBarController` → `MenuBarContent`).
+    @Environment(\.popoverAvailableHeight) private var availableHeight
+    /// The rows above the list (header, switch lines, banners, status strip)
+    /// and below it (footer), as drawn — the popover's chrome, which the list
+    /// makes room for. Nil until measured.
+    @State private var chromeAboveList: CGFloat?
+    @State private var chromeBelowList: CGFloat?
 
     static let popoverWidth: CGFloat = 540
 
@@ -144,119 +166,112 @@ struct MenuBarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            // Everything above the list, measured as one block: the list's
+            // room is what the screen leaves once these rows are drawn, so a
+            // banner that appears or expands takes its height from the list.
+            // None of these rows depends on the list, so pinning the list can
+            // never change this measurement.
+            VStack(spacing: 0) {
+                header
 
-            Divider().overlay(Theme.line)
-
-            // Its own row, never folded into `errorMessage`: this one carries an
-            // action, and an unrelated failure must not be able to hide it.
-            if let profileCleanupBanner {
-                HStack(spacing: 10) {
-                    bannerLabel(profileCleanupBanner)
-
-                    Button("Retry Cleanup", action: onRetryProfileCleanup)
-                        .font(Theme.mono(12))
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Theme.gold)
-                        .help("Delete the leftover profile from the cancelled sign-in")
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
                 Divider().overlay(Theme.line)
-            }
 
-            if let signInQuitPauseBanner {
-                bannerLabel(signInQuitPauseBanner)
+                // Its own row, never folded into `errorMessage`: this one carries an
+                // action, and an unrelated failure must not be able to hide it.
+                if let profileCleanupBanner {
+                    HStack(spacing: 10) {
+                        bannerLabel(profileCleanupBanner)
+
+                        Button("Retry Cleanup", action: onRetryProfileCleanup)
+                            .font(Theme.mono(12))
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Theme.gold)
+                            .help("Delete the leftover profile from the cancelled sign-in")
+                    }
                     .padding(.horizontal, 13)
                     .padding(.vertical, 8)
-                Divider().overlay(Theme.line)
-            }
+                    Divider().overlay(Theme.line)
+                }
 
-            TimelineView(PopoverClock(pinned: pinnedNow)) { context in
-                if let banner = warmUpBanner(context.date) {
-                    VStack(spacing: 0) {
-                        bannerLabel(
-                            banner.message,
-                            symbol: banner.severity == .critical
-                                ? "exclamationmark.triangle.fill"
-                                : "pause.circle.fill",
-                            tint: banner.severity == .critical ? Theme.crit : Theme.gold
-                        )
+                if let signInQuitPauseBanner {
+                    bannerLabel(signInQuitPauseBanner)
                         .padding(.horizontal, 13)
                         .padding(.vertical, 8)
-                        Divider().overlay(Theme.line)
-                    }
-                } else {
-                    EmptyView()
+                    Divider().overlay(Theme.line)
                 }
-            }
 
-            // The reminder that the Mac is being kept awake — gold for the
-            // user's override (easy to forget), quiet for the automatic hold.
-            if let keepAwakeBanner = KeepAwakeCopy.banner(keepAwake) {
-                bannerLabel(
-                    keepAwakeBanner,
-                    symbol: Self.keepAwakeGlyph(keepAwake),
-                    tint: keepAwake == .automatic ? Theme.creamDim : Theme.gold
-                )
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                .accessibilityIdentifier("popoverKeepAwakeBanner")
-                Divider().overlay(Theme.line)
-            }
-
-            if attentionDropSnoozed && !attentionDropShowing {
-                HStack(spacing: 10) {
-                    bannerLabel(
-                        String(localized: LocalizedStringResource.popoverDropSnoozedBanner),
-                        symbol: "bell.badge.slash",
-                        tint: Theme.creamDim
-                    )
-                    Button(action: onShowAttentionDrop) { Text(LocalizedStringResource.popoverDropSnoozedShow) }
-                        .font(Theme.mono(12))
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Theme.gold)
-                        .accessibilityIdentifier("popoverShowAttentionDropButton")
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                Divider().overlay(Theme.line)
-            }
-
-            if let notificationProblem {
-                HStack(spacing: 10) {
-                    bannerLabel(
-                        notificationProblem.popoverBanner,
-                        symbol: "bell.slash.fill",
-                        tint: Theme.warn
-                    )
-
-                    switch notificationProblem {
-                    case .blocked:
-                        Button("Notification Settings", action: onOpenNotificationSettings)
-                            .font(Theme.mono(12))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Theme.gold)
-                            .help(NotificationAccess.openSettingsTitle)
-                    case .needsPermission:
-                        Button(NotificationAccess.allowTitle, action: onAllowNotifications)
-                            .font(Theme.mono(12))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Theme.gold)
-                            .help(NotificationAccess.allowHelp)
-                            .accessibilityIdentifier("popoverAllowNotificationsButton")
+                TimelineView(PopoverClock(pinned: pinnedNow)) { context in
+                    if let banner = warmUpBanner(context.date) {
+                        VStack(spacing: 0) {
+                            bannerLabel(
+                                banner.message,
+                                symbol: banner.severity == .critical
+                                    ? "exclamationmark.triangle.fill"
+                                    : "pause.circle.fill",
+                                tint: banner.severity == .critical ? Theme.crit : Theme.gold
+                            )
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 8)
+                            Divider().overlay(Theme.line)
+                        }
+                    } else {
+                        EmptyView()
                     }
                 }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                Divider().overlay(Theme.line)
-            }
 
-            if let errorMessage {
-                bannerLabel(errorMessage)
+                // One strip for the Mac being kept awake (gold for the user's
+                // override, quiet for the automatic hold) and the snoozed drop
+                // with its "Show now" — a row each, only what applies.
+                if let strip = PopoverStatusStrip.make(
+                    keepAwake: keepAwake,
+                    dropSnoozed: attentionDropSnoozed,
+                    dropShowing: attentionDropShowing
+                ) {
+                    PopoverStatusStripView(strip: strip, onShowAttentionDrop: onShowAttentionDrop)
+                    Divider().overlay(Theme.line)
+                }
+
+                if let notificationProblem {
+                    HStack(spacing: 10) {
+                        bannerLabel(
+                            notificationProblem.popoverBanner,
+                            symbol: "bell.slash.fill",
+                            tint: Theme.warn
+                        )
+
+                        switch notificationProblem {
+                        case .blocked:
+                            Button("Notification Settings", action: onOpenNotificationSettings)
+                                .font(Theme.mono(12))
+                                .buttonStyle(.plain)
+                                .foregroundStyle(Theme.gold)
+                                .help(NotificationAccess.openSettingsTitle)
+                        case .needsPermission:
+                            Button(NotificationAccess.allowTitle, action: onAllowNotifications)
+                                .font(Theme.mono(12))
+                                .buttonStyle(.plain)
+                                .foregroundStyle(Theme.gold)
+                                .help(NotificationAccess.allowHelp)
+                                .accessibilityIdentifier("popoverAllowNotificationsButton")
+                        }
+                    }
                     .padding(.horizontal, 13)
                     .padding(.vertical, 8)
-                Divider().overlay(Theme.line)
+                    Divider().overlay(Theme.line)
+                }
+
+                if let errorMessage {
+                    bannerLabel(errorMessage)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 8)
+                    Divider().overlay(Theme.line)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height in
+                chromeAboveList = height
+                layoutProbe?.chromeAboveList = height
             }
 
             if layout == .focus {
@@ -267,9 +282,16 @@ struct MenuBarView: View {
                 accountList
             }
 
-            Divider().overlay(Theme.line)
-
-            footer
+            VStack(spacing: 0) {
+                Divider().overlay(Theme.line)
+                footer
+            }
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height in
+                chromeBelowList = height
+                layoutProbe?.chromeBelowList = height
+            }
         }
         .frame(width: Self.popoverWidth)
         .background(Theme.ink)
@@ -377,7 +399,7 @@ struct MenuBarView: View {
         symbol: String = "exclamationmark.triangle.fill",
         tint: Color = Theme.crit
     ) -> some View {
-        BannerMessage(message: message, symbol: symbol, tint: tint)
+        BannerMessage(message: message, symbol: symbol, tint: tint, startsExpanded: bannersStartExpanded)
     }
 
     private var header: some View {
@@ -722,33 +744,37 @@ struct MenuBarView: View {
     /// Complete and current: the stack is eager, so this is replaced wholesale
     /// on each layout pass rather than accumulated.
     ///
-    /// The list is capped at the first `AccountListMetrics.maxVisibleCards`
-    /// cards and scrolls past that. A fixed pixel cap cannot express "four
-    /// cards": a Claude card carries three windows and three sparklines while a
-    /// Cursor card is a single spend line, so their heights differ by more than
-    /// a factor of two and any constant would cut one family off mid-card.
+    /// The list takes its natural height and is pinned only when that would
+    /// run the popover past its room on the screen — then to the bottom of
+    /// the last card that fits in what the room leaves once the chrome is
+    /// drawn (`AccountListMetrics.cappedHeight`). A fixed pixel cap could
+    /// not do that: a Claude row carries three gauges and a sparkline while a
+    /// folded row is one line, so any constant cuts some row mid-gauge.
     ///
     /// Bottom EDGE rather than height, because the list is not just cards —
-    /// provider section headers and dividers sit between them. Summing card
-    /// heights left the cap short by exactly those, which showed three cards
-    /// and a sliver of the fourth. An offset already includes everything above
+    /// provider section headers, status lines and dividers sit between them.
+    /// Summing card heights left the cap short by exactly those, which showed
+    /// a sliver of the next card. An offset already includes everything above
     /// it, so nothing has to be enumerated.
     @State private var cardBottoms: [UUID: CGFloat] = [:]
+    /// Where the scroll content ends — past the last card when a section
+    /// footer (Claude's plan values) follows it. Nil until measured.
+    @State private var listContentHeight: CGFloat?
 
     /// The height to pin the list to, or nil to let it size to its content.
-    /// `ordered`: the cards the four-card cap counts, top to bottom.
+    /// `ordered`: every card, top to bottom.
     private func cappedListHeight(_ ordered: [UUID]) -> CGFloat? {
-        // Four or fewer: show them ALL, in full. No cap — a constant here is
-        // what clipped the fourth card mid-sparkline before.
-        guard ordered.count > AccountListMetrics.maxVisibleCards else { return nil }
+        AccountListMetrics.cappedHeight(
+            cardBottoms: ordered.map { cardBottoms[$0] },
+            contentBottom: listContentHeight,
+            available: AccountListMetrics.listAvailableHeight(room: availableHeight, chrome: chrome)
+        )
+    }
 
-        let lastVisible = ordered[AccountListMetrics.maxVisibleCards - 1]
-        // Until it has reported, hold the old fixed cap rather than guessing —
-        // a half-measured list would visibly jump.
-        guard let bottom = cardBottoms[lastVisible] else {
-            return AccountListMetrics.maxListHeight
-        }
-        return bottom
+    /// The popover's chrome as drawn, once both blocks have measured.
+    private var chrome: CGFloat? {
+        guard let chromeAboveList, let chromeBelowList else { return nil }
+        return chromeAboveList + chromeBelowList
     }
 
     /// Observes the API model when there is one, so a Settings drag, a new
@@ -792,8 +818,8 @@ struct MenuBarView: View {
     /// Eager `VStack`, not `LazyVStack`.
     ///
     /// Laziness is worth nothing here — this list is a handful of accounts, not
-    /// a feed — and it actively broke the four-card sizing: a lazy stack builds
-    /// only what is on screen, so the fourth card might never report where it
+    /// a feed — and it actively breaks the sizing: a lazy stack builds only
+    /// what is on screen, so a card below the fold might never report where it
     /// ends and the popover would sit at its fallback height until the user
     /// scrolled. Eager layout makes every card measure itself every pass.
     ///
@@ -806,8 +832,9 @@ struct MenuBarView: View {
                                            apiAccounts: SidebarAccountOrder.apiAccountIDs(presentations))
         let runs = PopoverRuns.make(order: order, presentations: presentations,
                                     apiIDs: apiPresentations.map(\.id), orderingPinByProvider: orderingPinByProvider)
-        // Before a saved order, API cards sit below the cap as they always did.
-        let capped = order == nil ? runs.flatMap { $0.subscriptions.map(\.id) } : PopoverRuns.cardIDs(runs)
+        // Every card counts, API ones included: the question is whether the
+        // whole list fits the screen.
+        let ordered = PopoverRuns.cardIDs(runs)
         return ScrollView {
             VStack(spacing: 0) {
                 ForEach(runs) { run in
@@ -828,6 +855,13 @@ struct MenuBarView: View {
                             accountCard(presentation)
                             if index < run.subscriptions.count - 1 { cardDivider }
                         }
+                        if provider == .claude {
+                            let footer = claudeFooterLines(run.subscriptions)
+                            if !footer.isEmpty {
+                                cardDivider
+                                TokenBurnSectionFooterView(lines: footer)
+                            }
+                        }
                     case .api:
                         // TypeSafe cards (`.account`) need no API spend model.
                         APISpendSectionHeader()
@@ -846,6 +880,11 @@ struct MenuBarView: View {
                     }
                 }
             }
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height in
+                if listContentHeight != height { listContentHeight = height }
+            }
             .padding(.horizontal, AccountListMetrics.listInset)
             .coordinateSpace(name: AccountListMetrics.coordinateSpace)
         }
@@ -855,10 +894,15 @@ struct MenuBarView: View {
             // complete picture. Merging kept entries for accounts that had been
             // removed, and — worse — kept a stale position for an account whose
             // place in the list had changed, so reordering or pinning sized the
-            // popover from where the fourth card USED to end.
+            // popover from where a card USED to end.
             if cardBottoms != bottoms { cardBottoms = bottoms }
         }
-        .modifier(AccountListSizing(cappedHeight: cappedListHeight(capped)))
+        .modifier(AccountListSizing(cappedHeight: cappedListHeight(ordered)))
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { frame in
+            layoutProbe?.list = frame
+        }
     }
 
     private func accountCard(_ presentation: AccountPresentation) -> some View {
@@ -888,12 +932,26 @@ struct MenuBarView: View {
             onUseInCodex: { [codex] in
                 Task { await codex?.useInCodex(accountID: presentation.id) }
             },
-            planValue: presentation.account.provider == .claude && tokenBurn?.isEnabled == true
-                && providerShow.shows(.tokenBurn, for: .claude)
-                ? TokenBurnCardLine.make(tokenBurn?.values[presentation.id], trackingSince: tokenBurn?.trackingSince,
-                                         grantLost: tokenBurn?.phase == .grantLost) : nil
+            inUseDetection: inUseDetection,
+            foldsAccountsNotInUse: foldsAccountsNotInUse,
+            isExpanded: expandedAccountIDs.contains(presentation.id),
+            onSetExpanded: { [onSetAccountExpanded] expanded in
+                onSetAccountExpanded(presentation.id, expanded)
+            }
         )
         .background(bottomReporter(presentation.id))
+    }
+
+    /// The Claude section's footer: the rows' plan values gathered in one
+    /// place (`TokenBurnSectionFooter`), while plan value is on — the same
+    /// gate the cards' own lines had.
+    private func claudeFooterLines(_ rows: [AccountPresentation]) -> [String] {
+        guard let tokenBurn, tokenBurn.isEnabled, providerShow.shows(.tokenBurn, for: .claude) else { return [] }
+        return TokenBurnSectionFooter.lines(
+            rows.map { TokenBurnSectionFooter.Entry(label: $0.account.label, value: tokenBurn.values[$0.id]?.current) },
+            trackingSince: tokenBurn.trackingSince,
+            grantLost: tokenBurn.phase == .grantLost
+        )
     }
 
     @ViewBuilder
@@ -929,7 +987,7 @@ struct MenuBarView: View {
         )
     }
 
-    /// Where a card ends, for the four-card cap.
+    /// Where a card ends, for the list's height (`cappedListHeight`).
     private func bottomReporter(_ id: UUID) -> some View {
         GeometryReader { proxy in
             Color.clear.preference(
@@ -959,7 +1017,7 @@ struct MenuBarView: View {
         }
         .padding(.horizontal, AccountListMetrics.cardInset)
         .padding(.top, 12)
-        .padding(.bottom, 4)
+        .padding(.bottom, 6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(provider.displayName)
         .accessibilityAddTraits(.isHeader)
@@ -1129,10 +1187,11 @@ enum BannerDisclosure {
 
 /// One banner row's message.
 ///
-/// Up to four banners can coexist above a 520 pt account list, and the
-/// generic one carries arbitrary `localizedDescription` text. Only the list
-/// scrolls, and the 540 pt frame constrains WIDTH, so an unbounded message
-/// could push the footer off a short display — hence the three-line cap.
+/// Up to five banners can coexist above the account list, and the generic
+/// one carries arbitrary `localizedDescription` text. Only the list scrolls,
+/// and the 540 pt frame constrains WIDTH; the list gives the banners its room
+/// (they are measured as chrome), but an unbounded message could still
+/// outgrow a short display — hence the three-line cap.
 ///
 /// The cap would otherwise LOSE text (a filesystem error carrying a path, a
 /// cause and a recovery hint runs past three lines), and tooltips do not
@@ -1144,11 +1203,18 @@ private struct BannerMessage: View {
     let symbol: String
     let tint: Color
 
-    @State private var isExpanded = false
+    @State private var isExpanded: Bool
     @State private var fullHeight: CGFloat = 0
     @State private var cappedHeight: CGFloat = 0
 
     private static let lineCap = 3
+
+    init(message: String, symbol: String, tint: Color, startsExpanded: Bool = false) {
+        self.message = message
+        self.symbol = symbol
+        self.tint = tint
+        _isExpanded = State(initialValue: startsExpanded)
+    }
 
     private var label: some View {
         Label(message, systemImage: symbol)
@@ -1190,9 +1256,9 @@ private struct BannerMessage: View {
 }
 
 
-/// Where each card ends inside the scroll content, so the list can size itself
-/// to a whole number of cards. Keyed by account so a card scrolled out of view
-/// keeps its last known position.
+/// Where each card ends inside the scroll content, so a list that must be
+/// pinned stops at a whole card. Keyed by account so a card scrolled out of
+/// view keeps its last known position.
 private struct AccountCardBottomKey: PreferenceKey {
     static let defaultValue: [UUID: CGFloat] = [:]
 
@@ -1205,12 +1271,12 @@ private struct AccountCardBottomKey: PreferenceKey {
 /// Sizes the account list.
 ///
 /// Two genuinely different modes, which is why this is a modifier rather than
-/// one `frame` call. With four or fewer accounts the list takes its natural
-/// height — `fixedSize` makes the popover shrink-wrap the content. Past four it
-/// is PINNED to a height, and `fixedSize` must not be applied: it makes a
-/// `ScrollView` adopt its content's height, which leaves no scrollable region
-/// at all. That is why the fifth account used to be clipped and unreachable
-/// rather than merely scrolled past.
+/// one `frame` call. While the list fits the screen it takes its natural
+/// height — `fixedSize` makes the popover shrink-wrap the content. When it
+/// would not, it is PINNED to a height, and `fixedSize` must not be applied:
+/// it makes a `ScrollView` adopt its content's height, which leaves no
+/// scrollable region at all — the cards past the pin would be clipped and
+/// unreachable rather than merely scrolled to.
 private struct AccountListSizing: ViewModifier {
     let cappedHeight: CGFloat?
 
@@ -1321,13 +1387,19 @@ struct BadgeHintCard: View {
     }
 }
 
-/// Test seam: where the popover drew itself, its header row and the header's
-/// hover card, in window coordinates.
+/// Test seam: where the popover drew itself, its header row, its list and the
+/// header's hover card, in window coordinates, and the chrome it measured.
 @MainActor
 final class PopoverLayoutProbe {
     var popover: CGRect = .zero
     var headerRow: CGRect = .zero
+    /// The account list's scroll view, as sized (`AccountListSizing`).
+    var list: CGRect = .zero
     var freshnessHelp: CGRect = .zero
+    /// The rows above and below the list, as the popover measured them.
+    var chromeAboveList: CGFloat = 0
+    var chromeBelowList: CGFloat = 0
+    var chrome: CGFloat { chromeAboveList + chromeBelowList }
 }
 
 extension MenuBarView {

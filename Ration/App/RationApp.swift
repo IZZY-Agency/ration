@@ -541,11 +541,19 @@ struct MenuBarContent: View {
     /// Codex switching: the row on ChatGPT cards, the status line.
     var codex: CodexModel? = nil
     var appRefresh: AppRefresh? = nil
+    /// How tall this surface may be on its screen — owned and refreshed by
+    /// the presenter (`MenuBarController`); content built anywhere else keeps
+    /// the fixed default.
+    @ObservedObject var room: PopoverRoom = PopoverRoom()
 
     var body: some View {
         menuBarView
             .tint(Theme.gold)
+            .environment(\.popoverAvailableHeight, availableHeight)
     }
+
+    /// What the popover sizes its list by (`popoverAvailableHeight`).
+    var availableHeight: CGFloat { room.height }
 
     /// The popover this content shows — separate so a test can check the
     /// wiring without a window.
@@ -655,6 +663,12 @@ struct MenuBarContent: View {
             onShowFocusHero: { [pinSnapshot] id in pinSnapshot.pinFocusHero(id) },
             onFreshnessAction: { target in
                 performFreshnessAction(target)
+            },
+            foldsAccountsNotInUse: settings.popoverFoldsAccountsNotInUse,
+            inUseDetection: settings.featureInUseEnabled,
+            expandedAccountIDs: settings.popoverExpandedAccountIDs,
+            onSetAccountExpanded: { id, expanded in
+                Task { await Self.setAccountExpanded(id, expanded, model: model) }
             }
         )
         .withAPISpend(apiSpend)
@@ -685,6 +699,16 @@ struct MenuBarContent: View {
             Task {
                 await model.refreshAll(reason: .manual)
             }
+        }
+    }
+
+    /// A row's chevron: remember the account expanded or folded; a failed
+    /// save surfaces as the popover's error row, like the layout switch.
+    static func setAccountExpanded(_ id: UUID, _ expanded: Bool, model: AppModel) async {
+        do {
+            try await model.setPopoverAccountExpanded(id, expanded)
+        } catch {
+            model.errorMessage = error.localizedDescription
         }
     }
 

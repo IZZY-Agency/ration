@@ -69,7 +69,8 @@ struct APISpendCardView: View {
                     .lineLimit(2)
             }
         }
-        .padding(.vertical, 9)
+        // The popover's row rhythm (`AccountCardView.rowPadding`).
+        .padding(.vertical, AccountCardView.rowPadding)
         .padding(.horizontal, AccountListMetrics.cardInset)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(APISpendCardText.accessibilityDescription(for: presentation, thresholds: thresholds, now: now))
@@ -84,18 +85,19 @@ struct APISpendCardView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 7) {
+        // The account rows' name line: dot, 16 pt name, 10 pt chip.
+        HStack(spacing: 8) {
             Circle().fill(accent).frame(width: 6, height: 6).accessibilityHidden(true)
             Text(presentation.org.label)
-                .font(Theme.display(17, .semibold))
+                .font(Theme.display(16, .semibold))
                 .foregroundStyle(Theme.cream)
                 .lineLimit(1)
             Text(verbatim: presentation.org.vendor.displayName.uppercased())
-                .font(Theme.mono(11))
+                .font(Theme.mono(10))
                 .tracking(0.8)
                 .foregroundStyle(accent)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1.5)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 0.5)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(accent.opacity(AccountCardView.providerChipBorderOpacity), lineWidth: 1))
                 .accessibilityHidden(true)
             Spacer(minLength: 8)
@@ -152,7 +154,7 @@ struct APISpendSectionHeader: View {
         }
         .padding(.horizontal, AccountListMetrics.cardInset)
         .padding(.top, 12)
-        .padding(.bottom, 4)
+        .padding(.bottom, 6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(LocalizedStringResource.apiSpendGroupTitle))
         .accessibilityAddTraits(.isHeader)

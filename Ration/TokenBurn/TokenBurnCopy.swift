@@ -145,3 +145,52 @@ enum TokenBurnCopy {
         }
     }
 }
+
+/// The line(s) under a Claude section in the popover: each account's plan
+/// value, gathered from the rows (compact rows carry no plan-value line).
+///
+/// The header's "All Claude accounts" total stays where it is; this is the
+/// per-account part. Every account counts "since tracking began" or names
+/// its period, and those spans differ only when billing cycles start on
+/// different days — so the span is said ONCE when the accounts share it
+/// ("Work ≥ $5,298.22 · Personal ≥ $5,525.01 · since Sep 30 at 09:56"),
+/// and each account gets its own segment, on its own line, otherwise.
+enum TokenBurnSectionFooter {
+    struct Entry: Equatable {
+        /// The account's name, as the row shows it.
+        let label: String
+        /// Its figure for the period; nil leaves the account out, as its
+        /// card showed no line.
+        let value: AccountPlanValue?
+    }
+
+    static func lines(_ entries: [Entry], trackingSince: Date?, grantLost: Bool, locale: Locale = .current,
+                      calendar: Calendar = .current) -> [String] {
+        guard !entries.isEmpty else { return [] }
+        // A lost grant is said for the section: no figure is moving.
+        if grantLost { return [LocalizedStringResource.tokenBurnCardGrantLost.string(in: locale)] }
+        let valued: [(label: String, value: AccountPlanValue)] = entries.compactMap { entry in
+            entry.value.map { (entry.label, $0) }
+        }
+        guard !valued.isEmpty else { return [] }
+        guard let trackingSince else { return [LocalizedStringResource.tokenBurnCardNotTracked.string(in: locale)] }
+
+        let segments: [(segment: String, span: String)] = valued.map { label, value in
+            let segment: String = value.value.replies > 0
+                ? LocalizedStringResource.tokenBurnFooterAccount(
+                    label, TokenBurnCopy.amount(cents: value.value.cents, atLeast: value.isAtLeast, locale: locale)
+                ).string(in: locale)
+                : LocalizedStringResource.tokenBurnFooterAccountNoUse(label).string(in: locale)
+            let span: String = TokenBurnCopy.isPartial(value.period, trackingSince: trackingSince)
+                ? LocalizedStringResource.tokenBurnFooterSince(
+                    TokenBurnCopy.moment(trackingSince, locale: locale, calendar: calendar)
+                ).string(in: locale)
+                : TokenBurnCopy.phrase(value.period.kind, locale: locale)
+            return (segment, span)
+        }
+        if Set(segments.map(\.span)).count == 1, let span = segments.first?.span {
+            return [(segments.map(\.segment) + [span]).joined(separator: " · ")]
+        }
+        return segments.map { "\($0.segment) · \($0.span)" }
+    }
+}

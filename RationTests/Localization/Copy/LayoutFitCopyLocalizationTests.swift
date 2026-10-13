@@ -88,6 +88,23 @@ final class LayoutFitCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(leading(12 * 3600 + 30 * 60, L10n.en), "12h")
     }
 
+    /// A compact popover gauge's countdown, then the shorter form it falls
+    /// back to when its column is too narrow ("12 h 30 min" clipped beside
+    /// FABLE in French). One form when they agree; the due state and the
+    /// exact time never shorten (a leading unit would say "0 min").
+    func testCompactGaugeCountdownFallsBackToItsLeadingUnit() {
+        func forms(_ seconds: TimeInterval, _ locale: Locale, exact: Bool = false) -> [String] {
+            CompactLimitView.countdowns(resetsAt: now.addingTimeInterval(seconds), now: now, showsExact: exact,
+                                        locale: locale, timeZone: TimeZone(identifier: "UTC")!)
+        }
+        XCTAssertEqual(forms(12 * 3600 + 30 * 60 + 5, L10n.fr), ["12\(nb)h 30\(nb)min", "12\(nb)h"])
+        XCTAssertEqual(forms(12 * 3600 + 30 * 60 + 5, L10n.en), ["12h 30m", "12h"])
+        XCTAssertEqual(forms(2 * 3600 + 5 * 60 + 5, L10n.uk), ["2\(nb)год 5\(nb)хв", "2\(nb)год"])
+        XCTAssertEqual(forms(8 * 60 + 5, L10n.en), ["8m"])
+        XCTAssertEqual(forms(-5, L10n.fr), ["maintenant"])
+        XCTAssertEqual(forms(12 * 3600, L10n.en, exact: true).count, 1)
+    }
+
     /// The Cursor spend field keeps its 70 pt in English and grows by the
     /// extra width of a longer "off".
     func testSpendFieldWidth() {

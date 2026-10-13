@@ -4,32 +4,23 @@ import XCTest
 
 @MainActor
 final class AccountCardHighlightTests: XCTestCase {
-    func testHighlightedForBothActivePhases() {
+    /// Rows are borderless: the in-use row's signal is the activity green's
+    /// wash (and the green IN USE mark). Without the frame that once dimmed
+    /// for the last-used tail, a washed last-used row would read as in use —
+    /// and it folds like an idle row — so only the bright phase is washed.
+    func testWashedOnlyWhileInUse() {
         XCTAssertTrue(AccountCardView.isHighlighted(phase: .inUse(age: 10)))
-        XCTAssertTrue(AccountCardView.isHighlighted(phase: .lastUsed(age: 4000)))
-    }
-
-    func testNotHighlightedWhenIdle() {
+        XCTAssertFalse(AccountCardView.isHighlighted(phase: .lastUsed(age: 4000)))
         XCTAssertFalse(AccountCardView.isHighlighted(phase: .none))
     }
 
-    /// The activity signal is ONE color everywhere — `Theme.active`, the same
-    /// green as the menu-bar dot and the IN USE pill — never the provider
-    /// accent (identity and state are separate channels). Full green while in
-    /// use; the last-used tail dims the same hue so green intensity encodes
-    /// recency, not a different pattern.
-    func testHighlightStrokeIsActiveGreenByPhase() {
-        XCTAssertEqual(
-            AccountCardView.highlightStroke(phase: .inUse(age: 10), scheme: .dark),
-            Theme.active
-        )
-        for scheme in [ColorScheme.dark, .light] {
-            XCTAssertEqual(
-                AccountCardView.highlightStroke(phase: .lastUsed(age: 4000), scheme: scheme),
-                Theme.active.opacity(Theme.lastUsedFrameOpacity(scheme))
-            )
-            XCTAssertEqual(AccountCardView.highlightStroke(phase: .none, scheme: scheme), .clear)
-        }
+    /// The section header names Claude, ChatGPT and Cursor; only a TypeSafe
+    /// account, under "API", keeps its provider chip.
+    func testOnlyAPIAccountsKeepTheProviderChip() {
+        XCTAssertFalse(AccountCardView.showsProviderChip(.claude))
+        XCTAssertFalse(AccountCardView.showsProviderChip(.chatGPT))
+        XCTAssertFalse(AccountCardView.showsProviderChip(.cursor))
+        XCTAssertTrue(AccountCardView.showsProviderChip(.typeSafe))
     }
 
     func testInsetConstantsDocumentTheOriginalThirteenPointSplit() {

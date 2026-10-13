@@ -5349,6 +5349,78 @@
         }
       }
     },
+    "accountRow.collapse" : {
+      "comment" : "Popover: the chevron on an account row the user expanded, its tooltip and VoiceOver name; the row folds back to one line. %@ = the account's name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replier %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Згорнути %@"
+          }
+        }
+      }
+    },
+    "accountRow.expand" : {
+      "comment" : "Popover: the chevron on a folded account row, its tooltip and VoiceOver name; the row then shows every limit. %@ = the account's name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplier %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Розгорнути %@"
+          }
+        }
+      }
+    },
+    "accountRow.spoken.folded" : {
+      "comment" : "VoiceOver, popover: a folded account row (one line, not in use) shows only its tightest limit, the one closest to running out. %@ = that limit read aloud, e.g. “weekly, 48% used, resets in 3 days”.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "folded, showing its tightest limit: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "replié, affiche sa limite la plus serrée : %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "згорнуто, показано ліміт, найближчий до вичерпання: %@"
+          }
+        }
+      }
+    },
     "accountState.current" : {
       "comment" : "Account status (VoiceOver): the data is up to date.",
       "extractionState" : "manual",
@@ -21670,6 +21742,54 @@
         }
       }
     },
+    "settings.popover.foldAccounts" : {
+      "comment" : "Settings › Display › Popover toggle: in the popover's Standard layout, each account that is not in use shows as one line.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fold accounts not in use"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replier les comptes inactifs"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Згортати неактивні облікові записи"
+          }
+        }
+      }
+    },
+    "settings.popover.foldAccounts.note" : {
+      "comment" : "Settings › Display › Popover, note under “Fold accounts not in use”. “In-use detection” and “Features” name the switch in Settings › General › Features (featureSwitch.title.inUse, settings.section.features).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An account not in use shows one line with its tightest limit; click it to see every limit. Needs In-use detection (Features)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un compte inactif tient sur une ligne, avec sa limite la plus serrée ; cliquez dessus pour voir toutes ses limites. Nécessite la détection du compte en cours (Fonctionnalités)."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неактивний обліковий запис займає один рядок із лімітом, найближчим до вичерпання; натисніть на нього, щоб побачити всі ліміти. Потрібне визначення активного облікового запису (Функції)."
+          }
+        }
+      }
+    },
     "settings.section.accounts" : {
       "comment" : "Settings sidebar section header: the list of connected accounts.",
       "extractionState" : "manual",
@@ -23958,6 +24078,78 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Тека: %@"
+          }
+        }
+      }
+    },
+    "tokenBurn.footer.account" : {
+      "comment" : "Popover, the footer under the Claude accounts: one account's plan value, several joined with \" · \". %1$@ = the account's name; %2$@ = a dollar amount, maybe prefixed \"≥ \" (at least).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "tokenBurn.footer.accountNoUse" : {
+      "comment" : "Popover, the footer under the Claude accounts: an account with no Claude Code use in the span. %@ = the account's name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: no use"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ : aucune utilisation"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: без використання"
+          }
+        }
+      }
+    },
+    "tokenBurn.footer.since" : {
+      "comment" : "Popover, the footer under the Claude accounts: the span the figures cover when Ration started tracking inside the period. %@ = when tracking began (date and time).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "since %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "depuis le %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "з %@"
           }
         }
       }

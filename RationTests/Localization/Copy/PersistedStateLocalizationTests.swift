@@ -27,7 +27,7 @@ final class PersistedStateLocalizationTests: XCTestCase {
 
     // MARK: app-settings.json
 
-    static let settingsGolden = #"{"alertChannels":{"claude.weekly":["notification"]},"alertThresholds":{"claude.fiveHour":{"criticalPercent":95,"warningPercent":60}},"cursorSpend":{"criticalCents":5000,"warningCents":2500},"dropSnoozed":false,"featureInUseEnabled":true,"featureKeepAwakeEnabled":false,"featureResetsEnabled":true,"featureSwitchAdviceEnabled":true,"featureUsageCreditsEnabled":true,"featureWarmUpEnabled":false,"gaugeVisibility":{},"hasCompletedOnboarding":true,"holidays":[{"end":"2027-01-02","id":"6F1C1A52-0000-4000-8000-000000000001","label":"Winter break","start":"2026-12-24"}],"lowBalanceCents":{},"menuBarDisplaysRemaining":true,"menuBarWindows":{"chatgpt":"weekly"},"popoverLayout":"focus","providerShow":{},"quietHours":[0,1,2],"redactNotifications":true,"resetExpiryLeadDays":{"chatgpt":3},"ringBarEdge":"left","ringBarEnabled":false,"ringBarHidesAtEdge":false,"ringBarScale":1,"ringBarStyle":"rail","showInUseInMenuBar":true,"sortByWeeklyReset":false,"usageAlertsEnabled":true}"#
+    static let settingsGolden = #"{"alertChannels":{"claude.weekly":["notification"]},"alertThresholds":{"claude.fiveHour":{"criticalPercent":95,"warningPercent":60}},"cursorSpend":{"criticalCents":5000,"warningCents":2500},"dropSnoozed":false,"featureInUseEnabled":true,"featureKeepAwakeEnabled":false,"featureResetsEnabled":true,"featureSwitchAdviceEnabled":true,"featureUsageCreditsEnabled":true,"featureWarmUpEnabled":false,"gaugeVisibility":{},"hasCompletedOnboarding":true,"holidays":[{"end":"2027-01-02","id":"6F1C1A52-0000-4000-8000-000000000001","label":"Winter break","start":"2026-12-24"}],"lowBalanceCents":{},"menuBarDisplaysRemaining":true,"menuBarWindows":{"chatgpt":"weekly"},"popoverExpandedAccounts":["6F1C1A52-0000-4000-8000-000000000003"],"popoverFoldsAccountsNotInUse":true,"popoverLayout":"focus","providerShow":{},"quietHours":[0,1,2],"redactNotifications":true,"resetExpiryLeadDays":{"chatgpt":3},"ringBarEdge":"left","ringBarEnabled":false,"ringBarHidesAtEdge":false,"ringBarScale":1,"ringBarStyle":"rail","showInUseInMenuBar":true,"sortByWeeklyReset":false,"usageAlertsEnabled":true}"#
 
     func testSettingsFileIsTheSameBytesInEveryLanguage() async throws {
         let fileURL = directory.appending(path: "app-settings.json")
@@ -60,6 +60,7 @@ final class PersistedStateLocalizationTests: XCTestCase {
         try await settings.setResetExpiryLeadDays(3, provider: .chatGPT)
         try await settings.setPopoverLayout(.focus)
         try await settings.setFeature(.warmUp, enabled: false)
+        try await settings.setPopoverAccountExpanded(UUID(uuidString: "6F1C1A52-0000-4000-8000-000000000003")!, true)
 
         let written = try String(decoding: Data(contentsOf: fileURL), as: UTF8.self)
         XCTAssertEqual(written, Self.settingsGolden)

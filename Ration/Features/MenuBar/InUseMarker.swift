@@ -10,6 +10,10 @@ struct InUseMarker: View {
         case full
         /// Only the IN USE pill; renders nothing in the last-used / idle phases.
         case pillOnly
+        /// The popover's compact row: a green dot and IN USE in green, then
+        /// "· age" — no pill; muted "last used · …" otherwise. The age gives
+        /// way first when the line is short of room.
+        case inline
     }
 
     let activeUsage: ActiveUsage?
@@ -49,6 +53,34 @@ struct InUseMarkerContent: View {
     @ViewBuilder
     private func content(for phase: InUsePhase, at date: Date) -> some View {
         switch phase {
+        case let .inUse(age) where style == .inline:
+            let rel = relative(age, at: date)
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Theme.active)
+                    .frame(width: 6, height: 6)
+                Text(Self.pillText())
+                    .font(Theme.mono(11.5))
+                    .tracking(0.6)
+                    .foregroundStyle(Theme.active)
+                    .lineLimit(1)
+                    .fixedSize()
+                Text(verbatim: "· \(rel)")
+                    .font(Theme.mono(11.5))
+                    .foregroundStyle(Theme.creamDim)
+                    .lineLimit(1)
+                    .layoutPriority(-1)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.inUseSpoken(rel))
+        case let .lastUsed(age) where style == .inline:
+            let rel = relative(age, at: date)
+            Text(Self.lastUsedText(rel))
+                .font(Theme.mono(11.5))
+                .foregroundStyle(Theme.creamDim)
+                .lineLimit(1)
+                .layoutPriority(-1)
+                .accessibilityLabel(Self.lastUsedSpoken(rel))
         case let .inUse(age):
             let rel = relative(age, at: date)
             HStack(spacing: 5) {

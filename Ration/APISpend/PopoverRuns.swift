@@ -93,7 +93,7 @@ enum PopoverRuns {
         return runs
     }
 
-    /// Every card, top to bottom (the popover's four-card height cap).
+    /// Every card, top to bottom (the popover sizes its list by where they end).
     static func cardIDs(_ runs: [PopoverRun]) -> [UUID] {
         runs.flatMap { $0.subscriptions.map(\.id) + $0.apiEntries.map(\.id) }
     }

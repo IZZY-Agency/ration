@@ -79,6 +79,10 @@ struct AccountStateBadge: View {
     var agedOut: Bool = false
     /// Compact style only: makes a problem badge clickable. nil = plain.
     var problemAction: AccountBadgeProblemAction? = nil
+    /// Compact style only: draw a problem's glyph without its words (a
+    /// folded popover row has no room for "nouvel essai dans 12 minutes");
+    /// the words stay in the tooltip and VoiceOver.
+    var iconOnly: Bool = false
 
     @State private var problemHovered = false
 
@@ -204,13 +208,27 @@ struct AccountStateBadge: View {
 
     @ViewBuilder
     private func compactLabel(text: String, systemImage: String, color: Color) -> some View {
-        let label = Label(text, systemImage: systemImage)
-            .font(Theme.mono(12))
-            .foregroundStyle(color)
         if let problemAction {
-            problemButton(label, action: problemAction)
+            problemButton(compactLabelContent(text: text, systemImage: systemImage, color: color), action: problemAction)
         } else {
-            label
+            compactLabelContent(text: text, systemImage: systemImage, color: color)
+        }
+    }
+
+    /// Glyph and words — or, `iconOnly`, the glyph alone: the words still
+    /// name it to VoiceOver (the label's title) and in its tooltip.
+    @ViewBuilder
+    private func compactLabelContent(text: String, systemImage: String, color: Color) -> some View {
+        if iconOnly {
+            Label(text, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .font(Theme.mono(12))
+                .foregroundStyle(color)
+                .help(text)
+        } else {
+            Label(text, systemImage: systemImage)
+                .font(Theme.mono(12))
+                .foregroundStyle(color)
         }
     }
 

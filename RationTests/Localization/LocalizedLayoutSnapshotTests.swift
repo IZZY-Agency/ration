@@ -107,7 +107,8 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             .frame(width: 540)
             .background(Theme.ink)
             try write(render(cards, scheme), dir, "popover-cards-\(suffix).png")
-            // Hosted, so the scrolling card list draws too (capped at four cards).
+            // Hosted, so the scrolling card list draws too — every card: the
+            // popover fits the default room (`popoverAvailableHeight`).
             try write(await renderHosted(popover(accounts, layout: .standard), width: 540, height: 1150, scheme),
                       dir, "popover-standard-hosted-\(suffix).png")
         }
@@ -124,6 +125,145 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             try write(render(popover(accounts, layout: .standard, keepAwake: .automatic), scheme), dir, "popover-keep-awake-auto-\(suffix).png")
             try write(render(popover(accounts, layout: .standard, keepAwakeAvailable: false), scheme), dir, "popover-keep-awake-off-in-settings-\(suffix).png")
         }
+    }
+
+    // MARK: Compact rows and folding
+
+    /// Compact rows (in use with Claude Code's tag; expanded by the user with
+    /// SWITCH), folded rows (the tightest gauge, a sign-in badge), ChatGPT
+    /// with CODEX and SWITCH, Cursor's borderless row, the status strip in
+    /// its three forms, the Claude footer, and the hosted popover with all
+    /// of it at once.
+    func testPopoverCompactRows() async throws {
+        let dir = try directory
+        let accounts = sampleAccounts()
+        let byLabel = Dictionary(uniqueKeysWithValues: accounts.map { ($0.account.label, $0) })
+        let client = byLabel["Client"]!
+        let personal = byLabel["Personal"]!
+        let gpt20 = byLabel["20x"]!
+        let fiveHourInUse = ActiveUsage(lastUsedAt: now.addingTimeInterval(-3 * 60), source: .fiveHour)
+        let weeklyInUse = ActiveUsage(lastUsedAt: now.addingTimeInterval(-9 * 60), source: .weekly)
+        let rows = VStack(spacing: 0) {
+            AccountCardView(presentation: client, onReauthenticate: {}, activeUsage: fiveHourInUse, now: now,
+                            claudeCode: .current, foldsAccountsNotInUse: true)
+            AccountCardView(presentation: personal, onReauthenticate: {}, now: now, claudeCode: .canSwitch,
+                            foldsAccountsNotInUse: true, isExpanded: true)
+            AccountCardView(presentation: personal, onReauthenticate: {}, now: now, claudeCode: .canSwitch,
+                            foldsAccountsNotInUse: true)
+            AccountCardView(presentation: byLabel["Work"]!, onReauthenticate: {}, now: now, foldsAccountsNotInUse: true)
+            AccountCardView(presentation: gpt20, onReauthenticate: {}, activeUsage: weeklyInUse, now: now,
+                            codex: .current, foldsAccountsNotInUse: true)
+            AccountCardView(presentation: byLabel["5x"]!, onReauthenticate: {}, now: now,
+                            codex: .canSwitch(sameWorkspace: false), foldsAccountsNotInUse: true)
+            AccountCardView(presentation: byLabel["Cursor"]!, onReauthenticate: {}, now: now, foldsAccountsNotInUse: true)
+        }
+        .padding(.horizontal, AccountListMetrics.listInset)
+        .frame(width: 540)
+        .background(Theme.ink)
+        let strips = VStack(spacing: 12) {
+            PopoverStatusStripView(strip: PopoverStatusStrip.make(keepAwake: .automatic, dropSnoozed: true, dropShowing: false)!,
+                                   onShowAttentionDrop: {})
+            PopoverStatusStripView(strip: PopoverStatusStrip.make(keepAwake: .manual(until: now.addingTimeInterval(3_600)),
+                                                                  dropSnoozed: false, dropShowing: false)!,
+                                   onShowAttentionDrop: {})
+            PopoverStatusStripView(strip: PopoverStatusStrip.make(keepAwake: .off, dropSnoozed: true, dropShowing: false)!,
+                                   onShowAttentionDrop: {})
+        }
+        .padding(.vertical, 8)
+        .frame(width: 540)
+        .background(Theme.ink)
+        for (scheme, suffix) in Self.schemes {
+            try write(render(rows, scheme), dir, "popover-rows-\(suffix).png")
+            try write(render(strips, scheme), dir, "popover-status-strip-\(suffix).png")
+            try write(await renderHosted(
+                popover(accounts, layout: .standard, keepAwake: .automatic, dropSnoozed: true,
+                        active: [client.id: fiveHourInUse, gpt20.id: weeklyInUse], folds: true, expanded: [personal.id]),
+                width: 540, height: 1000, scheme
+            ), dir, "popover-folded-hosted-\(suffix).png")
+        }
+    }
+
+    /// Rendered height at the popover's width, in points, in the run's
+    /// language (dark).
+    private func renderedHeight(_ view: some View) throws -> CGFloat {
+        AppFonts.register(in: .main)
+        let renderer = ImageRenderer(content: view.frame(width: 540).background(Theme.ink).environment(\.colorScheme, .dark))
+        renderer.scale = 1
+        return CGFloat(try XCTUnwrap(renderer.cgImage).height)
+    }
+
+    /// Not gated: every run checks its own language. Folded, a row is ONE
+    /// line — name, plan, tightest gauge, reset and chevron never wrap — and
+    /// expanding it brings every gauge back.
+    func testFoldedRowIsOneLineInTheRunLanguage() throws {
+        let client = sampleAccounts()[0]
+        let folded = try renderedHeight(AccountCardView(presentation: client, onReauthenticate: {}, now: now,
+                                                        foldsAccountsNotInUse: true))
+        XCTAssertLessThanOrEqual(folded, 44, "the folded row wrapped, or did not fold")
+        let expanded = try renderedHeight(AccountCardView(presentation: client, onReauthenticate: {}, now: now,
+                                                          foldsAccountsNotInUse: true, isExpanded: true))
+        XCTAssertGreaterThan(expanded, folded + 20, "an expanded row shows every gauge")
+    }
+
+    /// Not gated. A folded row carrying the widest things it can — a plan
+    /// tag, FABLE as its tightest gauge with a long countdown, a rate-limit
+    /// badge with its retry time and a click target — still fits the list's
+    /// width in the run's language: its smallest width is within it.
+    func testFoldedRowWithAProblemFitsThePopover() throws {
+        AppFonts.register(in: .main)
+        for state: AccountViewState in [.rateLimited(retryAt: now.addingTimeInterval(12 * 60)), .integrationChanged,
+                                        .reauthenticationRequired, .stale(lastError: .offline)] {
+            let presentation = presentation("Client", .claude, plan: .claudeMax20x, fiveHour: 0.2, weekly: 0.5, fable: 0.95,
+                                            weeklyResetsIn: 98 * 60, state: state)
+            let row = AccountCardView(presentation: presentation, onReauthenticate: {}, now: now,
+                                      onProblem: { _ in }, foldsAccountsNotInUse: true)
+            let host = NSHostingController(rootView: row.environment(\.colorScheme, .dark))
+            let smallest: CGFloat = host.sizeThatFits(in: CGSize(width: 1, height: 1_000)).width
+            XCTAssertLessThanOrEqual(smallest, MenuBarView.popoverWidth - 2 * AccountListMetrics.listInset, "\(state)")
+        }
+    }
+
+    /// Not gated. A click on a compact gauge's countdown shows the exact
+    /// reset time; beside FABLE, a percent and the countdown (which stays
+    /// for the next click) there is no room for it, so it takes its own
+    /// line — the column's last, read alone — drawn in full at a Claude
+    /// column's width.
+    func testExactResetTimeIsDrawnInFullInANarrowColumn() throws {
+        AppFonts.register(in: .main)
+        let resetsAt = now.addingTimeInterval(3 * 86_400 + 4 * 3600)
+        let window = UsageWindow(kind: .modelWeekly, remainingFraction: 0.05, resetsAt: resetsAt, label: "Fable")
+        let column = CompactLimitView(title: "Fable", window: window, kind: .modelWeekly, now: now, showsExactReset: true)
+        // The 16 pt padding, the exact time's line and the gap above it:
+        // not the bar, nor the tag, percent and countdown over it.
+        let lines = try recognizedLines(column, width: 160, lastPoints: 40)
+        let wanted = Self.letters(UsageFormatters.shortReset(resetsAt))
+        XCTAssertTrue(Self.linesAndAdjacentPairs(lines).contains { Self.editDistance(Self.letters($0), wanted) <= 1 },
+                      "exact time “\(UsageFormatters.shortReset(resetsAt))” not drawn in full; read: \(lines)")
+    }
+
+    /// Not gated. The compact row's first line holds the name, the plan,
+    /// IN USE · age and Claude Code's tag without wrapping: in use and
+    /// tagged, the row is exactly as tall as the same row idle and untagged.
+    func testCompactRowNameLineHoldsInUseAndTheTag() throws {
+        let client = sampleAccounts()[0]
+        let inUse = ActiveUsage(lastUsedAt: now.addingTimeInterval(-3 * 60), source: .fiveHour)
+        let busy = try renderedHeight(AccountCardView(presentation: client, onReauthenticate: {}, activeUsage: inUse,
+                                                      now: now, claudeCode: .current))
+        let idle = try renderedHeight(AccountCardView(presentation: client, onReauthenticate: {}, now: now))
+        XCTAssertEqual(busy, idle, "IN USE · age or the tag pushed the row onto a second line")
+    }
+
+    /// Not gated. Keep-awake and the snoozed drop share ONE band: together
+    /// they are the two rows plus one band's padding, not two banners.
+    func testStatusStripIsOneBand() throws {
+        func height(_ keepAwake: KeepAwakeStatus, snoozed: Bool) throws -> CGFloat {
+            let strip = try XCTUnwrap(PopoverStatusStrip.make(keepAwake: keepAwake, dropSnoozed: snoozed, dropShowing: false))
+            return try renderedHeight(PopoverStatusStripView(strip: strip, onShowAttentionDrop: {}))
+        }
+        let keep = try height(.automatic, snoozed: false)
+        let drop = try height(.off, snoozed: true)
+        let both = try height(.automatic, snoozed: true)
+        XCTAssertEqual(both, keep + drop - 2 * 8 + 4, accuracy: 1)
     }
 
     func testPopoverFocus() throws {
@@ -467,6 +607,78 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         }
     }
 
+    /// Every banner the popover can carry above its list, in the run's
+    /// language: profile cleanup, the sign-in quit pause, a warm-up hold,
+    /// notifications blocked, an error (`AccountCommitError`'s own copy).
+    private func banners() throws -> (cleanup: String, signInPause: String, warmUp: WarmUpBanner, error: String) {
+        // Warm-up on, weekly allowance spent: the hold banner.
+        let id = UUID()
+        let account = AccountRecord(
+            id: id, provider: .claude, label: "AI", webProfileID: UUID(),
+            displayOrder: 0, createdAt: .distantPast, autoStartFiveHour: true,
+            keepAliveConversationID: nil, lastAutoStartedAt: nil, isPaused: false
+        )
+        let held = AccountPresentation(
+            account: account,
+            snapshot: UsageSnapshot(accountID: id, fetchedAt: now.addingTimeInterval(-60),
+                                    fiveHour: UsageWindow(kind: .fiveHour, remainingFraction: 1, resetsAt: nil),
+                                    weekly: UsageWindow(kind: .weekly, remainingFraction: 0, resetsAt: now.addingTimeInterval(6 * 3600))),
+            state: .current
+        )
+        let warmUp = try XCTUnwrap(WarmUpBannerModel.banner(presentations: [held], failures: [:], schedule: .allowAll, now: now))
+        return (ProfileCleanupCopy.pending, ProfileCleanupCopy.blockingQuitOnSignIn, warmUp,
+                AccountCommitError.rollbackFailed.localizedDescription)
+    }
+
+    /// Not gated: what the popover measures as its chrome — every row that
+    /// is not the scrolling list — is exactly its height less the list's,
+    /// plain, at its fullest without banners, and with every banner
+    /// expanded, in the run's language.
+    func testTheMeasuredChromeIsEverythingButTheList() async throws {
+        let accounts = sampleAccounts()
+        let banners = try banners()
+        let configurations: [(String, (PopoverLayoutProbe) -> MenuBarView)] = [
+            ("plain", { self.popover(accounts, layout: .standard, layoutProbe: $0) }),
+            ("fullest", { self.popover(accounts, layout: .standard, advice: self.switchAdvice(accounts), layoutProbe: $0,
+                                       keepAwake: .manual(until: self.now.addingTimeInterval(3_600)), dropSnoozed: true) }),
+            ("banners", { self.popover(accounts, layout: .standard, advice: self.switchAdvice(accounts), problem: .blocked,
+                                       layoutProbe: $0, keepAwake: .manual(until: self.now.addingTimeInterval(3_600)),
+                                       dropSnoozed: true, cleanup: banners.cleanup, signInPause: banners.signInPause,
+                                       warmUp: banners.warmUp, error: banners.error, bannersExpanded: true) }),
+        ]
+        for (name, view) in configurations {
+            let probe = PopoverLayoutProbe()
+            _ = try await renderHosted(view(probe).environment(\.popoverAvailableHeight, 10_000), width: 540, height: 2_400, .dark)
+            XCTAssertFalse(probe.list.isEmpty, "\(name): the list is measured")
+            XCTAssertGreaterThan(probe.chrome, 0, "\(name): the chrome is measured")
+            XCTAssertEqual(probe.chrome, probe.popover.height - probe.list.height, accuracy: 0.5,
+                           "\(name): popover \(probe.popover.height), list \(probe.list.height)")
+        }
+    }
+
+    /// Not gated: a list that nearly fills the popover's room, then every
+    /// banner on top of it — some expanded — in the run's language: the
+    /// list gives way and the popover still fits its room.
+    func testANearlyFullListWithBannersStillFitsTheRoom() async throws {
+        let accounts = sampleAccounts()
+        let banners = try banners()
+        let plain = PopoverLayoutProbe()
+        _ = try await renderHosted(popover(accounts, layout: .standard, layoutProbe: plain)
+                                       .environment(\.popoverAvailableHeight, 10_000), width: 540, height: 2_400, .dark)
+        // Ten points to spare without banners.
+        let room: CGFloat = plain.popover.height + 10
+        let crowded = PopoverLayoutProbe()
+        let view = popover(accounts, layout: .standard, advice: switchAdvice(accounts), problem: .blocked, layoutProbe: crowded,
+                           keepAwake: .manual(until: now.addingTimeInterval(3_600)), dropSnoozed: true,
+                           cleanup: banners.cleanup, signInPause: banners.signInPause, warmUp: banners.warmUp,
+                           error: banners.error, bannersExpanded: true)
+        _ = try await renderHosted(view.environment(\.popoverAvailableHeight, room), width: 540, height: 2_400, .dark)
+        XCTAssertGreaterThan(crowded.chrome, plain.chrome + 100, "the banners are drawn")
+        XCTAssertLessThan(crowded.list.height, plain.list.height, "the list gives way")
+        XCTAssertLessThanOrEqual(crowded.popover.height, room + 0.5,
+                                 "popover \(crowded.popover.height), chrome \(crowded.chrome), list \(crowded.list.height)")
+    }
+
     // MARK: History
 
     func testHistory() async throws {
@@ -566,6 +778,13 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         }
     }
 
+    /// What text recognition read as lines, plus each pair of neighbours
+    /// joined: one drawn line with a coloured run (the Cursor trend line's
+    /// orange "+38%") can come back as two observations.
+    private static func linesAndAdjacentPairs(_ lines: [String]) -> [String] {
+        lines + zip(lines, lines.dropFirst()).map { "\($0) \($1)" }
+    }
+
     /// Letters and digits only, uppercased, accents folded: text recognition
     /// may read the spacing, punctuation and accents of tracked uppercase
     /// text differently.
@@ -593,7 +812,10 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
     }
 
     /// Renders `view` at 3× on the dark ink and returns the recognised lines.
-    private func recognizedLines(_ view: some View, width: CGFloat) throws -> [String] {
+    /// `lastPoints`: read only that many points at the bottom (padding
+    /// included) — a card's last line alone, where lines above it that start
+    /// with the same words would be read as columns.
+    private func recognizedLines(_ view: some View, width: CGFloat, lastPoints: CGFloat? = nil) throws -> [String] {
         let content = view
             .frame(width: width)
             .padding(16)
@@ -601,7 +823,11 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             .environment(\.colorScheme, .dark)
         let renderer = ImageRenderer(content: content)
         renderer.scale = 3
-        let image = try XCTUnwrap(renderer.cgImage)
+        var image = try XCTUnwrap(renderer.cgImage)
+        if let lastPoints {
+            let height = min(image.height, Int(lastPoints * renderer.scale))
+            image = try XCTUnwrap(image.cropping(to: CGRect(x: 0, y: image.height - height, width: image.width, height: height)))
+        }
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
@@ -702,12 +928,14 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         let closed = cursorCycles(cursorSixCycles)
         let trend = CursorSpendTrend.card(closed: closed, current: busy.snapshot?.cursorSpend)
         let line = try XCTUnwrap(CursorSpendHistoryCopy.cardLine(trend))
+        // The trend line is the card's last: read it alone.
+        let lastLine: CGFloat = 52
         let cardLines = try recognizedLines(
             AccountCardView(presentation: busy, onReauthenticate: {}, now: now, cursorHistory: closed),
-            width: Self.cursorCardWidth
+            width: Self.cursorCardWidth, lastPoints: lastLine
         )
         let wanted = Self.letters(line)
-        XCTAssertTrue(cardLines.contains { Self.editDistance(Self.letters($0), wanted) <= 1 },
+        XCTAssertTrue(Self.linesAndAdjacentPairs(cardLines).contains { Self.editDistance(Self.letters($0), wanted) <= 1 },
                       "card line “\(line)” not drawn in full; read: \(cardLines)")
 
         let zeroClosed = cursorCycles([0, 0, 0])
@@ -716,9 +944,9 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         let zeroLine = try XCTUnwrap(CursorSpendHistoryCopy.cardLine(zeroTrend))
         let zeroLines = try recognizedLines(
             AccountCardView(presentation: idle, onReauthenticate: {}, now: now, cursorHistory: zeroClosed),
-            width: Self.cursorCardWidth
+            width: Self.cursorCardWidth, lastPoints: lastLine
         )
-        XCTAssertTrue(zeroLines.contains { Self.editDistance(Self.letters($0), Self.letters(zeroLine)) <= 1 },
+        XCTAssertTrue(Self.linesAndAdjacentPairs(zeroLines).contains { Self.editDistance(Self.letters($0), Self.letters(zeroLine)) <= 1 },
                       "zero line “\(zeroLine)” not drawn in full; read: \(zeroLines)")
 
         let history = CursorSpendHistory(cycles: closed, syncedThrough: cursorCycleStart)
@@ -874,19 +1102,25 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         _ presentations: [AccountPresentation], layout: PopoverLayout, advice: [SwitchAdvice] = [],
         focus: FocusModel? = nil, dropShowing: Bool = false, problem: NotificationAccess.Problem? = nil,
         showsFreshnessHelp: Bool = false, layoutProbe: PopoverLayoutProbe? = nil,
-        keepAwake: KeepAwakeStatus = .off, keepAwakeAvailable: Bool = true
+        keepAwake: KeepAwakeStatus = .off, keepAwakeAvailable: Bool = true,
+        dropSnoozed: Bool = false, active: [UUID: ActiveUsage] = [:], folds: Bool = false, expanded: Set<UUID> = [],
+        cleanup: String? = nil, signInPause: String? = nil, warmUp: WarmUpBanner? = nil, error: String? = nil,
+        bannersExpanded: Bool = false
     ) -> MenuBarView {
         MenuBarView(
             presentations: AccountVisibility.visible(presentations),
             isRefreshing: false,
-            profileCleanupBanner: nil,
-            errorMessage: nil,
-            activeAccounts: [:],
+            profileCleanupBanner: cleanup,
+            signInQuitPauseBanner: signInPause,
+            errorMessage: error,
+            warmUpBanner: { _ in warmUp },
+            activeAccounts: active,
             pausedCount: presentations.filter(\.account.isPaused).count,
             onOpen: {}, onAddAccount: {}, onRefresh: {}, onSettings: {}, onAbout: {},
             onHistory: {}, onRetryProfileCleanup: {}, onQuit: {}, onReauthenticate: { _ in },
             notificationProblem: problem,
             attentionDropShowing: dropShowing,
+            attentionDropSnoozed: dropSnoozed,
             switchAdvice: advice,
             layout: layout,
             keepAwake: keepAwake,
@@ -897,7 +1131,10 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             },
             pinnedNow: now,
             showsFreshnessHelp: showsFreshnessHelp,
-            layoutProbe: layoutProbe
+            bannersStartExpanded: bannersExpanded,
+            layoutProbe: layoutProbe,
+            foldsAccountsNotInUse: folds,
+            expandedAccountIDs: expanded
         )
     }
 
@@ -1309,9 +1546,9 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         XCTAssertEqual(codex.model.cardState(for: gpt20.id), .current)
         XCTAssertEqual(codex.model.cardState(for: gpt5.id), .canSwitch(sameWorkspace: false))
         for (scheme, suffix) in Self.schemes {
-            // Two Claude cards fewer, so both ChatGPT cards sit inside the four-card cap.
-            let shown = accounts.filter { !["Personal", "Work"].contains($0.account.label) }
-            try write(await renderHosted(popover(shown, layout: .standard).withCodex(codex.model, onStatus: {}),
+            // The whole list fits the default room, so both ChatGPT cards
+            // and the status line show without scrolling.
+            try write(await renderHosted(popover(accounts, layout: .standard).withCodex(codex.model, onStatus: {}),
                                          width: 540, height: 1150, scheme),
                       dir, "popover-codex-live-\(suffix).png")
         }
@@ -1385,15 +1622,19 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         await model.scanNow()
         XCTAssertGreaterThan(model.values[work.id]?.current.value.replies ?? 0, 0)
         let untracked = sampleAccounts()[1]
+        // The section: total line, the rows, and the footer that gathers
+        // their figures (Personal: no use).
+        let unused = AccountPlanValue(period: model.values[work.id]!.current.period, value: PlanValue(), planPriceUSD: nil)
+        let footer = TokenBurnSectionFooter.lines(
+            [.init(label: work.account.label, value: model.values[work.id]?.current),
+             .init(label: untracked.account.label, value: unused)],
+            trackingSince: model.trackingSince, grantLost: false
+        )
         let card = VStack(alignment: .leading, spacing: 0) {
             TokenBurnTotalLineView(text: TokenBurnCopy.totalLine(model.total ?? PlanValue(), choice: model.period))
-            AccountCardView(presentation: work, onReauthenticate: {}, now: now,
-                            planValue: TokenBurnCardLine.make(model.values[work.id], trackingSince: model.trackingSince))
-            AccountCardView(presentation: untracked, onReauthenticate: {}, now: now,
-                            planValue: TokenBurnCardLine.make(
-                                TokenBurnAccountValues(current: AccountPlanValue(period: model.values[work.id]!.current.period, value: PlanValue(), planPriceUSD: nil),
-                                                       previous: [], byModel: [], tokens: TokenCounts(), since: nil),
-                                trackingSince: model.trackingSince))
+            AccountCardView(presentation: work, onReauthenticate: {}, now: now)
+            AccountCardView(presentation: untracked, onReauthenticate: {}, now: now)
+            TokenBurnSectionFooterView(lines: footer)
         }
         .frame(width: 540).padding(.vertical, 8).background(Theme.ink)
         let section = Form {

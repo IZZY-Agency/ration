@@ -103,6 +103,8 @@ struct UsageSparkline: View {
     let projection: Date?
     let tierUsedFraction: Double
     var now: Date = .now
+    /// The popover's compact rows draw it a little lower (20).
+    var height: CGFloat = 22
 
     private var tint: Color { Theme.tierColor(usedFraction: tierUsedFraction) }
 
@@ -167,7 +169,7 @@ struct UsageSparkline: View {
                 }
             }
         }
-        .frame(height: 22)
+        .frame(height: height)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }

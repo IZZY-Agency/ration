@@ -177,19 +177,6 @@ enum Theme {
     static let cardHighlightBaseNS = dynamic(dark: 0x141519, light: 0xF8F7F3)
     static let cardHighlightBase = Color(nsColor: cardHighlightBaseNS)
 
-    /// In-use frame width. A dark hairline on a light ground reads weaker than
-    /// a bright one on near-black, so Light draws it heavier.
-    static func highlightFrameWidth(_ scheme: ColorScheme) -> CGFloat {
-        scheme == .dark ? 1 : 1.5
-    }
-
-    /// The last-used tail dims the in-use green to encode recency. 0.35 of the
-    /// dark green on ink is 2.2 : 1; the same 0.35 in Light was 1.6 : 1 and
-    /// all but vanished, so Light keeps more of it (2.37 : 1).
-    static func lastUsedFrameOpacity(_ scheme: ColorScheme) -> Double {
-        scheme == .dark ? 0.35 : 0.6
-    }
-
     /// Label colour on a gold FILL (prominent buttons, gold pills). The
     /// system draws white on a gold-tinted `.borderedProminent` button, which
     /// is 1.99 : 1 on dark gold — hence `GoldProminentButtonStyle`. Dark: ink

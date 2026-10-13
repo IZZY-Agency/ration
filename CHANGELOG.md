@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.13.0
+
+- A more compact popover. Each Claude and ChatGPT account is a borderless row:
+  its name, plan, IN USE and the Claude Code or Codex control on one line, then
+  every limit as a thin bar with its percent and reset side by side. The
+  account in use keeps its green tint, and sparklines show on the accounts in
+  use and on the ones you unfold.
+- Accounts you're not using fold to one line around their tightest limit.
+  Click a folded line or its chevron to unfold it, and the name line or the
+  chevron to fold it again; Ration remembers each account's choice. Switch
+  shows on an unfolded row. Turn folding off in Settings › Display › Popover
+  (Fold accounts not in use).
+- The account list takes the room your screen has: the popover grows with
+  your accounts and scrolls only when it would run past the screen, instead of
+  scrolling past the fourth account.
+- A click on a countdown shows the exact reset time on its own line under the
+  bar; click the countdown again to hide it.
+- The keep-awake notice and the hidden alerts drop share one strip under the
+  popover's header.
+- With Claude plan value on, each account's share is one line under the Claude
+  accounts instead of a line on each account.
+- VoiceOver reads each account as one sentence, says when a row is folded, and
+  names the chevron Expand or Collapse.
+- Everything new is in French and Ukrainian too.
+
 ## 1.12.0
 
 - Keep awake: while an account is in use, Ration keeps the Mac from idle

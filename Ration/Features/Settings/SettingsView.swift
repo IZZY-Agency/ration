@@ -278,6 +278,9 @@ struct SettingsView: View {
                 },
                 onSetShows: { surface, id, shown in
                     perform { try await model.setShows(surface, id: id, shown) }
+                },
+                onSetFoldsAccountsNotInUse: { enabled in
+                    perform { try await model.setPopoverFoldsAccountsNotInUse(enabled) }
                 }
             )
         case .features:

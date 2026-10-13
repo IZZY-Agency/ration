@@ -112,6 +112,24 @@ struct AppSettingsData: Codable, Equatable, Sendable {
     /// The ring bar's size, dragged on the bar or set with the Size slider.
     /// Clamped to `ringBarScaleRange`; unreadable → 1.
     var ringBarScale: Double
+    /// Settings › Display › Popover › Fold accounts not in use: the
+    /// Standard popover folds each subscription row that is not in use to
+    /// one line (`AccountRowMode`). On by default; missing or malformed → ON.
+    var popoverFoldsAccountsNotInUse: Bool
+    /// Accounts (UUID strings) whose folded row the user expanded, remembered
+    /// across launches; an in-use row ignores it. Canonical — valid ids,
+    /// uppercase, deduplicated, sorted — so the file is stable whatever order
+    /// rows were expanded in. Missing → none; an entry that is not an id
+    /// drops alone.
+    var popoverExpandedAccounts: [String]
+
+    var popoverExpandedAccountIDs: Set<UUID> {
+        Set(popoverExpandedAccounts.compactMap(UUID.init(uuidString:)))
+    }
+
+    static func canonicalAccountIDs(_ raw: [String]) -> [String] {
+        Array(Set(raw.compactMap { UUID(uuidString: $0)?.uuidString })).sorted()
+    }
 
     static let ringBarScaleRange: ClosedRange<Double> = 0.8...1.8
 
@@ -235,7 +253,9 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         ringBarEdge: RingBarEdge = .left,
         ringBarHidesAtEdge: Bool = false,
         gaugeVisibility: [String: GaugeVisibility] = [:],
-        ringBarScale: Double = 1
+        ringBarScale: Double = 1,
+        popoverFoldsAccountsNotInUse: Bool = true,
+        popoverExpandedAccounts: [String] = []
     ) {
         self.sortByWeeklyReset = sortByWeeklyReset
         self.usageAlertsEnabled = usageAlertsEnabled
@@ -266,6 +286,8 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         self.ringBarHidesAtEdge = ringBarHidesAtEdge
         self.gaugeVisibility = gaugeVisibility
         self.ringBarScale = Self.clampedScale(ringBarScale)
+        self.popoverFoldsAccountsNotInUse = popoverFoldsAccountsNotInUse
+        self.popoverExpandedAccounts = Self.canonicalAccountIDs(popoverExpandedAccounts)
     }
 
     static func canonical(_ cells: [Int]) -> [Int] {
@@ -302,6 +324,8 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         case ringBarHidesAtEdge
         case gaugeVisibility
         case ringBarScale
+        case popoverFoldsAccountsNotInUse
+        case popoverExpandedAccounts
     }
 
     init(from decoder: Decoder) throws {
@@ -374,6 +398,10 @@ struct AppSettingsData: Codable, Equatable, Sendable {
         ringBarHidesAtEdge = ((try? container.decodeIfPresent(Bool.self, forKey: .ringBarHidesAtEdge)) ?? nil) ?? false
         gaugeVisibility = Self.lossyDecode(container, forKey: .gaugeVisibility)
         ringBarScale = Self.clampedScale(((try? container.decodeIfPresent(Double.self, forKey: .ringBarScale)) ?? nil) ?? 1)
+        popoverFoldsAccountsNotInUse = feature(.popoverFoldsAccountsNotInUse)
+        let expanded: [FailableDecodable<String>]? = (try? container.decodeIfPresent([FailableDecodable<String>].self,
+                                                                                        forKey: .popoverExpandedAccounts)) ?? nil
+        popoverExpandedAccounts = Self.canonicalAccountIDs((expanded ?? []).compactMap(\.value))
     }
 
     /// Decodes a `[String: Value]` entry by entry, DROPPING malformed entries
@@ -433,6 +461,11 @@ final class AppSettings: ObservableObject {
     @Published private(set) var ringBarHidesAtEdge: Bool = false
     @Published private(set) var gaugeVisibility: [String: GaugeVisibility] = [:]
     @Published private(set) var ringBarScale: Double = 1
+    @Published private(set) var popoverFoldsAccountsNotInUse: Bool = true
+    @Published private(set) var popoverExpandedAccounts: [String] = []
+
+    /// See `AppSettingsData.popoverExpandedAccounts`.
+    var popoverExpandedAccountIDs: Set<UUID> { data.popoverExpandedAccountIDs }
 
     var features: FeatureSwitches { data.features }
 
@@ -507,7 +540,9 @@ final class AppSettings: ObservableObject {
             ringBarEdge: ringBarEdge,
             ringBarHidesAtEdge: ringBarHidesAtEdge,
             gaugeVisibility: gaugeVisibility,
-            ringBarScale: ringBarScale
+            ringBarScale: ringBarScale,
+            popoverFoldsAccountsNotInUse: popoverFoldsAccountsNotInUse,
+            popoverExpandedAccounts: popoverExpandedAccounts
         )
     }
 
@@ -551,6 +586,21 @@ final class AppSettings: ObservableObject {
 
     func setPopoverLayout(_ value: PopoverLayout) async throws {
         try await mutate { $0.popoverLayout = value }
+    }
+
+    func setPopoverFoldsAccountsNotInUse(_ value: Bool) async throws {
+        try await mutate { $0.popoverFoldsAccountsNotInUse = value }
+    }
+
+    /// One account's row, expanded or folded. Field-level: the set is read
+    /// INSIDE the serialized mutation, so two quick clicks on two rows
+    /// compose instead of the second writing back a set without the first.
+    func setPopoverAccountExpanded(_ id: UUID, _ expanded: Bool) async throws {
+        try await mutate { data in
+            var ids = data.popoverExpandedAccountIDs
+            if expanded { ids.insert(id) } else { ids.remove(id) }
+            data.popoverExpandedAccounts = AppSettingsData.canonicalAccountIDs(ids.map(\.uuidString))
+        }
     }
 
     func setFeature(_ feature: FeatureSwitch, enabled value: Bool) async throws {
@@ -1011,6 +1061,12 @@ final class AppSettings: ObservableObject {
         }
         if ringBarScale != data.ringBarScale {
             ringBarScale = data.ringBarScale
+        }
+        if popoverFoldsAccountsNotInUse != data.popoverFoldsAccountsNotInUse {
+            popoverFoldsAccountsNotInUse = data.popoverFoldsAccountsNotInUse
+        }
+        if popoverExpandedAccounts != data.popoverExpandedAccounts {
+            popoverExpandedAccounts = data.popoverExpandedAccounts
         }
     }
 }

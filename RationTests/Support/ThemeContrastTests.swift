@@ -135,21 +135,17 @@ final class ThemeContrastTests: XCTestCase {
         XCTAssertGreaterThan(Theme.cardHighlightOpacity(.light), 0.02)
     }
 
-    /// The frame is the state signal: in use ≥ 3 : 1 against the card's
-    /// surroundings (WCAG 1.4.11) in both appearances; last used is dimmer by
-    /// design but must stay visible (≥ 2 : 1 — the "last used" text carries
-    /// the state too). Light draws it thicker, since a dark hairline on a
-    /// light ground reads weaker than a bright one on near-black.
-    func testInUseFrameIsVisibleInBothAppearances() {
+    /// Rows are borderless: the in-use signal is the green IN USE mark (text
+    /// and dot) on the row's wash, so the mark must read as text there —
+    /// ≥ 4.5 : 1 (WCAG 1.4.3) in both appearances — and its dot stays ≥ 3 : 1
+    /// against the plain popover ground too (1.4.11).
+    func testInUseMarkReadsOnTheWash() {
         for (appearance, scheme) in [(NSAppearance.Name.darkAqua, ColorScheme.dark), (.aqua, ColorScheme.light)] {
             let ink = resolvedHex(Theme.inkNS, appearance)
             let active = resolvedHex(Theme.activeNS, appearance)
-            XCTAssertGreaterThanOrEqual(contrast(active, ink), 3.0, "in-use frame, \(appearance.rawValue)")
-            let lastUsed = composite(active, alpha: Theme.lastUsedFrameOpacity(scheme), over: ink)
-            XCTAssertGreaterThanOrEqual(contrast(lastUsed, ink), 2.0, "last-used frame, \(appearance.rawValue)")
-            XCTAssertLessThan(Theme.lastUsedFrameOpacity(scheme), 1)
+            XCTAssertGreaterThanOrEqual(contrast(active, highlightWash(appearance, scheme)), 4.5, "IN USE on the wash, \(appearance.rawValue)")
+            XCTAssertGreaterThanOrEqual(contrast(active, ink), 3.0, "the green dot on ink, \(appearance.rawValue)")
         }
-        XCTAssertGreaterThan(Theme.highlightFrameWidth(.light), Theme.highlightFrameWidth(.dark))
     }
 
     private func highlightWash(_ appearance: NSAppearance.Name, _ scheme: ColorScheme) -> UInt32 {
