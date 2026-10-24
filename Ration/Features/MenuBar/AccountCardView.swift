@@ -70,9 +70,6 @@ struct AccountCardView: View {
     /// tight line.
     static let rowPadding: CGFloat = 12
     static let foldedPadding: CGFloat = 9
-    /// Gauge columns: Claude's three (Fable · 5h · weekly); fewer gauges keep
-    /// the same column width, so the bars line up between rows.
-    static let gaugeColumns = 3
 
     var body: some View {
         TimelineView(.periodic(from: now, by: 60)) { context in
@@ -357,6 +354,9 @@ struct AccountCardView: View {
         }
     }
 
+    /// The gauges share the row's width: a lone weekly gauge (ChatGPT tiers
+    /// without a 5 hour window) runs the full width, 5h and weekly take half
+    /// each, Claude's three (Fable · 5h · weekly) a third each.
     private func gauges(mode: AccountRowMode, date: Date) -> some View {
         let snapshot = presentation.snapshot
         let kinds = AccountLimitLayout.kinds(for: presentation.account.provider, snapshot: snapshot)
@@ -370,11 +370,6 @@ struct AccountCardView: View {
                     sparkline: mode.showsSparklines ? sparkline(kind) : nil
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            ForEach(kinds.count..<max(kinds.count, Self.gaugeColumns), id: \.self) { _ in
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: 0)
-                    .accessibilityHidden(true)
             }
         }
     }

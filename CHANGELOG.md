@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.13.1
+
+- An account's limits share the whole row in the popover: a ChatGPT account
+  with only the weekly limit shows it across the row, and an account with a
+  5-hour and a weekly limit splits the row in half. Claude's three limits
+  (Fable, 5-hour, weekly) keep a third each.
+
 ## 1.13.0
 
 - A more compact popover. Each Claude and ChatGPT account is a borderless row:
