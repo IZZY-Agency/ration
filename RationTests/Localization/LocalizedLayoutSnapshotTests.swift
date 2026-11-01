@@ -213,7 +213,7 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         AppFonts.register(in: .main)
         for state: AccountViewState in [.rateLimited(retryAt: now.addingTimeInterval(12 * 60)), .integrationChanged,
                                         .reauthenticationRequired, .stale(lastError: .offline)] {
-            let presentation = presentation("Client", .claude, plan: .claudeMax20x, fiveHour: 0.2, weekly: 0.5, fable: 0.95,
+            let presentation = presentation("Client", .claude, plan: .claudeUltra, fiveHour: 0.2, weekly: 0.5, fable: 0.95,
                                             weeklyResetsIn: 98 * 60, state: state)
             let row = AccountCardView(presentation: presentation, onReauthenticate: {}, now: now,
                                       onProblem: { _ in }, foldsAccountsNotInUse: true)
@@ -1073,7 +1073,7 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
 
     private func sampleAccounts() -> [AccountPresentation] {
         [
-            presentation("Client", .claude, plan: .claudeMax20x, fiveHour: 0.20, weekly: 0.99, fable: 0.40,
+            presentation("Client", .claude, plan: .claudeUltra, fiveHour: 0.20, weekly: 0.99, fable: 0.40,
                          weeklyResetsIn: 12 * 3600 + 30 * 60, credits: true),
             // Half a second from its reset: still current evidence, and the
             // countdown is already the due state ("maintenant" / "зараз") —
@@ -1618,7 +1618,7 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         model.linksProvider = { ["acc-W": work.id] }
         _ = await model.enable(folder: projects)
         model.accountsDidChange([TokenBurnAccount(id: work.id, label: work.account.label, organizationID: "org-W",
-                                                  personalPlanDetected: true, plan: .claudeMax20x, renewalDay: nil)])
+                                                  personalPlanDetected: true, plan: .claudeUltra, renewalDay: nil)])
         await model.scanNow()
         XCTAssertGreaterThan(model.values[work.id]?.current.value.replies ?? 0, 0)
         let untracked = sampleAccounts()[1]
@@ -1638,7 +1638,7 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
         }
         .frame(width: 540).padding(.vertical, 8).background(Theme.ink)
         let section = Form {
-            TokenBurnPlanValueSection(model: model, accountID: work.id, planName: PlanTier.claudeMax20x.displayName)
+            TokenBurnPlanValueSection(model: model, accountID: work.id, planName: PlanTier.claudeUltra.displayName)
         }.formStyle(.grouped)
         let history = TokenBurnHistoryView(model: model, accounts: [work.account]).background(Theme.ink)
         for (scheme, suffix) in Self.schemes {
@@ -1762,6 +1762,30 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             try write(await renderHosted(alerts, width: SettingsView.minimumWindowWidth - SettingsSidebar.idealColumnWidth, height: 900, scheme),
                       dir, "settings-alerts-typesafe-\(suffix).png")
             try write(await renderHosted(settings, width: SettingsView.minimumWindowWidth, height: 1300, scheme), dir, "settings-typesafe-\(suffix).png")
+        }
+    }
+
+    /// A verified Claude Ultra account since Anthropic's 2026-10-30 change: no
+    /// 5-hour window, so its row shows Fable and weekly only, and its
+    /// Settings say warm-up has no window to start. A Max account keeps its
+    /// 5-hour window beside it.
+    func testUltraWithoutAFiveHourLimit() async throws {
+        let dir = try directory
+        let ultra = presentation("Work", .claude, plan: .claudeUltra, weekly: 0.30, fable: 0.10)
+        let max = presentation("Personal", .claude, plan: .claudeMax, fiveHour: 0.40, weekly: 0.55, fable: 0.20)
+        XCTAssertEqual(ultra.snapshot?.hasNoFiveHourLimit, true)
+        XCTAssertEqual(max.snapshot?.hasNoFiveHourLimit, false)
+        let rows = popover([ultra, max], layout: .standard)
+        let settings = AccountDetailView(
+            presentation: ultra, now: now,
+            onRename: { _ in }, onRenameError: { _ in }, onReauthenticate: {}, onRemove: {},
+            onSetAutoStart: { _ in }, onSetBillingRenewalDay: { _ in }, onSetPlan: { _ in },
+            onSetPaused: { _ in }, onDebugSend: {}
+        )
+        .background(Theme.ink)
+        for (scheme, suffix) in Self.schemes {
+            try write(await renderHosted(rows, width: 540, height: 520, scheme), dir, "popover-ultra-no-5h-\(suffix).png")
+            try write(await renderHosted(settings, width: SettingsView.minimumWindowWidth, height: 1100, scheme), dir, "settings-ultra-no-5h-\(suffix).png")
         }
     }
 

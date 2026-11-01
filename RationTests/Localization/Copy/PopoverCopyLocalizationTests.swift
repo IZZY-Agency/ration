@@ -150,13 +150,13 @@ final class PopoverCopyLocalizationTests: XCTestCase {
 
     // MARK: Account rows
 
-    /// A Max 20x Claude row: 5h 20 %, weekly 50 %, no scheduled resets (so
+    /// An Ultra Claude row: 5h 20 %, weekly 50 %, no scheduled resets (so
     /// the spoken text is fixed).
     private func row() -> AccountPresentation {
         let id = UUID()
         let record = AccountRecord(
             id: id, provider: .claude, label: "Work", webProfileID: UUID(),
-            displayOrder: 0, createdAt: now, plan: .claudeMax20x, planSource: .detected
+            displayOrder: 0, createdAt: now, plan: .claudeUltra, planSource: .detected
         )
         let snapshot = UsageSnapshot(
             accountID: id, fetchedAt: now,
@@ -185,14 +185,14 @@ final class PopoverCopyLocalizationTests: XCTestCase {
         )
         XCTAssertEqual(
             spoken,
-            "Work, Claude Max 20x, in use, 2 minutes ago, 5 hour, 20% used, reset not scheduled, weekly, 50% used, reset not scheduled"
+            "Work, Claude Ultra, in use, 2 minutes ago, 5 hour, 20% used, reset not scheduled, weekly, 50% used, reset not scheduled"
         )
         let idle = AccountRowCopy.spokenRow(
             row(), phase: .none, mode: .expanded(sparklines: false, collapsible: false), now: now, locale: L10n.uk
         )
         XCTAssertEqual(
             idle,
-            "Work, Claude Max 20x, 5-годинне вікно, використано 20%, скидання не заплановано, тижневе вікно, використано 50%, скидання не заплановано"
+            "Work, Claude Ultra, 5-годинне вікно, використано 20%, скидання не заплановано, тижневе вікно, використано 50%, скидання не заплановано"
         )
     }
 
@@ -201,14 +201,14 @@ final class PopoverCopyLocalizationTests: XCTestCase {
         func spoken(_ locale: Locale) -> String {
             AccountRowCopy.spokenRow(row(), phase: .none, mode: .folded, now: now, locale: locale)
         }
-        XCTAssertEqual(spoken(L10n.en), "Work, Claude Max 20x, folded, showing its tightest limit: weekly, 50% used, reset not scheduled")
+        XCTAssertEqual(spoken(L10n.en), "Work, Claude Ultra, folded, showing its tightest limit: weekly, 50% used, reset not scheduled")
         XCTAssertEqual(
             spoken(L10n.fr),
-            "Work, Claude Max 20x, replié, affiche sa limite la plus serrée\(nnb): fenêtre hebdomadaire, 50\(nnb)% utilisés, aucune réinitialisation prévue"
+            "Work, Claude Ultra, replié, affiche sa limite la plus serrée\(nnb): fenêtre hebdomadaire, 50\(nnb)% utilisés, aucune réinitialisation prévue"
         )
         XCTAssertEqual(
             spoken(L10n.uk),
-            "Work, Claude Max 20x, згорнуто, показано ліміт, найближчий до вичерпання: тижневе вікно, використано 50%, скидання не заплановано"
+            "Work, Claude Ultra, згорнуто, показано ліміт, найближчий до вичерпання: тижневе вікно, використано 50%, скидання не заплановано"
         )
     }
 

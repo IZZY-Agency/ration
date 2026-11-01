@@ -1,29 +1,38 @@
 import Foundation
 
 /// The subscription plan behind an account. Plans of one
-/// provider differ ~4× in absolute capacity, so switch advice compares
-/// `headroom × capacityUnits`, not bare percentages.
+/// provider differ several times in absolute capacity, so switch advice
+/// compares `headroom × capacityUnits`, not bare percentages.
 enum PlanTier: String, Codable, CaseIterable, Sendable {
     case claudePro
-    case claudeMax5x
-    case claudeMax20x
+    /// Claude Max, sold as "Max 5x" until Anthropic's 2026-10-30 rename. The
+    /// raw value is what `accounts.json` stores, so it keeps the old name.
+    case claudeMax = "claudeMax5x"
+    /// Claude Ultra, sold as "Max 20x" until the 2026-10-30 rename. The raw
+    /// value is what `accounts.json` stores, so it keeps the old name.
+    case claudeUltra = "claudeMax20x"
     case chatGPTPlus
     case chatGPTPro5x
     case chatGPTPro20x
 
     var provider: Provider {
         switch self {
-        case .claudePro, .claudeMax5x, .claudeMax20x: .claude
+        case .claudePro, .claudeMax, .claudeUltra: .claude
         case .chatGPTPlus, .chatGPTPro5x, .chatGPTPro20x: .chatGPT
         }
     }
 
-    /// Relative capacity within a provider: Pro/Plus 1, 5x 5, 20x 20.
+    /// Relative capacity within a provider: Pro/Plus 1, Max and Pro 5x 5,
+    /// Ultra 10, Pro 20x 20. Claude's figures are claude.com/pricing's
+    /// (read 2026-11-01): Max "5x Pro usage" every 5 hours and every week,
+    /// Ultra "10x Pro usage" every week and no 5-hour limit. Advice compares
+    /// what is left of the binding limit, which for Ultra is the weekly one.
     var capacityUnits: Double {
         switch self {
         case .claudePro, .chatGPTPlus: 1
-        case .claudeMax5x, .chatGPTPro5x: 5
-        case .claudeMax20x, .chatGPTPro20x: 20
+        case .claudeMax, .chatGPTPro5x: 5
+        case .claudeUltra: 10
+        case .chatGPTPro20x: 20
         }
     }
 
@@ -31,8 +40,8 @@ enum PlanTier: String, Codable, CaseIterable, Sendable {
     var tag: String {
         switch self {
         case .claudePro: "PRO"
-        case .claudeMax5x: "MAX 5X"
-        case .claudeMax20x: "MAX 20X"
+        case .claudeMax: "MAX"
+        case .claudeUltra: "ULTRA"
         case .chatGPTPlus: "PLUS"
         case .chatGPTPro5x: "PRO 5X"
         case .chatGPTPro20x: "PRO 20X"
@@ -43,8 +52,8 @@ enum PlanTier: String, Codable, CaseIterable, Sendable {
     var displayName: String {
         switch self {
         case .claudePro: "Pro"
-        case .claudeMax5x: "Max 5x"
-        case .claudeMax20x: "Max 20x"
+        case .claudeMax: "Max"
+        case .claudeUltra: "Ultra"
         case .chatGPTPlus: "Plus"
         case .chatGPTPro5x: "Pro 5x"
         case .chatGPTPro20x: "Pro 20x"
@@ -57,16 +66,21 @@ enum PlanTier: String, Codable, CaseIterable, Sendable {
 
     /// Claude `GET /api/organizations` → the resolved org's `rate_limit_tier`
     /// and `capabilities` (live-verified 2026-09-24: `default_claude_max_20x`
-    /// with `["chat","claude_max"]`). Nil = unknown.
+    /// with `["chat","claude_max"]`). The tier codes kept their old names
+    /// through Anthropic's 2026-10-30 rename: an Ultra account still reports
+    /// `default_claude_max_20x` (seen 2026-11-01 next to the display name
+    /// "Ultra"). Nil = unknown.
     static func fromClaude(rateLimitTier: String?, capabilities: [String]) -> PlanTier? {
         guard let tier = rateLimitTier?.lowercased(), !tier.isEmpty else { return nil }
         switch tier {
-        case "default_claude_max_20x": return .claudeMax20x
-        case "default_claude_max_5x": return .claudeMax5x
+        case "default_claude_max_20x": return .claudeUltra
+        case "default_claude_max_5x": return .claudeMax
         default: break
         }
         let isDefaultClaude: Bool = tier.hasPrefix("default_claude_")
-        let mentionsMax: Bool = tier.contains("max")
+        // A code naming either paid top plan is never Pro, even one Ration
+        // has not seen yet.
+        let mentionsMax: Bool = tier.contains("max") || tier.contains("ultra")
         let hasMaxCapability: Bool = capabilities.contains("claude_max")
         if isDefaultClaude, !mentionsMax, !hasMaxCapability {
             return .claudePro

@@ -71,6 +71,7 @@ struct ClaudeProviderAdapter: ProviderAdapter {
         let (body, organizationID) = try await usageBody(cacheKey: accountID, in: webView)
         let payload: ClaudeUsagePayload = try await decode(body)
         let fiveHour = try usageWindow(from: payload.fiveHour, kind: .fiveHour)
+        let fiveHourUnreadable: Bool = fiveHour == nil && Self.fiveHourIsUnreadable(payload)
         let weekly = try usageWindow(from: payload.sevenDay, kind: .weekly)
         guard fiveHour != nil || weekly != nil else {
             throw ProviderError.integrationChanged
@@ -97,7 +98,8 @@ struct ClaudeProviderAdapter: ProviderAdapter {
             organizationID: organizationID,
             resetCredits: Self.resetCredits(from: payload, fetchedAt: fetchedAt),
             planDetection: planDetection,
-            usageCreditsEnabled: Self.usageCreditsEnabled(from: payload)
+            usageCreditsEnabled: Self.usageCreditsEnabled(from: payload),
+            unreadableWindowKinds: fiveHourUnreadable ? [.fiveHour] : []
         )
     }
 
@@ -255,6 +257,20 @@ struct ClaudeProviderAdapter: ProviderAdapter {
             remainingFraction: 1 - (utilization / 100),
             resetsAt: resetsAt
         )
+    }
+
+    /// Called when `five_hour` gave no reading: is that an unreadable 5-hour
+    /// window (unknown usage) rather than a plan with no 5-hour limit (a
+    /// verified Ultra account since 2026-10-30)? `limits[]` lists each meter
+    /// the account has — a `session` entry means the limit exists, a list
+    /// without one means it does not. Without a list, a `five_hour` object
+    /// that carries no reading is unreadable, and no `five_hour` at all stays
+    /// absent, as before.
+    static func fiveHourIsUnreadable(_ payload: ClaudeUsagePayload) -> Bool {
+        if let limits = payload.limits, !limits.isEmpty {
+            return limits.contains { $0.kind == "session" }
+        }
+        return payload.fiveHour != nil
     }
 
     /// The Max-only gate: a Fable window is present only when `limits[]`

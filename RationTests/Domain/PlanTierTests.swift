@@ -6,24 +6,41 @@ final class PlanTierTests: XCTestCase {
 
     func testCapacityUnits() {
         XCTAssertEqual(PlanTier.claudePro.capacityUnits, 1)
-        XCTAssertEqual(PlanTier.claudeMax5x.capacityUnits, 5)
-        XCTAssertEqual(PlanTier.claudeMax20x.capacityUnits, 20)
+        XCTAssertEqual(PlanTier.claudeMax.capacityUnits, 5)
+        // claude.com/pricing (2026-11-01): Ultra is "10x Pro usage" a week.
+        XCTAssertEqual(PlanTier.claudeUltra.capacityUnits, 10)
         XCTAssertEqual(PlanTier.chatGPTPlus.capacityUnits, 1)
         XCTAssertEqual(PlanTier.chatGPTPro5x.capacityUnits, 5)
         XCTAssertEqual(PlanTier.chatGPTPro20x.capacityUnits, 20)
     }
 
     func testTagsMatchSpec() {
-        XCTAssertEqual(PlanTier.claudeMax20x.tag, "MAX 20X")
-        XCTAssertEqual(PlanTier.claudeMax5x.tag, "MAX 5X")
+        XCTAssertEqual(PlanTier.claudeUltra.tag, "ULTRA")
+        XCTAssertEqual(PlanTier.claudeMax.tag, "MAX")
         XCTAssertEqual(PlanTier.claudePro.tag, "PRO")
         XCTAssertEqual(PlanTier.chatGPTPro5x.tag, "PRO 5X")
         XCTAssertEqual(PlanTier.chatGPTPro20x.tag, "PRO 20X")
         XCTAssertEqual(PlanTier.chatGPTPlus.tag, "PLUS")
     }
 
+    /// Anthropic's 2026-10-30 names: Max 5x → Max, Max 20x → Ultra.
+    func testDisplayNamesFollowAnthropicsRename() {
+        XCTAssertEqual(PlanTier.claudePro.displayName, "Pro")
+        XCTAssertEqual(PlanTier.claudeMax.displayName, "Max")
+        XCTAssertEqual(PlanTier.claudeUltra.displayName, "Ultra")
+    }
+
+    /// `accounts.json` written before the rename stores the old raw values;
+    /// they must keep decoding to the same plans.
+    func testStoredRawValuesFromBeforeTheRenameStillDecode() throws {
+        XCTAssertEqual(PlanTier.claudeMax.rawValue, "claudeMax5x")
+        XCTAssertEqual(PlanTier.claudeUltra.rawValue, "claudeMax20x")
+        let decoded = try JSONDecoder().decode([PlanTier].self, from: Data(#"["claudeMax5x","claudeMax20x"]"#.utf8))
+        XCTAssertEqual(decoded, [.claudeMax, .claudeUltra])
+    }
+
     func testOptionsPerProvider() {
-        XCTAssertEqual(PlanTier.options(for: .claude), [.claudePro, .claudeMax5x, .claudeMax20x])
+        XCTAssertEqual(PlanTier.options(for: .claude), [.claudePro, .claudeMax, .claudeUltra])
         XCTAssertEqual(PlanTier.options(for: .chatGPT), [.chatGPTPlus, .chatGPTPro5x, .chatGPTPro20x])
         XCTAssertEqual(PlanTier.options(for: .cursor), [])
         for tier in PlanTier.allCases {
@@ -33,17 +50,17 @@ final class PlanTierTests: XCTestCase {
 
     // MARK: Claude mapping (rate_limit_tier + capabilities)
 
-    func testClaudeMax20xVerified() {
+    func testClaudeMax20xTierIsUltra() {
         XCTAssertEqual(
             PlanTier.fromClaude(rateLimitTier: "default_claude_max_20x", capabilities: ["chat", "claude_max"]),
-            .claudeMax20x
+            .claudeUltra
         )
     }
 
-    func testClaudeMax5x() {
+    func testClaudeMax5xTierIsMax() {
         XCTAssertEqual(
             PlanTier.fromClaude(rateLimitTier: "default_claude_max_5x", capabilities: ["chat", "claude_max"]),
-            .claudeMax5x
+            .claudeMax
         )
     }
 
@@ -60,6 +77,13 @@ final class PlanTierTests: XCTestCase {
 
     func testClaudeUnknownMaxVariantIsUnknown() {
         XCTAssertNil(PlanTier.fromClaude(rateLimitTier: "default_claude_max_50x", capabilities: ["claude_max"]))
+    }
+
+    /// A tier naming Ultra is a paid top plan, never Pro, whatever its
+    /// capabilities say.
+    func testClaudeTierMentioningUltraIsNeverPro() {
+        XCTAssertNil(PlanTier.fromClaude(rateLimitTier: "default_claude_ultra", capabilities: ["chat"]))
+        XCTAssertNotEqual(PlanTier.fromClaude(rateLimitTier: "default_claude_ultra", capabilities: []), .claudePro)
     }
 
     func testClaudeUnrelatedTiersAreUnknown() {
@@ -107,7 +131,7 @@ final class PlanTierTests: XCTestCase {
     // MARK: Detection result
 
     func testDetectionFromRawValues() {
-        XCTAssertEqual(PlanDetection.claude(rateLimitTier: "default_claude_max_20x", capabilities: ["claude_max"]), .tier(.claudeMax20x))
+        XCTAssertEqual(PlanDetection.claude(rateLimitTier: "default_claude_max_20x", capabilities: ["claude_max"]), .tier(.claudeUltra))
         XCTAssertEqual(PlanDetection.claude(rateLimitTier: "weird", capabilities: []), .unrecognized)
         XCTAssertNil(PlanDetection.claude(rateLimitTier: nil, capabilities: []))
         XCTAssertEqual(PlanDetection.chatGPT(planType: "prolite"), .tier(.chatGPTPro5x))
@@ -130,19 +154,19 @@ final class PlanTierTests: XCTestCase {
     }
 
     func testDetectionFillsEmptyPlan() {
-        let updated = record().applyingDetectedPlan(.tier(.claudeMax20x))
-        XCTAssertEqual(updated.plan, .claudeMax20x)
+        let updated = record().applyingDetectedPlan(.tier(.claudeUltra))
+        XCTAssertEqual(updated.plan, .claudeUltra)
         XCTAssertEqual(updated.planSource, .detected)
     }
 
     func testDetectionNeverOverwritesUserChoice() {
-        let user = record(plan: .claudeMax5x, source: .user)
-        XCTAssertEqual(user.applyingDetectedPlan(.tier(.claudeMax20x)), user)
+        let user = record(plan: .claudeMax, source: .user)
+        XCTAssertEqual(user.applyingDetectedPlan(.tier(.claudeUltra)), user)
         XCTAssertEqual(user.applyingDetectedPlan(.unrecognized), user)
     }
 
     func testUnrecognizedClearsADetectedPlan() {
-        let detected = record(plan: .claudeMax20x, source: .detected)
+        let detected = record(plan: .claudeUltra, source: .detected)
         let updated = detected.applyingDetectedPlan(.unrecognized)
         XCTAssertNil(updated.plan)
         XCTAssertNil(updated.planSource)
@@ -150,11 +174,11 @@ final class PlanTierTests: XCTestCase {
 
     func testDetectionOfOtherProvidersTierIsIgnored() {
         let chat = record(provider: .chatGPT)
-        XCTAssertEqual(chat.applyingDetectedPlan(.tier(.claudeMax20x)), chat)
+        XCTAssertEqual(chat.applyingDetectedPlan(.tier(.claudeUltra)), chat)
     }
 
     func testEffectivePlanIgnoresMismatchedProvider() {
-        XCTAssertNil(record(provider: .chatGPT, plan: .claudeMax20x, source: .user).effectivePlan)
-        XCTAssertEqual(record(plan: .claudeMax20x, source: .user).effectivePlan, .claudeMax20x)
+        XCTAssertNil(record(provider: .chatGPT, plan: .claudeUltra, source: .user).effectivePlan)
+        XCTAssertEqual(record(plan: .claudeUltra, source: .user).effectivePlan, .claudeUltra)
     }
 }

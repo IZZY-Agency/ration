@@ -286,7 +286,7 @@ struct FocusView: View {
         LocalizedStringResource.focusPaused.string(in: locale)
     }
 
-    /// "Claude", or "Claude Max 20x" once the plan is known.
+    /// "Claude", or "Claude Ultra" once the plan is known.
     static func providerAndPlan(_ account: AccountRecord) -> String {
         guard let plan = account.effectivePlan else { return account.provider.displayName }
         return "\(account.provider.displayName) \(plan.displayName)"
@@ -341,7 +341,7 @@ struct FocusView: View {
         return LocalizedStringResource.focusSpokenResets(relative).string(in: locale)
     }
 
-    /// An in-use line's VoiceOver value: "Claude Max 20x, in use, 25 percent
+    /// An in-use line's VoiceOver value: "Claude Ultra, in use, 25 percent
     /// of the weekly limit left".
     static func inUseLineSpoken(_ line: FocusModel.Line, locale: Locale = .current) -> String {
         let value: String = spokenValue(line.value, snapshot: line.presentation.snapshot, locale: locale)

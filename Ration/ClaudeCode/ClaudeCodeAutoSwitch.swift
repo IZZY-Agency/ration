@@ -32,16 +32,11 @@ enum ClaudeCodeAutoSwitch {
         case waiting(usedPercent: Int)
     }
 
-    /// The limits a target must have room on: always the 5-hour and weekly,
-    /// plus Fable weekly for a Fable rule.
-    static func consideredKinds(for rule: Rule) -> [UsageWindowKind] {
-        rule.kind == .modelWeekly ? [.weekly, .fiveHour, .modelWeekly] : [.weekly, .fiveHour]
-    }
-
-    /// Which windows a target must have room on (Codex switch spec §4.5).
-    /// Claude Code: the 5-hour and weekly always (plus Fable for a Fable rule).
-    /// Codex: the weekly always, the 5-hour only when the account reports one —
-    /// ChatGPT often reports only a weekly limit. A reported-but-invalid
+    /// Which windows a target must have room on (Codex switch spec §4.5):
+    /// the weekly always (plus Fable for a Claude Code Fable rule), the
+    /// 5-hour only when the account reports one. ChatGPT often reports only a
+    /// weekly limit, and since Anthropic's 2026-10-30 change a verified Claude
+    /// Ultra account has no 5-hour limit at all. A reported-but-invalid
     /// window fails the fetch, and one reported without its numbers is named
     /// in `UsageSnapshot.unreadableWindowKinds` and counts as unknown, so an
     /// absent window is truly absent.
@@ -51,8 +46,16 @@ enum ClaudeCodeAutoSwitch {
         /// Considered only when reported; then current and below the threshold like a required one.
         let optional: [UsageWindowKind]
 
-        static func claudeCode(for rule: Rule) -> Policy { Policy(required: consideredKinds(for: rule), optional: []) }
+        static func claudeCode(for rule: Rule) -> Policy {
+            Policy(required: rule.kind == .modelWeekly ? [.weekly, .modelWeekly] : [.weekly], optional: [.fiveHour])
+        }
         static let codex = Policy(required: [.weekly], optional: [.fiveHour])
+
+        /// The windows `snapshot` must have room on: every required one and
+        /// each optional one it reports.
+        func kinds(reportedBy snapshot: UsageSnapshot) -> [UsageWindowKind] {
+            required + optional.filter { snapshot.window(for: $0) != nil }
+        }
     }
 
     static func decide(current: Candidate, others: [Candidate], rule: Rule, now: Date) -> Decision {
@@ -80,14 +83,19 @@ enum ClaudeCodeAutoSwitch {
             // no Fable window means the account has no Fable limit — ineligible.
             if missing.contains(where: { $0 != .modelWeekly }) { unknown = true; continue }
             if !missing.isEmpty { continue }
-            let kinds = policy.required + policy.optional.filter { snapshot.window(for: $0) != nil }
+            let kinds = policy.kinds(reportedBy: snapshot)
             let standing = UsageHeadroom.assess(snapshot, kinds: kinds, now: now)
             if standing.hasUnknown { unknown = true; continue }
             guard candidate.usable, standing.known.count == kinds.count,
-                  standing.known.allSatisfy({ (1 - $0.window.remainingFraction) * 100 < Double(rule.percent) }),
-                  let target = snapshot.window(for: rule.kind)
+                  standing.known.allSatisfy({ (1 - $0.window.remainingFraction) * 100 < Double(rule.percent) })
             else { continue }
-            eligible.append((candidate, target.remainingFraction))
+            // Room on the rule's limit. A target that does not report that
+            // (optional) window has no such limit — an Ultra account under a
+            // 5-hour rule — so its room is its tightest window instead.
+            guard let room = snapshot.window(for: rule.kind)?.remainingFraction
+                    ?? standing.known.map(\.window.remainingFraction).min()
+            else { continue }
+            eligible.append((candidate, room))
         }
         if let best = eligible.min(by: { isBetter($0, than: $1) }) {
             return .switchTo(signInUUID: best.candidate.signInUUID, accountID: best.candidate.accountID, usedPercent: usedPercent)

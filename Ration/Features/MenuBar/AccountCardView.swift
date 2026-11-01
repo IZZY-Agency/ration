@@ -84,7 +84,7 @@ struct AccountCardView: View {
         return false
     }
 
-    /// "Work, Claude" — plus the plan when known: "Work, Claude Max 20x".
+    /// "Work, Claude" — plus the plan when known: "Work, Claude Ultra".
     static func nameAccessibilityLabel(for account: AccountRecord) -> String {
         let provider: String = account.provider.displayName
         guard let plan = account.effectivePlan else { return "\(account.label), \(provider)" }
@@ -510,12 +510,16 @@ enum AccountLimitLayout {
         switch provider {
         case .claude:
             // Fable (the flagship-model weekly limit) leads when present — it is
-            // the scarcest limit, so it earns the first column. Max-only presence
-            // gate: absent for non-Max accounts, which then show just 5h + weekly.
+            // the scarcest limit, so it earns the first column. Presence gate:
+            // absent on Pro, which then shows just 5h + weekly. The 5-hour
+            // column goes only when a reading proves the plan has none (a
+            // verified Ultra account since 2026-10-30); before any reading it
+            // stays as a placeholder.
+            let fiveHour: [UsageWindowKind] = snapshot?.hasNoFiveHourLimit == true ? [] : [.fiveHour]
             if snapshot?.modelWeekly != nil {
-                return [.modelWeekly, .fiveHour, .weekly]
+                return [.modelWeekly] + fiveHour + [.weekly]
             }
-            return [.fiveHour, .weekly]
+            return fiveHour + [.weekly]
         case .chatGPT:
             // modelWeekly (Fable) is a Claude Max-only concept; ChatGPT never
             // surfaces it even if a snapshot somehow carried one.
@@ -539,7 +543,7 @@ enum AccountLimitLayout {
     }
 }
 
-/// The small plan tag next to the account name (`MAX 20X`, `PRO 5X`, …):
+/// The small plan tag next to the account name (`ULTRA`, `PRO 5X`, …):
 /// neutral ink so it reads as a property, not a second identity color. Never
 /// truncates — the account name gives way first.
 struct PlanTagView: View {

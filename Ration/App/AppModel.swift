@@ -3674,7 +3674,7 @@ final class AppModel: ObservableObject {
             let snapshot = snapshots[account.id]
             let personal: Bool
             switch snapshot?.planDetection {
-            case .tier(.claudePro), .tier(.claudeMax5x), .tier(.claudeMax20x): personal = true
+            case .tier(.claudePro), .tier(.claudeMax), .tier(.claudeUltra): personal = true
             default: personal = false
             }
             return TokenBurnAccount(

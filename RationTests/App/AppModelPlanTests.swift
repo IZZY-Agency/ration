@@ -20,21 +20,21 @@ final class AppModelPlanTests: XCTestCase {
     func testSignInStoresTheDetectedPlan() async throws {
         let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
-        fixture.adapter.planDetection = .tier(.claudeMax20x)
+        fixture.adapter.planDetection = .tier(.claudeUltra)
         let id = try await signIn(fixture)
-        XCTAssertEqual(account(fixture, id)?.plan, .claudeMax20x)
+        XCTAssertEqual(account(fixture, id)?.plan, .claudeUltra)
         XCTAssertEqual(account(fixture, id)?.planSource, .detected)
     }
 
     func testRefreshUpdatesADetectedPlanButNeverAUserChoice() async throws {
         let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
-        fixture.adapter.planDetection = .tier(.claudeMax5x)
+        fixture.adapter.planDetection = .tier(.claudeMax)
         let id = try await signIn(fixture)
 
-        fixture.adapter.planDetection = .tier(.claudeMax20x)
+        fixture.adapter.planDetection = .tier(.claudeUltra)
         await fixture.model.refreshAll()
-        XCTAssertEqual(account(fixture, id)?.plan, .claudeMax20x)
+        XCTAssertEqual(account(fixture, id)?.plan, .claudeUltra)
 
         try await fixture.model.requestSetPlan(accountID: id, plan: .claudePro).value
         XCTAssertEqual(account(fixture, id)?.planSource, .user)
@@ -45,22 +45,22 @@ final class AppModelPlanTests: XCTestCase {
     func testDetectAutomaticallyReappliesTheLatestReading() async throws {
         let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
-        fixture.adapter.planDetection = .tier(.claudeMax20x)
+        fixture.adapter.planDetection = .tier(.claudeUltra)
         let id = try await signIn(fixture)
         try await fixture.model.requestSetPlan(accountID: id, plan: .claudePro).value
         try await fixture.model.requestSetPlan(accountID: id, plan: nil).value
-        XCTAssertEqual(account(fixture, id)?.plan, .claudeMax20x)
+        XCTAssertEqual(account(fixture, id)?.plan, .claudeUltra)
         XCTAssertEqual(account(fixture, id)?.planSource, .detected)
     }
 
     func testUnreadPlanLeavesTheStoredPlanAlone() async throws {
         let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
-        fixture.adapter.planDetection = .tier(.claudeMax20x)
+        fixture.adapter.planDetection = .tier(.claudeUltra)
         let id = try await signIn(fixture)
         fixture.adapter.planDetection = nil
         await fixture.model.refreshAll()
-        XCTAssertEqual(account(fixture, id)?.plan, .claudeMax20x)
+        XCTAssertEqual(account(fixture, id)?.plan, .claudeUltra)
     }
 
     // MARK: Readings are kept only for live accounts
@@ -77,9 +77,9 @@ final class AppModelPlanTests: XCTestCase {
     func testRemovingAnAccountForgetsItsReading() async throws {
         let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
-        fixture.adapter.planDetection = .tier(.claudeMax20x)
+        fixture.adapter.planDetection = .tier(.claudeUltra)
         let id = try await signIn(fixture)
-        XCTAssertEqual(fixture.model.latestPlanDetectionForTesting(accountID: id), .tier(.claudeMax20x), "premise")
+        XCTAssertEqual(fixture.model.latestPlanDetectionForTesting(accountID: id), .tier(.claudeUltra), "premise")
         try await fixture.model.removeAccount(id: id)
         XCTAssertNil(fixture.model.latestPlanDetectionForTesting(accountID: id))
     }
@@ -96,7 +96,7 @@ final class AppModelPlanTests: XCTestCase {
     func testPlanStepShownWhenBillingDayUnsetEvenIfPlanDetected() async throws {
         let fixture = try makeAlertsFixture()
         defer { fixture.removeFiles() }
-        fixture.adapter.planDetection = .tier(.claudeMax20x)
+        fixture.adapter.planDetection = .tier(.claudeUltra)
         let id = try await signIn(fixture)
         XCTAssertTrue(fixture.model.needsPlanStep(accountID: id))
         try await fixture.model.requestSetBillingRenewalDay(accountID: id, day: 14).value

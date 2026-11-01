@@ -50,10 +50,20 @@ a Max 20x account: `rate_limit_tier: "default_claude_max_20x"`,
 
 | `rate_limit_tier` | Plan |
 | --- | --- |
-| `default_claude_max_20x` | Max 20x (verified) |
-| `default_claude_max_5x` | Max 5x (inferred) |
-| other `default_claude_*` without "max", and no `claude_max` capability | Pro (inferred) |
+| `default_claude_max_20x` | Ultra, formerly Max 20x (verified) |
+| `default_claude_max_5x` | Max, formerly Max 5x (inferred) |
+| other `default_claude_*` without "max" or "ultra", and no `claude_max` capability | Pro (inferred) |
 | anything else | unknown — logged once (`NSLog`, the raw tier only, no account data) |
+
+**Plan rename (2026-10-30).** Anthropic renamed Max 5x to **Max** and Max 20x
+to **Ultra** at the same prices (claude.com/pricing, read 2026-11-01: Max
+"5x Pro usage" every 5 hours and every week; Ultra "10x Pro usage" every
+week and no 5-hour limit for verified accounts). The tier codes did not
+change: on 2026-11-01 an Ultra account still carried
+`default_claude_max_20x` (Claude Code's cached account record, next to a
+display name "Ultra"). Ration keeps the stored `PlanTier` raw values
+(`claudeMax5x`, `claudeMax20x`) and only renames what it shows; switch
+advice sizes Ultra at 10 Pro units (its weekly allowance), Max at 5.
 
 Best effort: a failed or wrong-shaped list never fails the usage fetch
 (`rate_limit_tier` of the wrong type reads as absent and never makes the org
@@ -82,6 +92,31 @@ time is accepted and displayed without a reset schedule. A missing window or
 missing utilization is unavailable while another valid window remains.
 Out-of-range utilization or a malformed non-null reset time is treated as an
 integration change, as is a response with no usable verified windows.
+
+**No 5-hour limit (verified Ultra, since 2026-10-30).** A verified Ultra
+account has no session limit, and its usage no longer reports one: on
+2026-11-01 Claude Code 2.1.316's `/usage` for an Ultra account listed only
+"Current week (all models)" and "Current week (Fable)", and that client
+builds its "Current session" row from `five_hour`, skipping it when the
+object is null or its `utilization` is null. Ration reads both the same way:
+no 5-hour window. The claude.ai web endpoint agrees: the same day, Ration
+1.13.1 (which reads `/api/organizations/{uuid}/usage`) showed an empty 5H
+gauge ("—", no readable `five_hour`) on two Ultra accounts while their Fable
+and weekly windows read normally.
+
+"No limit" and "could not read it" are told apart with `limits[]`, which
+lists each meter the account has: when `five_hour` gives no reading, a
+`session` entry in a non-empty `limits[]` means the limit exists and the
+5-hour window is **unreadable** (`UsageSnapshot.unreadableWindowKinds`,
+memory only: unknown usage, never a reason to switch, the 5H gauge stays as
+"—"); a non-empty list without one means the plan has **no 5-hour limit**.
+Without a list, a `five_hour` object that carries no reading is unreadable
+and a missing or null `five_hour` is absent, as before. Every 5-hour feature then simply has nothing to show:
+the row shows its remaining gauges, warm-up never fires (Settings says the
+plan has no 5-hour limit), and Claude Code switching counts the 5-hour
+window only when an account reports one. Max, Pro and Ultra accounts that
+are not verified yet still report it, and everything stays as before for
+them.
 
 ## `limits[]` array — model-scoped weekly windows (Fable)
 

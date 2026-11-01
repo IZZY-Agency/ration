@@ -93,12 +93,68 @@ final class ClaudeCodeAutoSwitchTests: XCTestCase {
         XCTAssertEqual(decide(current, [candidate(3, snap(week: 0.3)), candidate(2, snap(week: 0.3))]).target, "acc-2")
     }
 
-    /// A missing 5-hour or weekly window is unknown, not full.
-    func testATargetMissingAWindowIsWaitingNotNoRoom() {
+    /// A missing weekly window is unknown, not full.
+    func testATargetMissingItsWeeklyWindowIsWaitingNotNoRoom() {
         let noWeekly = UsageSnapshot(accountID: UUID(), fetchedAt: now,
                                      fiveHour: UsageWindow(kind: .fiveHour, remainingFraction: 0.9, resetsAt: now.addingTimeInterval(3_600)),
                                      weekly: nil)
         XCTAssertEqual(decide(candidate(1, snap(week: 0.8)), [candidate(2, noWeekly)]), .waiting(usedPercent: 80))
+    }
+
+    /// A verified Claude Ultra account reports no 5-hour window: it can take
+    /// over on its weekly room alone.
+    func testAnUltraTargetWithNoFiveHourWindowCanTakeOver() {
+        let ultra = candidate(2, snap(week: 0.3, five: nil), plan: 10)
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.8)), [ultra]),
+                       .switchTo(signInUUID: "acc-2", accountID: ultra.accountID, usedPercent: 80))
+    }
+
+    /// A Max account still reports its 5-hour window, and a full one still
+    /// rules it out.
+    func testAReportedFullFiveHourWindowStillRulesATargetOut() {
+        let maxFull = candidate(2, snap(week: 0.1, five: 0.9), plan: 5)
+        let ultra = candidate(3, snap(week: 0.5, five: nil), plan: 10)
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.8)), [maxFull, ultra]),
+                       .switchTo(signInUUID: "acc-3", accountID: ultra.accountID, usedPercent: 80))
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.8)), [maxFull]), .noRoom(usedPercent: 80, candidates: ["acc-2"]))
+    }
+
+    /// A Fable rule still needs the target's Fable window; the 5-hour one is
+    /// optional there too.
+    func testAFableRuleTakesAnUltraTargetWithAFableWindowButNoFiveHour() {
+        let fable = Auto.Rule(percent: 75, kind: .modelWeekly)
+        let ultra = candidate(2, snap(week: 0.3, five: nil, fable: 0.1), plan: 10)
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.3, fable: 0.8)), [ultra], rule: fable),
+                       .switchTo(signInUUID: "acc-2", accountID: ultra.accountID, usedPercent: 80))
+    }
+
+    /// A 5-hour rule on a Max account can hand over to an Ultra account: it
+    /// has no 5-hour limit, so its room is its tightest window (the weekly).
+    func testAFiveHourRuleCanHandOverToAnUltraTarget() {
+        let fiveHourRule = Auto.Rule(percent: 75, kind: .fiveHour)
+        let ultra = candidate(2, snap(week: 0.2, five: nil), plan: 10)
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.3, five: 0.8)), [ultra], rule: fiveHourRule),
+                       .switchTo(signInUUID: "acc-2", accountID: ultra.accountID, usedPercent: 80))
+    }
+
+    /// Ranked by room: the Ultra target's weekly room against the Max
+    /// target's 5-hour room.
+    func testAFiveHourRuleRanksAnUltraTargetByItsTightestWindow() {
+        let fiveHourRule = Auto.Rule(percent: 75, kind: .fiveHour)
+        let max = candidate(2, snap(week: 0.1, five: 0.3), plan: 5)      // 70% of 5h left
+        let roomyUltra = candidate(3, snap(week: 0.2, five: nil), plan: 10)  // 80% of week left
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.3, five: 0.8)), [max, roomyUltra], rule: fiveHourRule).target, "acc-3")
+        let tightUltra = candidate(4, snap(week: 0.6, five: nil), plan: 10)  // 40% of week left
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.3, five: 0.8)), [max, tightUltra], rule: fiveHourRule).target, "acc-2")
+    }
+
+    /// A 5-hour window the account reported but the fetch could not read is
+    /// unknown — never "no 5-hour limit" — so it never hands over.
+    func testAnUnreadableFiveHourWindowIsUnknownForClaudeCode() {
+        let base = snap(week: 0.2, five: nil)
+        let unreadable = UsageSnapshot(accountID: base.accountID, fetchedAt: base.fetchedAt, fiveHour: nil, weekly: base.weekly,
+                                       unreadableWindowKinds: [.fiveHour])
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.8)), [candidate(2, unreadable)]), .waiting(usedPercent: 80))
     }
 
     func testNoOtherAccountIsNoRoom() {
@@ -116,8 +172,9 @@ final class ClaudeCodeAutoSwitchTests: XCTestCase {
         let target = candidate(2, snap(week: 0.2, five: nil))
         XCTAssertEqual(codex(candidate(1, snap(week: 0.8, five: nil)), [target]),
                        .switchTo(signInUUID: "acc-2", accountID: target.accountID, usedPercent: 80))
-        XCTAssertEqual(decide(candidate(1, snap(week: 0.8, five: nil)), [target]), .waiting(usedPercent: 80),
-                       "Claude Code still requires the 5-hour window")
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.8, five: nil)), [target]),
+                       .switchTo(signInUUID: "acc-2", accountID: target.accountID, usedPercent: 80),
+                       "Claude Ultra has no 5-hour limit either")
     }
 
     /// A 5-hour window that is reported counts like a required one.
@@ -159,12 +216,14 @@ final class ClaudeCodeAutoSwitchTests: XCTestCase {
                        "no weekly on the current account: nothing to measure the rule on")
     }
 
-    /// The Claude policy is the old behaviour, Fable included: an account with
-    /// no Fable limit is ineligible for a Fable rule, not unknown.
-    func testTheClaudePolicyIsUnchanged() {
+    /// Since Anthropic's 2026-10-30 change a verified Claude Ultra account has
+    /// no 5-hour limit (its usage reports no 5-hour window), so for Claude
+    /// Code too the 5-hour window counts only when reported. An account with
+    /// no Fable limit stays ineligible for a Fable rule, not unknown.
+    func testTheClaudePolicyCountsTheFiveHourWindowOnlyWhenReported() {
         let fable = Auto.Rule(percent: 75, kind: .modelWeekly)
-        XCTAssertEqual(Auto.Policy.claudeCode(for: weekly), Auto.Policy(required: [.weekly, .fiveHour], optional: []))
-        XCTAssertEqual(Auto.Policy.claudeCode(for: fable), Auto.Policy(required: [.weekly, .fiveHour, .modelWeekly], optional: []))
+        XCTAssertEqual(Auto.Policy.claudeCode(for: weekly), Auto.Policy(required: [.weekly], optional: [.fiveHour]))
+        XCTAssertEqual(Auto.Policy.claudeCode(for: fable), Auto.Policy(required: [.weekly, .modelWeekly], optional: [.fiveHour]))
         XCTAssertEqual(Auto.Policy.codex, Auto.Policy(required: [.weekly], optional: [.fiveHour]))
 
         let current = candidate(1, snap(week: 0.3, fable: 0.8))

@@ -86,7 +86,7 @@ struct TokenBurnBindings: Sendable {
     let links: [String: UUID]
     /// The organization Ration last resolved per Ration Claude account.
     let organizations: [UUID: String]
-    /// Accounts whose personal plan (Pro, Max 5x, Max 20x) Ration detected
+    /// Accounts whose personal plan (Pro, Max, Ultra) Ration detected
     /// from their organization's own rate-limit tier: one seat.
     let personalPlanAccounts: Set<UUID>
     /// Every sign-in token burn has read.

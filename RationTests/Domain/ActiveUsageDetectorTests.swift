@@ -262,6 +262,27 @@ final class ActiveUsageDetectorTests: XCTestCase {
         XCTAssertTrue(run([acct(a, .claude, order: 0)], five: five, weekly: weekly).isEmpty)
     }
 
+    /// A Claude account that stopped reporting a 5-hour window (verified
+    /// Ultra since 2026-10-30) keeps its old 5h samples in history; once the
+    /// 5h series falls behind the weekly one, weekly activity marks it.
+    func testAStoppedFiveHourSeriesGivesWayToWeekly() {
+        let a = UUID()
+        let five = [a: [s(1000, 0.9), s(1200, 0.8)]]          // last reported long ago
+        let weekly = [a: [s(9600, 0.62), s(9800, 0.61)]]       // still read every poll
+        let r = run([acct(a, .claude, order: 0)], five: five, weekly: weekly)
+        XCTAssertEqual(r[a]?.source, .weekly)
+        XCTAssertEqual(r[a]?.lastUsedAt, Date(timeIntervalSince1970: 9800))
+    }
+
+    /// A 5h series still read alongside the weekly one stays authoritative
+    /// even when its newest sample is one poll gap older.
+    func testAFiveHourSeriesWithinOnePollGapStaysAuthoritative() {
+        let a = UUID()
+        let five = [a: [s(9800 - ActiveUsageDetector.maxGap, 1.0)]]
+        let weekly = [a: [s(9600, 0.9), s(9800, 0.6)]]
+        XCTAssertTrue(run([acct(a, .claude, order: 0)], five: five, weekly: weekly).isEmpty)
+    }
+
     func testWeeklyFallbackOnlyWhenNoFiveHourSeries() {
         // No 5h series at all (e.g. ChatGPT) → weekly is used, source == .weekly.
         let a = UUID()

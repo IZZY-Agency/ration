@@ -26,7 +26,7 @@ final class TokenBurnFiguresTests: XCTestCase {
     private let a = UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!
     private let b = UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!
 
-    private func account(_ id: UUID, renewalDay: Int? = nil, plan: PlanTier? = .claudeMax20x) -> TokenBurnAccount {
+    private func account(_ id: UUID, renewalDay: Int? = nil, plan: PlanTier? = .claudeUltra) -> TokenBurnAccount {
         TokenBurnAccount(id: id, label: "L", organizationID: nil, personalPlanDetected: true, plan: plan, renewalDay: renewalDay)
     }
 

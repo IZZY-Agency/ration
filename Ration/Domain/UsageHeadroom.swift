@@ -43,6 +43,12 @@ enum UsageHeadroom {
         var known: [(kind: UsageWindowKind, window: UsageWindow)] = []
         var hasUnknown = false
         for kind in kinds {
+            // Reported but unreadable (no used percent): unknown usage, never
+            // "no limit" — such an account must not look roomier than it is.
+            if snapshot.unreadableWindowKinds.contains(kind) {
+                hasUnknown = true
+                continue
+            }
             guard let window = snapshot.window(for: kind) else { continue }
             let current: Bool = UsageEvidence.isCurrent(
                 snapshot: snapshot,

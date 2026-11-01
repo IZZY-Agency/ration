@@ -1,17 +1,18 @@
 import Foundation
 
 /// What each Claude plan costs a month (spec §10): web prices before tax,
-/// from claude.com/pricing (Pro, "$20 if billed monthly") and the help
-/// centre's "What is the Max plan" (Max 5x $100, Max 20x $200), read on the
-/// date below. Only for the "N× your plan" ratio.
+/// from claude.com/pricing (Pro $20, Max $100, Ultra $200, billed monthly;
+/// Max and Ultra were "Max 5x" and "Max 20x" at the same prices until
+/// Anthropic's 2026-10-30 rename), read on the date below. Only for the
+/// "N× your plan" ratio.
 enum ClaudePlanPrice {
-    static let date = "2026-09-30"
+    static let date = "2026-11-01"
 
     static func monthlyUSD(_ tier: PlanTier?) -> Decimal? {
         switch tier {
         case .claudePro: 20
-        case .claudeMax5x: 100
-        case .claudeMax20x: 200
+        case .claudeMax: 100
+        case .claudeUltra: 200
         case .chatGPTPlus, .chatGPTPro5x, .chatGPTPro20x, nil: nil
         }
     }

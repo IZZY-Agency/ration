@@ -32,6 +32,40 @@ final class AutoStartPolicyTests: XCTestCase {
         )
     }
 
+    // MARK: No 5-hour limit (Claude Ultra since 2026-10-30)
+
+    private func snapshot(fiveHour: UsageWindow?, weekly: UsageWindow?) -> UsageSnapshot {
+        UsageSnapshot(accountID: UUID(), fetchedAt: now, fiveHour: fiveHour, weekly: weekly)
+    }
+
+    private var weeklyWindow: UsageWindow {
+        UsageWindow(kind: .weekly, remainingFraction: 0.6, resetsAt: now.addingTimeInterval(3 * 86_400))
+    }
+
+    /// A usage reading with a weekly window and no 5-hour one is a plan with
+    /// no 5-hour limit: warm-up has nothing to start.
+    func testAReadingWithAWeeklyAndNoFiveHourWindowHasNoFiveHourLimit() {
+        XCTAssertTrue(snapshot(fiveHour: nil, weekly: weeklyWindow).hasNoFiveHourLimit)
+    }
+
+    func testAReadingWithAFiveHourWindowHasAFiveHourLimit() {
+        XCTAssertFalse(snapshot(fiveHour: window(resetsInSeconds: 3_600), weekly: weeklyWindow).hasNoFiveHourLimit)
+        XCTAssertFalse(snapshot(fiveHour: window(resetsInSeconds: 3_600), weekly: nil).hasNoFiveHourLimit)
+    }
+
+    /// A reading with neither window says nothing about the plan.
+    func testAReadingWithNeitherWindowSaysNothingAboutTheFiveHourLimit() {
+        XCTAssertFalse(snapshot(fiveHour: nil, weekly: nil).hasNoFiveHourLimit)
+    }
+
+    /// Warm-up never fires on such an account, so nothing is ever sent.
+    func testWarmUpNeverFiresWithoutAFiveHourWindow() {
+        XCTAssertEqual(
+            AutoStartPolicy.decide(account: account(), fiveHour: nil, weekly: weeklyWindow, now: now),
+            .skip
+        )
+    }
+
     // MARK: Quiet hours / holidays
 
     /// A FIXED zone — never the machine's.

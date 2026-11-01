@@ -186,9 +186,12 @@ final class ClaudeCodeModel: ObservableObject {
         guard remembered.contains(where: { $0.uuid == current.uuid }) else {
             return ClaudeCodeFocusLine(currentLabel: displayLabel(forSignIn: current.uuid), target: nil)
         }
-        let kinds = ClaudeCodeAutoSwitch.consideredKinds(for: state.rule)
+        let policy = ClaudeCodeAutoSwitch.Policy.claudeCode(for: state.rule)
         let rooms: [(candidate: ClaudeCodeCandidate, room: Double)] = candidates.compactMap { candidate in
-            guard cardState(for: candidate.accountID) == .canSwitch, candidate.usable, let snapshot = candidate.snapshot else { return nil }
+            guard cardState(for: candidate.accountID) == .canSwitch, candidate.usable, let snapshot = candidate.snapshot,
+                  snapshot.unreadableWindowKinds.isDisjoint(with: policy.required + policy.optional)
+            else { return nil }
+            let kinds = policy.kinds(reportedBy: snapshot)
             let standing = UsageHeadroom.assess(snapshot, kinds: kinds, now: date)
             guard !standing.hasUnknown, standing.known.count == kinds.count,
                   let room = standing.known.map(\.window.remainingFraction).min(), room > 0

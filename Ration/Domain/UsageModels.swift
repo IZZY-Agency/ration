@@ -181,6 +181,15 @@ struct UsageSnapshot: Codable, Equatable, Sendable {
         }
     }
 
+    /// A weekly window and no 5-hour one, and no 5-hour window reported
+    /// without a reading: the plan has no 5-hour limit (a verified Claude
+    /// Ultra account since Anthropic's 2026-10-30 change, many ChatGPT
+    /// accounts), so there is no 5-hour column to draw and no window for
+    /// warm-up to start. A reading with neither says nothing.
+    var hasNoFiveHourLimit: Bool {
+        weekly != nil && fiveHour == nil && !unreadableWindowKinds.contains(.fiveHour)
+    }
+
     /// Every window this snapshot actually carries, in `UsageWindowKind`
     /// declaration order. The single canonical iteration point for history
     /// ingestion, alert evaluation, and reset summaries — hand-listing slots at

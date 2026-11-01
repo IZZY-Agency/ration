@@ -168,6 +168,12 @@ struct AccountDetailView: View {
                     Text("Sends a short message when the 5h window resets, so its countdown starts right away.")
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
+                    if presentation.snapshot?.hasNoFiveHourLimit == true {
+                        Text(LocalizedStringResource.accountWarmUpNoFiveHourLimit)
+                            .font(Theme.mono(12))
+                            .foregroundStyle(Theme.warn)
+                            .accessibilityIdentifier("autoStartNoFiveHourLimitNote")
+                    }
                     if !features.warmUp {
                         Text(FeatureSwitch.warmUpOffNote)
                             .font(Theme.mono(12))

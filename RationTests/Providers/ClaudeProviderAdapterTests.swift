@@ -195,9 +195,9 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         // and the next snapshot carries it.
         XCTAssertNil(snapshot.planDetection, "no reading cached yet")
         let refreshed = try await adapter.refreshPlanDetection(for: snapshot, in: WKWebView())
-        XCTAssertEqual(refreshed, .tier(.claudeMax20x))
+        XCTAssertEqual(refreshed, .tier(.claudeUltra))
         let next = try await adapter.fetchUsage(accountID: accountID, in: WKWebView())
-        XCTAssertEqual(next.planDetection, .tier(.claudeMax20x))
+        XCTAssertEqual(next.planDetection, .tier(.claudeUltra))
     }
 
     /// A hung organizations list must not hold up the usage snapshot —
@@ -511,6 +511,61 @@ final class ClaudeProviderAdapterTests: XCTestCase {
         XCTAssertNotNil(w, "the later valid entry must not be masked by the earlier invalid one")
         XCTAssertEqual(w?.label, "Fable")
         XCTAssertEqual(w?.remainingFraction ?? -1, 1 - 46.0/100, accuracy: 1e-9)
+    }
+
+    // MARK: No 5-hour limit vs an unreadable 5-hour window (2026-10-30)
+
+    private func payload(_ json: String) throws -> ClaudeUsagePayload {
+        try JSONDecoder().decode(ClaudeUsagePayload.self, from: Data(json.utf8))
+    }
+
+    private let weeklyLimits = """
+    "limits":[{"kind":"weekly_all","group":"weekly","percent":39,"resets_at":"2026-11-03T20:00:00Z","scope":null,"is_active":true},
+              {"kind":"weekly_scoped","group":"weekly","percent":0,"resets_at":"2026-11-03T20:00:00Z",
+               "scope":{"model":{"id":null,"display_name":"Fable"},"surface":null},"is_active":false}]
+    """
+    private let sessionLimits = """
+    "limits":[{"kind":"session","group":"session","percent":17,"resets_at":"2026-11-01T22:00:00Z","scope":null,"is_active":false},
+              {"kind":"weekly_all","group":"weekly","percent":39,"resets_at":"2026-11-03T20:00:00Z","scope":null,"is_active":true}]
+    """
+
+    /// Verified Ultra: no `session` meter in `limits[]`, whatever `five_hour`
+    /// carries — the plan has no 5-hour limit, nothing is unreadable.
+    func testNoSessionMeterMeansNoFiveHourLimit() throws {
+        for five in [#""five_hour":null,"#, #""five_hour":{"utilization":null,"resets_at":null},"#, ""] {
+            let p = try payload("{\(five)\"seven_day\":{\"utilization\":39,\"resets_at\":null},\(weeklyLimits)}")
+            XCTAssertFalse(ClaudeProviderAdapter.fiveHourIsUnreadable(p), five)
+        }
+    }
+
+    /// A `session` meter is listed but `five_hour` gives no reading: the
+    /// limit exists and its usage is unknown — never "no limit".
+    func testASessionMeterWithoutAFiveHourReadingIsUnreadable() throws {
+        for five in [#""five_hour":null,"#, #""five_hour":{"utilization":null,"resets_at":null},"#, ""] {
+            let p = try payload("{\(five)\"seven_day\":{\"utilization\":39,\"resets_at\":null},\(sessionLimits)}")
+            XCTAssertTrue(ClaudeProviderAdapter.fiveHourIsUnreadable(p), five)
+        }
+    }
+
+    /// Without `limits[]` nothing says the plan has no 5-hour limit: a
+    /// `five_hour` object without a reading is unreadable; no `five_hour` at
+    /// all stays absent, as before.
+    func testWithoutLimitsAFiveHourObjectWithoutAReadingIsUnreadable() throws {
+        XCTAssertTrue(ClaudeProviderAdapter.fiveHourIsUnreadable(try payload(
+            #"{"five_hour":{"utilization":null,"resets_at":null},"seven_day":{"utilization":39,"resets_at":null}}"#)))
+        XCTAssertFalse(ClaudeProviderAdapter.fiveHourIsUnreadable(try payload(
+            #"{"five_hour":null,"seven_day":{"utilization":39,"resets_at":null}}"#)))
+        XCTAssertFalse(ClaudeProviderAdapter.fiveHourIsUnreadable(try payload(
+            #"{"seven_day":{"utilization":39,"resets_at":null},"limits":[]}"#)))
+    }
+
+    /// An unreadable 5-hour window is not "no 5-hour limit".
+    func testAnUnreadableFiveHourWindowIsNotNoLimit() {
+        let weekly = UsageWindow(kind: .weekly, remainingFraction: 0.6, resetsAt: nil)
+        let unreadable = UsageSnapshot(accountID: UUID(), fetchedAt: .now, fiveHour: nil, weekly: weekly,
+                                       unreadableWindowKinds: [.fiveHour])
+        XCTAssertFalse(unreadable.hasNoFiveHourLimit)
+        XCTAssertEqual(AccountLimitLayout.kinds(for: .claude, snapshot: unreadable), [.fiveHour, .weekly])
     }
 
     func testMalformedLimitsArrayShapeYieldsNilLimitsButKeepsWindows() throws {

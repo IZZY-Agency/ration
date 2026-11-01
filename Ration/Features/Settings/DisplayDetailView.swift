@@ -94,7 +94,7 @@ struct DisplayDetailView: View {
                     }
                     .accessibilityIdentifier("menuBarClaudeWindowPicker")
 
-                    Text("Fable applies to Max accounts; accounts without the selected window fall back to their finest one.")
+                    Text("Fable applies to Max and Ultra accounts. Accounts without the selected window fall back to their finest one: Ultra has no 5-hour window.")
                         .font(Theme.mono(12))
                         .foregroundStyle(Theme.creamDim)
 

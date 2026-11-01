@@ -75,7 +75,7 @@ final class BillingCycleLiveRefreshTests: XCTestCase {
         var renewal = base
         renewal.billingRenewalDay = 15
         var plan = base
-        plan.plan = .claudeMax5x
+        plan.plan = .claudeMax
         var paused = base
         paused.isPaused = true
         let reference = key([base], now: now)

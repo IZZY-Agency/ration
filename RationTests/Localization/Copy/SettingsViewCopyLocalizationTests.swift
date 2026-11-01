@@ -114,10 +114,10 @@ final class SettingsViewCopyLocalizationTests: XCTestCase {
                 displayOrder: 0, createdAt: .distantPast, plan: plan, planSource: source
             )
         }
-        XCTAssertEqual(PlanChoice.automaticTitle(for: record(.claudeMax20x, .detected), locale: L10n.fr), "Détecter automatiquement (Max 20x)")
+        XCTAssertEqual(PlanChoice.automaticTitle(for: record(.claudeUltra, .detected), locale: L10n.fr), "Détecter automatiquement (Ultra)")
         XCTAssertEqual(PlanChoice.automaticTitle(for: record(nil, nil), locale: L10n.fr), "Détecter automatiquement (non détecté)")
         XCTAssertEqual(PlanChoice.automaticTitle(for: record(.claudePro, .user), locale: L10n.uk), "Визначати автоматично")
-        XCTAssertEqual(PlanChoice.automaticTitle(for: record(.claudeMax5x, .detected), locale: L10n.uk), "Визначати автоматично (Max 5x)")
+        XCTAssertEqual(PlanChoice.automaticTitle(for: record(.claudeMax, .detected), locale: L10n.uk), "Визначати автоматично (Max)")
     }
 
     // MARK: Alerts pane
@@ -261,10 +261,10 @@ final class SettingsViewCopyLocalizationTests: XCTestCase {
         XCTAssertEqual(plan.string(in: L10n.fr), "Forfait Claude")
         XCTAssertEqual(plan.string(in: L10n.uk), "Тариф Claude")
 
-        let name = "Max 20x"
+        let name = "Ultra"
         let detected = LocalizedStringResource("Plan \(name), detected")
-        XCTAssertEqual(detected.string(in: L10n.fr), "Forfait Max 20x, détecté")
-        XCTAssertEqual(detected.string(in: L10n.uk), "Тариф Max 20x, визначено")
+        XCTAssertEqual(detected.string(in: L10n.fr), "Forfait Ultra, détecté")
+        XCTAssertEqual(detected.string(in: L10n.uk), "Тариф Ultra, визначено")
 
         let day = "Mon"
         let dayHelp = LocalizedStringResource("Toggle all of \(day)")

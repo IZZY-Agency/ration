@@ -498,6 +498,35 @@ final class ClaudeCodeModelTests: XCTestCase {
         XCTAssertEqual(model.focusLine(now: now)?.target?.accountID, idB)
     }
 
+    /// A verified Claude Ultra account has no 5-hour window; the Focus line
+    /// still offers it on its weekly room.
+    func testTheFocusLineOffersAnAccountWithNoFiveHourWindow() async throws {
+        let model = try await makeThreeAccountModel()
+        var pool = threeCandidates(b: 0.6, c: 0.2)
+        let roomy = pool[2].snapshot!
+        pool[2] = ClaudeCodeCandidate(
+            accountID: idC, label: "Spare", organizationID: "org-C", isPaused: false, usable: true,
+            snapshot: UsageSnapshot(accountID: UUID(), fetchedAt: now, fiveHour: nil, weekly: roomy.weekly, organizationID: "org-C"),
+            planUnits: 10, order: 2)
+        model.usageDidChange(pool, now: now)
+        XCTAssertEqual(model.focusLine(now: now)?.target?.accountID, idC)
+    }
+
+    /// An unreadable 5-hour window is unknown usage: the Focus line does not
+    /// offer that account.
+    func testTheFocusLineSkipsAnAccountWithAnUnreadableFiveHourWindow() async throws {
+        let model = try await makeThreeAccountModel()
+        var pool = threeCandidates(b: 0.6, c: 0.2)
+        let roomy = pool[2].snapshot!
+        pool[2] = ClaudeCodeCandidate(
+            accountID: idC, label: "Spare", organizationID: "org-C", isPaused: false, usable: true,
+            snapshot: UsageSnapshot(accountID: UUID(), fetchedAt: now, fiveHour: nil, weekly: roomy.weekly, organizationID: "org-C",
+                                    unreadableWindowKinds: [.fiveHour]),
+            planUnits: 10, order: 2)
+        model.usageDidChange(pool, now: now)
+        XCTAssertEqual(model.focusLine(now: now)?.target?.accountID, idB)
+    }
+
     func testTheFocusLineOffersNoAccountThatCannotTakeOver() async throws {
         let model = try await makeThreeAccountModel()
         model.usageDidChange(threeCandidates(b: 0.3, c: 0.2, pausedB: true, staleC: true), now: now)

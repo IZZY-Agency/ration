@@ -11,12 +11,12 @@ final class PlanChoiceTests: XCTestCase {
 
     func testSelectionIsAutoUnlessTheUserChose() {
         XCTAssertEqual(PlanChoice.selection(for: record()), PlanChoice.automatic)
-        XCTAssertEqual(PlanChoice.selection(for: record(plan: .claudeMax20x, source: .detected)), PlanChoice.automatic)
-        XCTAssertEqual(PlanChoice.selection(for: record(plan: .claudeMax5x, source: .user)), "claudeMax5x")
+        XCTAssertEqual(PlanChoice.selection(for: record(plan: .claudeUltra, source: .detected)), PlanChoice.automatic)
+        XCTAssertEqual(PlanChoice.selection(for: record(plan: .claudeMax, source: .user)), "claudeMax5x")
     }
 
     func testAutomaticTitleNamesTheDetectedPlan() {
-        XCTAssertEqual(PlanChoice.automaticTitle(for: record(plan: .claudeMax20x, source: .detected)), "Detect automatically (Max 20x)")
+        XCTAssertEqual(PlanChoice.automaticTitle(for: record(plan: .claudeUltra, source: .detected)), "Detect automatically (Ultra)")
         XCTAssertEqual(PlanChoice.automaticTitle(for: record()), "Detect automatically (not detected)")
         XCTAssertEqual(PlanChoice.automaticTitle(for: record(plan: .claudePro, source: .user)), "Detect automatically")
     }
@@ -28,14 +28,14 @@ final class PlanChoiceTests: XCTestCase {
     }
 
     func testTagForCards() {
-        XCTAssertEqual(PlanChoice.tag(for: record(plan: .claudeMax20x, source: .detected)), "MAX 20X")
+        XCTAssertEqual(PlanChoice.tag(for: record(plan: .claudeUltra, source: .detected)), "ULTRA")
         XCTAssertNil(PlanChoice.tag(for: record()))
-        XCTAssertNil(PlanChoice.tag(for: record(.chatGPT, plan: .claudeMax20x, source: .user)), "a mismatched plan shows nothing")
+        XCTAssertNil(PlanChoice.tag(for: record(.chatGPT, plan: .claudeUltra, source: .user)), "a mismatched plan shows nothing")
     }
 
     func testSurfacesNameThePlanWhenKnown() {
-        let max = record(plan: .claudeMax20x, source: .detected)
-        XCTAssertEqual(AccountCardView.nameAccessibilityLabel(for: max), "A, Claude Max 20x")
+        let max = record(plan: .claudeUltra, source: .detected)
+        XCTAssertEqual(AccountCardView.nameAccessibilityLabel(for: max), "A, Claude Ultra")
         XCTAssertEqual(AccountCardView.nameAccessibilityLabel(for: record()), "A, Claude")
         // The plan is its own tag (`PlanTagView`), never repeated in the caption.
         XCTAssertEqual(FocusView.heroProviderCaption(max), "CLAUDE")

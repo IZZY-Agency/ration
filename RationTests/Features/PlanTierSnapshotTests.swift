@@ -65,8 +65,8 @@ final class PlanTierSnapshotTests: XCTestCase {
 
     func testCardsDrawThePlanTag() throws {
         let presentations = [
-            card("Client", .claude, weekly: 0.62, fiveHour: 0.27, plan: .claudeMax20x),
-            card("Personal", .claude, weekly: 0.15, fiveHour: 0.05, plan: .claudeMax5x),
+            card("Client", .claude, weekly: 0.62, fiveHour: 0.27, plan: .claudeUltra),
+            card("Personal", .claude, weekly: 0.15, fiveHour: 0.05, plan: .claudeMax),
             card("20x", .chatGPT, weekly: 0.42, plan: .chatGPTPro20x),
             card("5x", .chatGPT, weekly: 0.10, plan: .chatGPTPro5x),
             card("Unknown", .chatGPT, weekly: 0.30, plan: nil),
@@ -106,7 +106,7 @@ final class PlanTierSnapshotTests: XCTestCase {
     func testPlanStepAsksOnlyWhatIsMissing() {
         let detected = AccountRecord(
             id: UUID(), provider: .claude, label: "A", webProfileID: UUID(),
-            displayOrder: 0, createdAt: now, plan: .claudeMax20x, planSource: .detected
+            displayOrder: 0, createdAt: now, plan: .claudeUltra, planSource: .detected
         )
         let step = PlanStepView(account: detected, onSave: { _, _ in }, onSkip: {})
         XCTAssertFalse(step.asksPlan)

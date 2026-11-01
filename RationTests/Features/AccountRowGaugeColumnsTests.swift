@@ -29,7 +29,7 @@ final class AccountRowGaugeColumnsTests: XCTestCase {
     private func presentation(_ provider: Provider, fiveHour: Bool, fable: Bool = false) -> AccountPresentation {
         let id = UUID()
         let record = AccountRecord(id: id, provider: provider, label: "Client", webProfileID: UUID(), displayOrder: 0,
-                                   createdAt: now, plan: provider == .claude ? .claudeMax20x : .chatGPTPro20x,
+                                   createdAt: now, plan: provider == .claude ? .claudeUltra : .chatGPTPro20x,
                                    planSource: .detected)
         let snapshot = UsageSnapshot(
             accountID: id, fetchedAt: now.addingTimeInterval(-60),

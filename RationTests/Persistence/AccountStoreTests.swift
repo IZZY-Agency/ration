@@ -82,14 +82,14 @@ final class AccountStoreTests: XCTestCase {
     func testApplyDetectedPlanFillsThenRespectsUserChoice() async throws {
         let store = makeStore()
         let id = try await addClaude(store)
-        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeMax20x))
-        XCTAssertEqual(store.accounts.first?.plan, .claudeMax20x)
+        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeUltra))
+        XCTAssertEqual(store.accounts.first?.plan, .claudeUltra)
         XCTAssertEqual(store.accounts.first?.planSource, .detected)
 
-        try await store.setPlan(id: id, plan: .claudeMax5x)
+        try await store.setPlan(id: id, plan: .claudeMax)
         XCTAssertEqual(store.accounts.first?.planSource, .user)
-        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeMax20x))
-        XCTAssertEqual(store.accounts.first?.plan, .claudeMax5x, "detection never overwrites a user choice")
+        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeUltra))
+        XCTAssertEqual(store.accounts.first?.plan, .claudeMax, "detection never overwrites a user choice")
     }
 
     @MainActor
@@ -100,8 +100,8 @@ final class AccountStoreTests: XCTestCase {
         try await store.setPlan(id: id, plan: nil)
         XCTAssertNil(store.accounts.first?.plan)
         XCTAssertNil(store.accounts.first?.planSource)
-        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeMax20x))
-        XCTAssertEqual(store.accounts.first?.plan, .claudeMax20x)
+        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeUltra))
+        XCTAssertEqual(store.accounts.first?.plan, .claudeUltra)
     }
 
     @MainActor
@@ -110,9 +110,9 @@ final class AccountStoreTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appending(path: "a-\(UUID().uuidString).json")
         let store = AccountStore(fileURL: url, saveAccounts: { _ in saves += 1 })
         let id = try await addClaude(store)
-        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeMax20x))
+        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeUltra))
         let afterFirst = saves
-        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeMax20x))
+        try await store.applyDetectedPlan(id: id, detection: .tier(.claudeUltra))
         XCTAssertEqual(saves, afterFirst)
     }
 }

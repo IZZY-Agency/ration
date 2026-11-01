@@ -34,9 +34,11 @@ enum ActiveUsageDetector {
     }
 
     /// One candidate per account with a qualifying burn: the newest qualifying
-    /// downward step within the 5h lookback. 5h is authoritative when a 5h
-    /// series exists (even a single sample); weekly is used only when there is
-    /// no 5h series at all. `fiveHourSamples[id]` / `weeklySamples[id]` are
+    /// downward step within the 5h lookback. 5h is authoritative while the
+    /// account still reports a 5h window (even a single sample); weekly is used
+    /// when there is no 5h series, or when the 5h series stopped — its newest
+    /// sample more than `maxGap` behind the weekly one's (a Claude account on a
+    /// plan with no 5-hour limit keeps its old 5h history). `fiveHourSamples[id]` / `weeklySamples[id]` are
     /// that account's raw samples, ascending `ts`.
     private static func candidates(
         accounts: [AccountRecord],
@@ -48,8 +50,11 @@ enum ActiveUsageDetector {
         var result: [Candidate] = []
 
         for account in accounts {
-            // 5h authoritative when a series exists; weekly only when absent.
-            let hasFiveHour = !(fiveHourSamples[account.id]?.isEmpty ?? true)
+            // 5h authoritative while it is still reported; weekly otherwise.
+            let hasFiveHour = isFiveHourCurrent(
+                fiveHourSamples[account.id] ?? [],
+                weekly: weeklySamples[account.id] ?? []
+            )
             let source: UsageWindowKind = hasFiveHour ? .fiveHour : .weekly
             let samples = (hasFiveHour ? fiveHourSamples[account.id] : weeklySamples[account.id]) ?? []
             guard samples.count >= 2 else { continue }
@@ -81,6 +86,17 @@ enum ActiveUsageDetector {
             ))
         }
         return result
+    }
+
+    /// A 5h series that exists and has not fallen more than `maxGap` behind
+    /// the weekly series (no weekly series: any 5h sample counts).
+    private static func isFiveHourCurrent(
+        _ fiveHour: [UsageHistorySample],
+        weekly: [UsageHistorySample]
+    ) -> Bool {
+        guard let lastFiveHour = fiveHour.last else { return false }
+        guard let lastWeekly = weekly.last else { return true }
+        return lastWeekly.ts.timeIntervalSince(lastFiveHour.ts) <= maxGap
     }
 
     /// EVERY account with a qualifying burn — no per-provider winner

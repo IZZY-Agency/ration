@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.13.2
+
+- Claude's new plan names: Max 5x is now Max and Max 20x is now Ultra, on the
+  cards, in Settings and in switch advice. Accounts you already added keep
+  their plan.
+- A verified Ultra account has no 5-hour limit. Its row shows only its Fable
+  and weekly limits, its Settings say warm-up has no window to start, and its
+  ring in the menu bar and the ring bar shows the weekly limit when the Claude
+  ring is set to 5 hours. Pro, Max and any account that still reports a
+  5-hour limit keep it everywhere: gauges, alerts, warm-up and switching.
+- Switch advice sizes Ultra at 10× Pro, the weekly allowance Anthropic lists
+  for it (it was 20×). Max stays at 5×.
+- Claude Code switching can move to an Ultra account: the 5-hour limit counts
+  only where an account has one. A 5-hour figure Claude reports but Ration
+  can't read counts as unknown, so Ration never suggests or switches to that
+  account on a guess.
+- An Ultra account you're using shows IN USE again, and its ring gets the
+  in-use dot: Ration reads its activity from the weekly limit once the 5-hour
+  one is gone.
+
 ## 1.13.1
 
 - An account's limits share the whole row in the popover: a ChatGPT account

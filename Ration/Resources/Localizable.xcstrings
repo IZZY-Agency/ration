@@ -1335,25 +1335,25 @@
         }
       }
     },
-    "Fable applies to Max accounts; accounts without the selected window fall back to their finest one." : {
-      "comment" : "Settings › General note. Fable is a model name and Max a plan name (never translated).",
+    "Fable applies to Max and Ultra accounts. Accounts without the selected window fall back to their finest one: Ultra has no 5-hour window." : {
+      "comment" : "Settings › Display note under the ring window pickers. Fable is a model name, Max and Ultra are plan names (never translated); the 5-hour window as the picker names it.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fable applies to Max accounts; accounts without the selected window fall back to their finest one."
+            "value" : "Fable applies to Max and Ultra accounts. Accounts without the selected window fall back to their finest one: Ultra has no 5-hour window."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fable s’applique aux comptes Max ; les comptes sans la fenêtre choisie utilisent leur fenêtre la plus courte."
+            "value" : "Fable s’applique aux comptes Max et Ultra. Les comptes sans la fenêtre choisie utilisent leur fenêtre la plus courte : Ultra n’a pas de fenêtre de 5 heures."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fable стосується облікових записів Max; облікові записи без вибраного вікна використовують своє найкоротше."
+            "value" : "Fable стосується облікових записів Max та Ultra. Облікові записи без вибраного вікна використовують своє найкоротше: в Ultra немає 5-годинного вікна."
           }
         }
       }
@@ -4985,6 +4985,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Увімкнено"
+          }
+        }
+      }
+    },
+    "account.warmUp.noFiveHourLimit" : {
+      "comment" : "Settings › account › Automation: under the Auto-start 5h window toggle when the account's usage shows a weekly limit and no 5-hour limit (Claude Ultra since October 2026), so warm-up has nothing to start.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This plan has no 5-hour limit, so there is no window to start."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce forfait n’a pas de limite de 5 h : il n’y a pas de fenêtre à démarrer."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "У цьому тарифі немає 5-годинного ліміту, тож запускати нічого."
           }
         }
       }
@@ -19656,7 +19680,7 @@
       }
     },
     "plan.automatic.detected" : {
-      "comment" : "Settings › account › Plan picker option with the detected plan. %@ = plan name (never translated: Pro, Max 5x…).",
+      "comment" : "Settings › account › Plan picker option with the detected plan. %@ = plan name (never translated: Pro, Max, Ultra…).",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -24947,7 +24971,7 @@
       }
     },
     "tokenBurn.ratio" : {
-      "comment" : "Plan value against the plan price. %1$@ = a ratio like \"1.53×\"; %2$@ = the plan name (e.g. Max 20x); %3$@ = its monthly price like \"$200\".",
+      "comment" : "Plan value against the plan price. %1$@ = a ratio like \"1.53×\"; %2$@ = the plan name (e.g. Ultra); %3$@ = its monthly price like \"$200\".",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {

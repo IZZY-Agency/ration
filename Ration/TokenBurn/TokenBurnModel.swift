@@ -7,7 +7,7 @@ struct TokenBurnAccount: Equatable, Sendable {
     let label: String
     /// Resolved from its web session; nil until its first fetch.
     let organizationID: String?
-    /// Its organization's own rate-limit tier says Pro, Max 5x or Max 20x: a
+    /// Its organization's own rate-limit tier says Pro, Max or Ultra: a
     /// personal plan, one seat (spec §10.1).
     let personalPlanDetected: Bool
     /// The plan Ration shows (detected or set); prices the ratio.

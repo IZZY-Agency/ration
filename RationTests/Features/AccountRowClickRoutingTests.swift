@@ -42,7 +42,7 @@ final class AccountRowClickRoutingTests: XCTestCase {
     private func claude() -> AccountPresentation {
         let id = UUID()
         let record = AccountRecord(id: id, provider: .claude, label: "Work", webProfileID: UUID(), displayOrder: 0,
-                                   createdAt: now, plan: .claudeMax20x, planSource: .detected)
+                                   createdAt: now, plan: .claudeUltra, planSource: .detected)
         let snapshot = UsageSnapshot(
             accountID: id, fetchedAt: now.addingTimeInterval(-60),
             fiveHour: UsageWindow(kind: .fiveHour, remainingFraction: 0.8, resetsAt: now.addingTimeInterval(2 * 3600)),

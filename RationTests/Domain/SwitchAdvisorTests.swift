@@ -125,6 +125,35 @@ final class SwitchAdvisorTests: XCTestCase {
         ])
     }
 
+    /// A 5-hour window the account reported but the fetch could not read is
+    /// unknown usage: that account is never the suggestion, however roomy
+    /// its weekly looks. An account with no 5-hour limit at all still is.
+    func testATargetWithAnUnreadableFiveHourWindowIsNeverSuggested() {
+        let a = account("A", fiveHour: 0.2, weekly: 0.8)
+        order += 1
+        let unreadableID = UUID()
+        let unreadable = AccountPresentation(
+            account: AccountRecord(id: unreadableID, provider: .claude, label: "U", webProfileID: UUID(),
+                                   displayOrder: order, createdAt: now),
+            snapshot: UsageSnapshot(accountID: unreadableID, fetchedAt: now.addingTimeInterval(-60), fiveHour: nil,
+                                    weekly: window(.weekly, used: 0.2), unreadableWindowKinds: [.fiveHour]),
+            state: .current
+        )
+        XCTAssertEqual(advice([a, unreadable], phases: inUse(a)), [])
+        let noLimit = account("N", weekly: 0.2)
+        XCTAssertEqual(advice([a, unreadable, noLimit], phases: inUse(a)).first?.toAccountID, noLimit.id)
+    }
+
+    /// `UsageHeadroom` counts a considered window that was reported but not
+    /// readable as unknown, like one that is not current.
+    func testHeadroomCountsAnUnreadableConsideredWindowAsUnknown() {
+        let snapshot = UsageSnapshot(accountID: UUID(), fetchedAt: now.addingTimeInterval(-60), fiveHour: nil,
+                                     weekly: window(.weekly, used: 0.2), unreadableWindowKinds: [.fiveHour])
+        XCTAssertTrue(UsageHeadroom.assess(snapshot, kinds: [.weekly, .fiveHour], now: now).hasUnknown)
+        XCTAssertFalse(UsageHeadroom.assess(snapshot, kinds: [.weekly], now: now).hasUnknown,
+                       "only the windows asked about count")
+    }
+
     /// 5h at 80 % with a 5h Warn of 75 triggers even though weekly is the
     /// tighter limit and sits below the weekly Warn.
     func testAnyWindowAtItsOwnWarnTriggers() {
@@ -474,33 +503,33 @@ final class SwitchAdvisorTests: XCTestCase {
     }
 
     func testEqualPlansBehaveLikePercentages() {
-        let a = account("A", weekly: 0.80, plan: .claudeMax20x)
-        let b19 = account("B", weekly: 0.61, plan: .claudeMax20x)
+        let a = account("A", weekly: 0.80, plan: .claudeUltra)
+        let b19 = account("B", weekly: 0.61, plan: .claudeUltra)
         XCTAssertEqual(advice([a, b19], phases: inUse(a)), [])
-        let c20 = account("C", weekly: 0.60, plan: .claudeMax20x)
+        let c20 = account("C", weekly: 0.60, plan: .claudeUltra)
         XCTAssertEqual(advice([a, c20], phases: inUse(a)).map(\.toAccountID), [c20.id])
     }
 
     func testUnknownPlanTargetIsSkippedWhenFromHasPlan() {
-        let from = account("from", weekly: 0.9, plan: .claudeMax5x)
+        let from = account("from", weekly: 0.9, plan: .claudeMax)
         let unknown = account("unknown", weekly: 0)
         XCTAssertEqual(advice([from, unknown], phases: inUse(from)), [])
-        let known = account("known", weekly: 0.5, plan: .claudeMax5x)
+        let known = account("known", weekly: 0.5, plan: .claudeMax)
         XCTAssertEqual(advice([from, unknown, known], phases: inUse(from)).map(\.toAccountID), [known.id])
     }
 
     func testFromWithoutPlanComparesOnlyNoPlanAccountsByPercent() {
         let from = account("from", weekly: 0.9)
-        let known = account("known", weekly: 0, plan: .claudeMax20x)
+        let known = account("known", weekly: 0, plan: .claudeUltra)
         XCTAssertEqual(advice([from, known], phases: inUse(from)), [])
         let unknown = account("unknown", weekly: 0.5)
         XCTAssertEqual(advice([from, known, unknown], phases: inUse(from)).map(\.toAccountID), [unknown.id])
     }
 
     func testCapacityTieFallsBackToSoonestWeeklyReset() {
-        let from = account("from", weekly: 0.9, plan: .claudeMax5x)
-        let later = account("later", weekly: 0.5, weeklyResetsAt: now.addingTimeInterval(7_200), plan: .claudeMax5x)
-        let sooner = account("sooner", weekly: 0.5, weeklyResetsAt: now.addingTimeInterval(3_600), plan: .claudeMax5x)
+        let from = account("from", weekly: 0.9, plan: .claudeMax)
+        let later = account("later", weekly: 0.5, weeklyResetsAt: now.addingTimeInterval(7_200), plan: .claudeMax)
+        let sooner = account("sooner", weekly: 0.5, weeklyResetsAt: now.addingTimeInterval(3_600), plan: .claudeMax)
         XCTAssertEqual(advice([from, later, sooner], phases: inUse(from)).map(\.toAccountID), [sooner.id])
     }
 }

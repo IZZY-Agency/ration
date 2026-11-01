@@ -150,7 +150,7 @@ final class TokenBurnModelTests: XCTestCase {
     private let accountW = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
     private var personalWork: TokenBurnAccount {
         TokenBurnAccount(id: accountW, label: "Work", organizationID: "org-W", personalPlanDetected: true,
-                         plan: .claudeMax20x, renewalDay: nil)
+                         plan: .claudeUltra, renewalDay: nil)
     }
 
     private func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }

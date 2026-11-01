@@ -2796,7 +2796,7 @@ final class AppModelTests: XCTestCase {
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
         try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
         let account = try XCTUnwrap(fixture.model.accounts.first)
-        XCTAssertEqual(account.plan, .claudeMax5x, "sign-in waits for the plan read")
+        XCTAssertEqual(account.plan, .claudeMax, "sign-in waits for the plan read")
 
         mode.clock = mode.clock.addingTimeInterval(ClaudeOrganizationResolver.planCacheLifetime + 1)
         mode.hangList = true
@@ -2812,7 +2812,7 @@ final class AppModelTests: XCTestCase {
             view.loadedRequests.contains { $0.url?.absoluteString == "about:blank" },
             "the plan read's timeout recycles the view"
         )
-        XCTAssertEqual(fixture.model.accounts.first?.plan, .claudeMax5x, "a timeout is not a new reading")
+        XCTAssertEqual(fixture.model.accounts.first?.plan, .claudeMax, "a timeout is not a new reading")
     }
 
     // MARK: - Late plan reads
@@ -2883,7 +2883,7 @@ final class AppModelTests: XCTestCase {
         let sessionID = try fixture.model.beginSignIn(provider: .claude)
         try await fixture.model.completeSignIn(sessionID: sessionID, label: "Personal")
         let account = try XCTUnwrap(fixture.model.accounts.first)
-        XCTAssertEqual(account.plan, .claudeMax5x, "premise: sign-in read the plan")
+        XCTAssertEqual(account.plan, .claudeMax, "premise: sign-in read the plan")
         return (fixture, account)
     }
 
@@ -2940,8 +2940,8 @@ final class AppModelTests: XCTestCase {
         mode.release(timeout: false)   // org A's list answers Max 20x
         await fixture.model.flushPlanRefreshes()
 
-        XCTAssertEqual(fixture.model.accounts.first?.plan, .claudeMax5x, "org A's late reading is not applied")
-        XCTAssertNotEqual(fixture.model.latestPlanDetectionForTesting(accountID: account.id), .tier(.claudeMax20x))
+        XCTAssertEqual(fixture.model.accounts.first?.plan, .claudeMax, "org A's late reading is not applied")
+        XCTAssertNotEqual(fixture.model.latestPlanDetectionForTesting(accountID: account.id), .tier(.claudeUltra))
     }
 
     /// Control: the same late reading IS applied when the org is unchanged.
@@ -2957,7 +2957,7 @@ final class AppModelTests: XCTestCase {
         mode.release(timeout: false)
         await fixture.model.flushPlanRefreshes()
 
-        XCTAssertEqual(fixture.model.accounts.first?.plan, .claudeMax20x)
+        XCTAssertEqual(fixture.model.accounts.first?.plan, .claudeUltra)
     }
 
     #if DEBUG

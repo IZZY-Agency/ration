@@ -37,8 +37,8 @@ shows, from your own signed-in session, on your Mac.
   with the most room. A switch applies to new Codex sessions: restart the
   running ones, the ChatGPT app's Codex too. Remembered sign-ins stay in your
   login Keychain.
-- **Live meters per window.** Claude 5-hour, weekly and Fable weekly (Max
-  plans); ChatGPT / Codex 5-hour and weekly; Cursor's usage-based spend for the
+- **Live meters per window.** Claude 5-hour (not on Ultra), weekly and Fable
+  weekly (Max and Ultra); ChatGPT / Codex 5-hour and weekly; Cursor's usage-based spend for the
   current billing period.
 - **A compact popover.** Each account takes two lines: its name, then every
   limit as a thin bar with its percent and reset side by side. Accounts you're
@@ -74,14 +74,14 @@ shows, from your own signed-in session, on your Mac.
   ChatGPT, over the hours Ration actually watched.
 - **Several accounts per provider**, grouped, with pause and resume that keeps
   the sign-in, and optional sorting by soonest reset.
-- **Claude warm-up.** Start the 5-hour window the moment it resets, except
-  during the hours and holidays you mark quiet, and never when the weekly
-  allowance is already spent. On by default for newly added Claude accounts;
-  switch it off per account.
+- **Claude warm-up.** Start the 5-hour window (Pro and Max) the moment it
+  resets, except during the hours and holidays you mark quiet, and never when
+  the weekly allowance is already spent. On by default for newly added Claude
+  accounts; switch it off per account.
 - **Which account next.** When the account you're using nears its limit and
   another account on the same provider has clearly more room, Ration names it
   in the popover, the notification and the alerts panel, comparing real plan
-  capacity (Pro, Max 5x/20x, Plus, Pro 5x/20x), not just percentages.
+  capacity (Claude Pro, Max, Ultra; ChatGPT Plus, Pro 5x/20x), not just percentages.
 - **Focus layout.** One big number for the subscription you're using, what's
   nearly spent, and where to go next; switch from the popover header.
 - **API spend.** This month's spend for an Anthropic or OpenAI organization,

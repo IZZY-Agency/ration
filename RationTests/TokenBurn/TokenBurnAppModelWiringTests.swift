@@ -31,14 +31,14 @@ final class TokenBurnAppModelWiringTests: XCTestCase {
 
         try await fixture.snapshots.save(UsageSnapshot(
             accountID: work.id, fetchedAt: Date(timeIntervalSince1970: 1_000), fiveHour: nil, weekly: nil,
-            organizationID: "org-W", planDetection: .tier(.claudeMax20x)))
+            organizationID: "org-W", planDetection: .tier(.claudeUltra)))
         try await fixture.snapshots.save(UsageSnapshot(
             accountID: team.id, fetchedAt: Date(timeIntervalSince1970: 1_000), fiveHour: nil, weekly: nil,
             organizationID: "org-T", planDetection: .unrecognized))
 
         XCTAssertEqual(tokenBurn.accounts, [
             TokenBurnAccount(id: work.id, label: "Work", organizationID: "org-W", personalPlanDetected: true,
-                             plan: .claudeMax20x, renewalDay: nil),
+                             plan: .claudeUltra, renewalDay: nil),
             TokenBurnAccount(id: team.id, label: "Team", organizationID: "org-T", personalPlanDetected: false,
                              plan: nil, renewalDay: nil),
         ])
@@ -51,13 +51,13 @@ final class TokenBurnAppModelWiringTests: XCTestCase {
         defer { fixture.removeFiles() }
         try await fixture.model.load(startBackgroundRefresh: false)
         let work = try await signIn(fixture, "Work")
-        try await fixture.model.requestSetPlan(accountID: work.id, plan: .claudeMax5x).value
+        try await fixture.model.requestSetPlan(accountID: work.id, plan: .claudeMax).value
         let tokenBurn = tokenBurn(in: fixture.directory)
         fixture.model.tokenBurn = tokenBurn
         try await fixture.snapshots.save(UsageSnapshot(
             accountID: work.id, fetchedAt: Date(timeIntervalSince1970: 1_000), fiveHour: nil, weekly: nil,
             organizationID: "org-W", planDetection: .unrecognized))
-        XCTAssertEqual(tokenBurn.accounts.first?.plan, .claudeMax5x)
+        XCTAssertEqual(tokenBurn.accounts.first?.plan, .claudeMax)
         XCTAssertEqual(tokenBurn.accounts.first?.personalPlanDetected, false)
     }
 
@@ -70,7 +70,7 @@ final class TokenBurnAppModelWiringTests: XCTestCase {
         let work = try await signIn(fixture, "Work")
         let tokenBurn = tokenBurn(in: fixture.directory)
         fixture.model.tokenBurn = tokenBurn
-        await fixture.model.applyDetectedPlan(accountID: work.id, detection: .tier(.claudeMax20x),
+        await fixture.model.applyDetectedPlan(accountID: work.id, detection: .tier(.claudeUltra),
                                               at: Date(timeIntervalSince1970: 2_000))
         try await fixture.snapshots.save(UsageSnapshot(
             accountID: work.id, fetchedAt: Date(timeIntervalSince1970: 1_000), fiveHour: nil, weekly: nil,

@@ -631,7 +631,7 @@ final class ClaudeOrganizationResolverTests: XCTestCase {
         """
         let resolver = resolver(Self.evaluator(cookie: Self.org, organizationsEnvelope: Self.listEnvelope(body)))
         let detection = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
-        XCTAssertEqual(detection, .tier(.claudeMax20x))
+        XCTAssertEqual(detection, .tier(.claudeUltra))
     }
 
     func testPlanDetectionIsCachedForItsLifetime() async throws {
@@ -647,7 +647,7 @@ final class ClaudeOrganizationResolverTests: XCTestCase {
         XCTAssertEqual(calls, ["list"])
         clock = clock.addingTimeInterval(ClaudeOrganizationResolver.planCacheLifetime + 1)
         let again = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
-        XCTAssertEqual(again, .tier(.claudeMax5x))
+        XCTAssertEqual(again, .tier(.claudeMax))
         XCTAssertEqual(calls, ["list", "list"])
     }
 
@@ -697,8 +697,8 @@ final class ClaudeOrganizationResolverTests: XCTestCase {
         release?.resume()
         let (one, two) = try await (first, second)
         XCTAssertEqual(listCalls, 1, "the second caller joins the in-flight read")
-        XCTAssertEqual(one, .tier(.claudeMax5x))
-        XCTAssertEqual(two, .tier(.claudeMax5x))
+        XCTAssertEqual(one, .tier(.claudeMax))
+        XCTAssertEqual(two, .tier(.claudeMax))
     }
 
     func testListThatOmitsTheOrgClearsItsOldReading() async throws {
@@ -712,7 +712,7 @@ final class ClaudeOrganizationResolverTests: XCTestCase {
             now: { clock }
         )
         _ = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
-        XCTAssertEqual(resolver.cachedPlanDetection(organizationID: Self.org), .tier(.claudeMax20x))
+        XCTAssertEqual(resolver.cachedPlanDetection(organizationID: Self.org), .tier(.claudeUltra))
 
         body = "[{\"uuid\":\"\(Self.otherOrg)\",\"capabilities\":[\"chat\"],\"rate_limit_tier\":\"default_claude_ai\"}]"
         clock = clock.addingTimeInterval(ClaudeOrganizationResolver.planCacheLifetime + 1)
@@ -751,7 +751,7 @@ final class ClaudeOrganizationResolverTests: XCTestCase {
         XCTAssertNil(resolver.cachedPlanDetection(organizationID: Self.org), "a cancelled read records nothing")
 
         let again = try await resolver.refreshPlanDetection(organizationID: Self.org, in: WKWebView())
-        XCTAssertEqual(again, .tier(.claudeMax5x))
+        XCTAssertEqual(again, .tier(.claudeMax))
         XCTAssertEqual(listCalls, 2)
     }
 

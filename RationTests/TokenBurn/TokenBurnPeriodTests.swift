@@ -19,11 +19,11 @@ final class TokenBurnPeriodTests: XCTestCase {
 
     func testMonthlyPlanPrices() {
         XCTAssertEqual(ClaudePlanPrice.monthlyUSD(.claudePro), 20)
-        XCTAssertEqual(ClaudePlanPrice.monthlyUSD(.claudeMax5x), 100)
-        XCTAssertEqual(ClaudePlanPrice.monthlyUSD(.claudeMax20x), 200)
+        XCTAssertEqual(ClaudePlanPrice.monthlyUSD(.claudeMax), 100)
+        XCTAssertEqual(ClaudePlanPrice.monthlyUSD(.claudeUltra), 200)
         XCTAssertNil(ClaudePlanPrice.monthlyUSD(.chatGPTPro20x), "Claude plans only")
         XCTAssertNil(ClaudePlanPrice.monthlyUSD(nil))
-        XCTAssertEqual(ClaudePlanPrice.date, "2026-09-30")
+        XCTAssertEqual(ClaudePlanPrice.date, "2026-11-01")
     }
 
     // MARK: Periods (spec §5.4)

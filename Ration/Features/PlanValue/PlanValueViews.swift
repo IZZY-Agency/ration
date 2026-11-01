@@ -50,7 +50,7 @@ struct TokenBurnSectionFooterView: View {
 struct TokenBurnPlanValueSection: View {
     @ObservedObject var model: TokenBurnModel
     let accountID: UUID
-    /// "Max 20x"; nil when the plan is not known.
+    /// "Ultra"; nil when the plan is not known.
     let planName: String?
 
     var body: some View {

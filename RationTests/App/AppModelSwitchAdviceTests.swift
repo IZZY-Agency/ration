@@ -394,10 +394,10 @@ final class AppModelSwitchAdviceTests: XCTestCase {
 
     // MARK: Plan readings reach advice before the store saves them
 
-    /// B's stored plan says Pro; its newest snapshot reads Max 20x. The
+    /// B's stored plan says Pro; its newest snapshot reads Ultra. The
     /// snapshot is saved straight to the store, so the account record is
     /// NEVER updated (the plan save is, in effect, held forever): advice and
-    /// the notification must still size B as Max 20x.
+    /// the notification must still size B as Ultra.
     func testNewestPlanReadingSizesTheTargetBeforeThePlanIsSaved() async throws {
         let clock = SwitchAdviceClock(t0)
         let fixture = try makeAlertsFixture(now: { clock.now })
@@ -405,24 +405,24 @@ final class AppModelSwitchAdviceTests: XCTestCase {
         fixture.adapter.planDetection = .tier(.claudePro)
         let (a, b) = try await signInTwo(fixture)
         let c = try await signIn(fixture, label: "C")
-        try await fixture.model.requestSetPlan(accountID: c.id, plan: .claudeMax20x).value
+        try await fixture.model.requestSetPlan(accountID: c.id, plan: .claudeUltra).value
         try await fixture.model.setUsageAlertsEnabled(true)
         XCTAssertEqual(fixture.model.accounts.first { $0.id == b.id }?.plan, .claudePro, "premise")
 
-        // B: 90% of a Pro (0.9 units) vs C: 50% of a Max 20x (10 units) → C.
+        // B: 90% of a Pro (0.9 units) vs C: 50% of an Ultra (5 units) → C.
         try await fixture.snapshots.save(snapshot(c.id, at: t0, fiveHour: 0.50))
         try await fixture.snapshots.save(UsageSnapshot(
             accountID: b.id,
             fetchedAt: t0,
             fiveHour: UsageWindow(kind: .fiveHour, remainingFraction: 0.90, resetsAt: nil),
             weekly: nil,
-            planDetection: .tier(.claudeMax20x)
+            planDetection: .tier(.claudeUltra)
         ))
         try await makeAInUseAtWarn(fixture, a: a, targets: [])
         await fixture.model.flushAlertEvaluations()
 
         XCTAssertEqual(fixture.model.accounts.first { $0.id == b.id }?.plan, .claudePro, "record not yet saved")
-        XCTAssertEqual(fixture.model.advice(forAccount: a.id)?.toAccountID, b.id, "B read as Max 20x: 18 units")
+        XCTAssertEqual(fixture.model.advice(forAccount: a.id)?.toAccountID, b.id, "B read as Ultra: 9 units")
         XCTAssertEqual(fixture.model.currentAdvice(forAccount: a.id)?.toAccountID, b.id)
         let body = try await warnBody(fixture, accountID: a.id)
         XCTAssertTrue(body.contains("B"), "the notification names B: \(body)")
@@ -437,7 +437,7 @@ final class AppModelSwitchAdviceTests: XCTestCase {
         let (a, b) = try await signInTwo(fixture)
         let c = try await signIn(fixture, label: "C")
         try await fixture.model.requestSetPlan(accountID: b.id, plan: .claudePro).value
-        try await fixture.model.requestSetPlan(accountID: c.id, plan: .claudeMax20x).value
+        try await fixture.model.requestSetPlan(accountID: c.id, plan: .claudeUltra).value
 
         try await fixture.snapshots.save(snapshot(c.id, at: t0, fiveHour: 0.50))
         try await fixture.snapshots.save(UsageSnapshot(
@@ -445,7 +445,7 @@ final class AppModelSwitchAdviceTests: XCTestCase {
             fetchedAt: t0,
             fiveHour: UsageWindow(kind: .fiveHour, remainingFraction: 0.90, resetsAt: nil),
             weekly: nil,
-            planDetection: .tier(.claudeMax20x)
+            planDetection: .tier(.claudeUltra)
         ))
         try await makeAInUseAtWarn(fixture, a: a, targets: [])
 
