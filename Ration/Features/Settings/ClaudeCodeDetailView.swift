@@ -166,6 +166,11 @@ struct ClaudeCodeDetailView: View {
         } label: {
             Text(LocalizedStringResource.claudeCodeSettingsAutoLimit)
         }
+        if model.state.rule.kind == .fiveHour {
+            Text(LocalizedStringResource.claudeCodeSettingsAutoFiveHourWithoutLimit)
+                .font(Theme.mono(12))
+                .foregroundStyle(Theme.creamDim)
+        }
         Text(LocalizedStringResource.claudeCodeSettingsAutoExplain)
             .font(Theme.mono(12))
             .foregroundStyle(Theme.creamDim)

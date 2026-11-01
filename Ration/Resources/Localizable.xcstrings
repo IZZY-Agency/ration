@@ -11415,6 +11415,30 @@
         }
       }
     },
+    "claudeCode.settings.auto.fiveHourWithoutLimit" : {
+      "comment" : "Settings › Claude Code › Switch automatically, under the limit picker while it is set to 5-hour: an account with no 5-hour limit (Claude Ultra since October 2026) is measured on its weekly limit instead.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An account with no 5-hour limit, like Ultra, is measured on its weekly limit."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un compte sans limite de 5 heures, comme Ultra, est mesuré sur sa limite hebdomadaire."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Для облікового запису без 5-годинного ліміту, як-от Ultra, береться тижневий ліміт."
+          }
+        }
+      }
+    },
     "claudeCode.settings.auto.header" : {
       "comment" : "Settings section: switch Claude Code to another account automatically by a rule.",
       "extractionState" : "manual",

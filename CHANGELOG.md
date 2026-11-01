@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.13.3
+
+- Automatic Claude Code switching set to the 5-hour limit now works when
+  Claude Code is on an Ultra account. Ultra has no 5-hour limit, so the rule
+  watches that account's weekly limit instead. Accounts with a 5-hour limit
+  are still measured on it, and one whose 5-hour figure can't be read never
+  triggers a switch. The switch notification names the limit it measured, and
+  Settings › Claude Code says so under the Limit picker.
+
 ## 1.13.2
 
 - Claude's new plan names: Max 5x is now Max and Max 20x is now Ultra, on the

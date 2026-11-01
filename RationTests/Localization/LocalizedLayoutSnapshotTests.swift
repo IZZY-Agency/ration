@@ -1476,6 +1476,13 @@ final class LocalizedLayoutSnapshotTests: XCTestCase {
             try write(await renderHosted(ClaudeCodeRememberSheet(model: model, onDone: {}).background(Color(nsColor: .windowBackgroundColor)), width: 480, height: 460, scheme),
                       dir, "settings-claude-code-remember-\(suffix).png")
         }
+        // A 5-hour rule: the note says how an account with no 5-hour limit
+        // (Ultra) is measured.
+        await model.setAutoSwitch(enabled: model.state.autoSwitchEnabled, rule: .init(percent: 75, kind: .fiveHour))
+        for (scheme, suffix) in Self.schemes {
+            try write(await renderHosted(ClaudeCodeDetailView(model: model), width: 520, height: 1250, scheme),
+                      dir, "settings-claude-code-five-hour-rule-\(suffix).png")
+        }
     }
 
     // MARK: Codex switching

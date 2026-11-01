@@ -157,6 +157,43 @@ final class ClaudeCodeAutoSwitchTests: XCTestCase {
         XCTAssertEqual(decide(candidate(1, snap(week: 0.8)), [candidate(2, unreadable)]), .waiting(usedPercent: 80))
     }
 
+    /// A 5-hour rule on an account with no 5-hour limit (a verified Ultra)
+    /// watches its weekly limit instead, so the rule still fires.
+    func testAFiveHourRuleWatchesTheWeeklyLimitOnAnAccountWithNoFiveHourLimit() {
+        let fiveHourRule = Auto.Rule(percent: 75, kind: .fiveHour)
+        let target = candidate(2, snap(week: 0.2))
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.8, five: nil)), [target], rule: fiveHourRule),
+                       .switchTo(signInUUID: "acc-2", accountID: target.accountID, usedPercent: 80))
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.5, five: nil)), [target], rule: fiveHourRule), .none,
+                       "the weekly limit is below the threshold")
+    }
+
+    /// Where the 5-hour limit exists it is what the rule measures: an
+    /// unreadable one never triggers, and a Max account's weekly does not
+    /// stand in for its 5-hour window.
+    func testAFiveHourRuleStillMeasuresTheFiveHourWindowWhereTheLimitExists() {
+        let fiveHourRule = Auto.Rule(percent: 75, kind: .fiveHour)
+        let target = candidate(2, snap(week: 0.2))
+        let base = snap(week: 0.9, five: nil)
+        let unreadable = UsageSnapshot(accountID: base.accountID, fetchedAt: base.fetchedAt, fiveHour: nil, weekly: base.weekly,
+                                       unreadableWindowKinds: [.fiveHour])
+        XCTAssertEqual(decide(candidate(1, unreadable), [target], rule: fiveHourRule), .none)
+        XCTAssertEqual(decide(candidate(1, snap(week: 0.9, five: 0.3)), [target], rule: fiveHourRule), .none)
+    }
+
+    func testTheMeasuredLimitFollowsWhatTheAccountReports() {
+        let fiveHourRule = Auto.Rule(percent: 75, kind: .fiveHour)
+        XCTAssertEqual(Auto.measuredKind(for: fiveHourRule, in: snap(week: 0.5, five: nil)), .weekly)
+        XCTAssertEqual(Auto.measuredKind(for: fiveHourRule, in: snap(week: 0.5, five: 0.1)), .fiveHour)
+        XCTAssertEqual(Auto.measuredKind(for: weekly, in: snap(week: 0.5, five: nil)), .weekly)
+        XCTAssertNil(Auto.measuredKind(for: Auto.Rule(percent: 75, kind: .modelWeekly), in: snap(week: 0.5)),
+                     "no Fable limit: nothing to measure, no stand-in")
+        let base = snap(week: 0.5, five: nil)
+        let unreadable = UsageSnapshot(accountID: base.accountID, fetchedAt: base.fetchedAt, fiveHour: nil, weekly: base.weekly,
+                                       unreadableWindowKinds: [.fiveHour])
+        XCTAssertNil(Auto.measuredKind(for: fiveHourRule, in: unreadable))
+    }
+
     func testNoOtherAccountIsNoRoom() {
         XCTAssertEqual(decide(candidate(1, snap(week: 0.8)), []), .noRoom(usedPercent: 80, candidates: []))
     }

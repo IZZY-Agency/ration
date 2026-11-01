@@ -58,13 +58,25 @@ enum ClaudeCodeAutoSwitch {
         }
     }
 
+    /// The limit the rule is measured on for the account Claude Code uses:
+    /// the rule's own, or, for a 5-hour rule on an account with no 5-hour
+    /// limit (a verified Ultra since Anthropic's 2026-10-30 change), its
+    /// weekly. Nil when the account reports neither — including a 5-hour
+    /// window it has but that could not be read: no stand-in for unknown.
+    static func measuredKind(for rule: Rule, in snapshot: UsageSnapshot) -> UsageWindowKind? {
+        if snapshot.window(for: rule.kind) != nil { return rule.kind }
+        if rule.kind == .fiveHour, snapshot.hasNoFiveHourLimit { return .weekly }
+        return nil
+    }
+
     static func decide(current: Candidate, others: [Candidate], rule: Rule, now: Date) -> Decision {
         decide(current: current, others: others, rule: rule, policy: .claudeCode(for: rule), now: now)
     }
 
     static func decide(current: Candidate, others: [Candidate], rule: Rule, policy: Policy, now: Date) -> Decision {
         guard current.verified, current.usable, let snapshot = current.snapshot,
-              let window = snapshot.window(for: rule.kind),
+              let kind = measuredKind(for: rule, in: snapshot),
+              let window = snapshot.window(for: kind),
               UsageEvidence.isCurrent(snapshot: snapshot, windowResetsAt: window.resetsAt, now: now)
         else { return .none }
         let used = 1 - window.remainingFraction

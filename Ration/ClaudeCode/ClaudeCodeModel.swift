@@ -304,7 +304,7 @@ final class ClaudeCodeModel: ObservableObject {
             guard let fresh = self.automaticDecision(now: at) else { return }
             if case .switchTo(let uuid, let accountID, let usedPercent) = fresh.decision {
                 await self.performSwitch(to: accountID, signIn: uuid, expecting: fresh.current.uuid,
-                                         automatic: true, usedPercent: usedPercent)
+                                         automatic: true, usedPercent: usedPercent, measuredKind: fresh.measuredKind)
             } else {
                 self.apply(fresh.decision, current: fresh.current, now: at)
             }
@@ -313,7 +313,11 @@ final class ClaudeCodeModel: ObservableObject {
 
     /// The rule's decision for the account Claude Code uses now, or nil when
     /// automatic switching cannot act (off, paused, busy, unlinked, unknown).
-    private func automaticDecision(now date: Date) -> (decision: ClaudeCodeAutoSwitch.Decision, current: ClaudeCodeAccount)? {
+    /// The decision, the account Claude Code uses, and the limit the rule
+    /// was measured on there (the notification names it).
+    private func automaticDecision(
+        now date: Date
+    ) -> (decision: ClaudeCodeAutoSwitch.Decision, current: ClaudeCodeAccount, measuredKind: UsageWindowKind?)? {
         guard state.autoSwitchEnabled, !state.autoSwitchPaused, switchingTo == nil,
               let current, let currentID = state.links[current.uuid]
         else { return nil }
@@ -324,7 +328,8 @@ final class ClaudeCodeModel: ObservableObject {
                          planUnits: candidate.planUnits, order: candidate.order)
         }
         guard let mine = pool.first(where: { $0.accountID == currentID && $0.signInUUID == current.uuid }) else { return nil }
-        return (ClaudeCodeAutoSwitch.decide(current: mine, others: pool, rule: state.rule, now: date), current)
+        let measured = mine.snapshot.flatMap { ClaudeCodeAutoSwitch.measuredKind(for: state.rule, in: $0) }
+        return (ClaudeCodeAutoSwitch.decide(current: mine, others: pool, rule: state.rule, now: date), current, measured)
     }
 
     /// A decision that is not a switch: the status (always) and the
@@ -499,7 +504,8 @@ final class ClaudeCodeModel: ObservableObject {
 
     // MARK: Switching
 
-    private func performSwitch(to accountID: UUID, signIn uuid: String, expecting: String?, automatic: Bool, usedPercent: Int?) async {
+    private func performSwitch(to accountID: UUID, signIn uuid: String, expecting: String?, automatic: Bool, usedPercent: Int?,
+                               measuredKind: UsageWindowKind? = nil) async {
         switchingTo = accountID
         let switcher = deps.switcher
         await writeObserver?.claudeCodeWillWrite()
@@ -522,7 +528,7 @@ final class ClaudeCodeModel: ObservableObject {
             if automatic, let usedPercent {
                 let toLabel = displayLabel(forSignIn: to.uuid)
                 let fromLabel = displayLabel(forSignIn: from.uuid)
-                let kind = state.rule.kind
+                let kind = measuredKind ?? state.rule.kind
                 notify(id: "claudeCode.switched.\(Int(at.timeIntervalSince1970))",
                        title: { LocalizedStringResource.claudeCodeNotificationSwitchedTitle(toLabel).string(in: .current) },
                        body: { Self.switchedBody(from: fromLabel, percent: usedPercent, kind: kind) })

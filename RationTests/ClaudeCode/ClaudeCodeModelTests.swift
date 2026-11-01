@@ -120,6 +120,31 @@ final class ClaudeCodeModelTests: XCTestCase {
         XCTAssertEqual(bridge.posted.count, 1)
     }
 
+    /// A 5-hour rule on an account with no 5-hour limit (a verified Ultra)
+    /// switches on its weekly limit, and the notification names that limit.
+    func testAFiveHourRuleSwitchesAnUltraAccountOnItsWeeklyLimitAndSaysSo() async throws {
+        let model = try await makeModel(auto: true)
+        await model.setAutoSwitch(enabled: true, rule: .init(percent: 75, kind: .fiveHour))
+        let ultra = UsageSnapshot(accountID: UUID(), fetchedAt: now, fiveHour: nil,
+                                  weekly: UsageWindow(kind: .weekly, remainingFraction: 0.2, resetsAt: now.addingTimeInterval(86_400)),
+                                  organizationID: "org-A")
+        let roomy = UsageSnapshot(accountID: UUID(), fetchedAt: now,
+                                  fiveHour: UsageWindow(kind: .fiveHour, remainingFraction: 0.9, resetsAt: now.addingTimeInterval(3_600)),
+                                  weekly: UsageWindow(kind: .weekly, remainingFraction: 0.9, resetsAt: now.addingTimeInterval(86_400)),
+                                  organizationID: "org-B")
+        model.usageDidChange([
+            ClaudeCodeCandidate(accountID: idA, label: "Work", organizationID: "org-A", isPaused: false, usable: true,
+                                snapshot: ultra, planUnits: 10, order: 0),
+            ClaudeCodeCandidate(accountID: idB, label: "Personal", organizationID: "org-B", isPaused: false, usable: true,
+                                snapshot: roomy, planUnits: 5, order: 1),
+        ], now: now)
+        await model.waitUntilIdle()
+        XCTAssertEqual(model.current?.uuid, "acc-B")
+        await waitForPosts(1)
+        let body = try XCTUnwrap(bridge.decisions.last?.posts.first?.render(false).body)
+        XCTAssertEqual(body, LocalizedStringResource.claudeCodeNotificationSwitchedBodyWeekly("Work", 80).string(in: .current))
+    }
+
     /// A click during an automatic switch waits for it.
     func testAClickDuringAnAutomaticSwitchDoesNotSwitchTwice() async throws {
         let model = try await makeModel(auto: true)
