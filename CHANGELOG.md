@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.13.4
+
+- Switching Claude Code accounts is more careful with `~/.claude.json`. Ration
+  writes only your own regular file: it no longer follows a symbolic link,
+  never creates the file, and never overwrites one it can't read back. When
+  the file is not one it will write, the switch stops before your login
+  changes.
+
 ## 1.13.3
 
 - Automatic Claude Code switching set to the 5-hour limit now works when

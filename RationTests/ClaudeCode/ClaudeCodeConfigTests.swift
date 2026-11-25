@@ -65,6 +65,87 @@ final class ClaudeCodeConfigTests: XCTestCase {
         XCTAssertNotNil(file.modificationDate())
     }
 
+    /// Shorter bytes over longer ones leave no old tail.
+    func testWriteTruncatesTheOldBytes() throws {
+        let url = directory.appending(path: ".claude.json")
+        try Data(repeating: UInt8(ascii: "x"), count: 4_000).write(to: url)
+        let bytes = Self.file(account: nil)
+        try ClaudeCodeConfigFile(url: url).write(bytes)
+        XCTAssertEqual(try Data(contentsOf: url), bytes)
+    }
+
+    /// A symlink is refused before a byte changes: the file behind it is not
+    /// the one the user's Claude Code reads by name.
+    func testWriteRefusesASymlink() throws {
+        let target = directory.appending(path: "real.json")
+        try Data("old".utf8).write(to: target)
+        let link = directory.appending(path: ".claude.json")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        XCTAssertThrowsError(try ClaudeCodeConfigFile(url: link).write(Data("new".utf8))) {
+            XCTAssertEqual($0 as? InPlaceFileWrite.Failure, .notARegularFile)
+        }
+        XCTAssertEqual(try Data(contentsOf: target), Data("old".utf8))
+    }
+
+    func testWriteRefusesADirectory() throws {
+        let url = directory.appending(path: ".claude.json", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+        XCTAssertThrowsError(try ClaudeCodeConfigFile(url: url).write(Data("new".utf8))) {
+            XCTAssertEqual($0 as? InPlaceFileWrite.Failure, .notARegularFile)
+        }
+    }
+
+    /// A switch never creates the file.
+    func testWriteNeverCreatesAMissingFile() throws {
+        let url = directory.appending(path: ".claude.json")
+        XCTAssertThrowsError(try ClaudeCodeConfigFile(url: url).write(Data("new".utf8))) {
+            XCTAssertEqual($0 as? InPlaceFileWrite.Failure, .missing)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path(percentEncoded: false)))
+    }
+
+    /// The check a switch asks before it changes the login: the refusals of
+    /// a write, and no change to the file.
+    func testCheckWritableRefusesWhatAWriteWouldAndChangesNothing() throws {
+        let url = directory.appending(path: ".claude.json")
+        XCTAssertThrowsError(try ClaudeCodeConfigFile(url: url).checkWritable()) {
+            XCTAssertEqual($0 as? InPlaceFileWrite.Failure, .missing)
+        }
+        let target = directory.appending(path: "real.json")
+        try Data("old".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+        XCTAssertThrowsError(try ClaudeCodeConfigFile(url: url).checkWritable()) {
+            XCTAssertEqual($0 as? InPlaceFileWrite.Failure, .notARegularFile)
+        }
+        XCTAssertNoThrow(try ClaudeCodeConfigFile(url: target).checkWritable())
+        XCTAssertEqual(try Data(contentsOf: target), Data("old".utf8), "a check never truncates")
+    }
+
+    /// A file the user can write but not read is refused untouched: a
+    /// recovery that could not read it must not replace it with older bytes.
+    func testWriteRefusesAFileItCannotReadBack() throws {
+        let url = directory.appending(path: ".claude.json")
+        try Data("newer settings".utf8).write(to: url)
+        let path = url.path(percentEncoded: false)
+        try FileManager.default.setAttributes([.posixPermissions: 0o200], ofItemAtPath: path)
+        XCTAssertThrowsError(try ClaudeCodeConfigFile(url: url).checkWritable())
+        XCTAssertThrowsError(try ClaudeCodeConfigFile(url: url).write(Data("old".utf8)))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        XCTAssertEqual(try Data(contentsOf: url), Data("newer settings".utf8))
+    }
+
+    /// No secret in this file, so no mode is required of it (Codex's login
+    /// file must be 0600): Claude Code's own 0644 file is written.
+    func testWriteAcceptsAFileOthersCanRead() throws {
+        let url = directory.appending(path: ".claude.json")
+        try Data("old".utf8).write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path(percentEncoded: false))
+        try ClaudeCodeConfigFile(url: url).write(Data("new".utf8))
+        XCTAssertEqual(try Data(contentsOf: url), Data("new".utf8))
+        let mode = try FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))[.posixPermissions] as? Int
+        XCTAssertEqual(mode, 0o644)
+    }
+
     func testMissingFileReadsNil() throws {
         XCTAssertNil(try ClaudeCodeConfigFile(url: directory.appending(path: "absent.json")).readBytes())
     }

@@ -101,6 +101,29 @@ final class CodexAuthFileTests: XCTestCase {
         XCTAssertEqual(calls, 1)
     }
 
+    /// The shared write itself: a file owned by someone else is refused
+    /// before a byte changes.
+    func testTheSharedWriteRefusesAFileOwnedByAnotherUser() throws {
+        let url = try makeFile(bytes: Data("old".utf8))
+        XCTAssertThrowsError(try InPlaceFileWrite.write(Data("new".utf8), to: url, requiredMode: 0o600, owner: getuid() + 1)) {
+            XCTAssertEqual($0 as? InPlaceFileWrite.Failure, .notOwned)
+        }
+        XCTAssertThrowsError(try InPlaceFileWrite.check(url, owner: getuid() + 1)) {
+            XCTAssertEqual($0 as? InPlaceFileWrite.Failure, .notOwned)
+        }
+        XCTAssertEqual(try Data(contentsOf: url), Data("old".utf8))
+    }
+
+    /// A sync that fails inside a real write: the typed failure, thrown
+    /// after the new bytes are in the file.
+    func testAWriteWhoseSyncFailsThrowsAfterTheBytesAreWritten() throws {
+        let url = try makeFile(bytes: Data("old-and-longer".utf8))
+        XCTAssertThrowsError(try InPlaceFileWrite.write(Data("new".utf8), to: url, requiredMode: 0o600) { _ in errno = EIO; return -1 }) {
+            XCTAssertEqual($0 as? CodexAuthFile.Failure, .syncFailed)
+        }
+        XCTAssertEqual(try Data(contentsOf: url), Data("new".utf8))
+    }
+
     func testReportsTheModificationDate() throws {
         let url = try makeFile(bytes: Data("{}".utf8))
         XCTAssertNotNil(CodexAuthFile(url: url).modificationDate())

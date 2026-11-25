@@ -49,6 +49,7 @@ ALLOW=(
   README.md
   LICENSE
   CHANGELOG.md
+  SECURITY.md
   .github
   .gitignore
 )

@@ -127,6 +127,22 @@ final class ClaudeCodeSwitcherTests: XCTestCase {
         XCTAssertEqual(tool.writes, 1)
     }
 
+    /// A settings file Ration refuses to write is found out before the login
+    /// changes: nothing is written anywhere, and there is nothing to recover.
+    func testARefusedSettingsFileStopsTheSwitchBeforeTheLoginChanges() {
+        config.refused = true
+        let writes = tool.writes
+        XCTAssertThrowsError(try switcher.switchTo(accountUUID: "acc-B", allowUnremembered: false)) {
+            XCTAssertEqual($0 as? ClaudeCodeSwitcher.Failure, .failed)
+        }
+        XCTAssertEqual(config.bytes, original)
+        XCTAssertEqual(entryLogin, loginA)
+        XCTAssertNil(journal.read())
+        XCTAssertEqual(tool.writes, writes, "the login is never written")
+        XCTAssertTrue(store.saves.isEmpty, "nor is the newer login of the account being left saved")
+        XCTAssertEqual(switcher.recoverIfNeeded(), .none)
+    }
+
     /// A truncated settings write is restored from the journal.
     func testAFailedSettingsWriteRestoresBoth() {
         config.failingWrites = [1]

@@ -16,6 +16,10 @@ final class FakeClaudeCodeConfig: ClaudeCodeConfigAccess, @unchecked Sendable {
     var truncateOnFail = true
     /// Write numbers that store their bytes (and run `afterWrite`) and then throw.
     var writeThenFail: Set<Int> = []
+    /// The file is one Ration refuses to write (a symlink, not the user's
+    /// own): the check and every write throw, and nothing changes.
+    var refused = false
+    struct Refused: Error {}
     /// What `modificationDate()` reports.
     var date: Date?
     var afterRead: ((Int, inout Data?) -> Void)?
@@ -39,6 +43,7 @@ final class FakeClaudeCodeConfig: ClaudeCodeConfigAccess, @unchecked Sendable {
 
     func write(_ bytes: Data) throws {
         try lock.withLock {
+            if refused { throw Refused() }
             writeCount += 1
             if failingWrites.contains(writeCount) {
                 if truncateOnFail { stored = bytes.prefix(bytes.count / 3) }
@@ -48,6 +53,10 @@ final class FakeClaudeCodeConfig: ClaudeCodeConfigAccess, @unchecked Sendable {
             afterWrite?(writeCount, &stored)
             if writeThenFail.contains(writeCount) { throw WriteFailed() }
         }
+    }
+
+    func checkWritable() throws {
+        if lock.withLock({ refused }) { throw Refused() }
     }
 
     func modificationDate() -> Date? { lock.withLock { date } }

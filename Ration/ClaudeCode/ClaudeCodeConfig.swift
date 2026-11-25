@@ -51,6 +51,9 @@ protocol ClaudeCodeConfigAccess: Sendable {
     /// nil when the file does not exist.
     func readBytes() throws -> Data?
     func write(_ bytes: Data) throws
+    /// Throws what `write` would be refused with, changing nothing: asked
+    /// before a switch touches Claude Code's login.
+    func checkWritable() throws
     func modificationDate() -> Date?
 }
 
@@ -73,12 +76,17 @@ struct ClaudeCodeConfigFile: ClaudeCodeConfigAccess {
 
     /// In place: the sandbox grants this one path, not a temporary file beside
     /// it, so the write cannot be atomic — the recovery journal covers that.
+    /// Never through a symlink, never creating the file, only the user's own
+    /// regular file (`InPlaceFileWrite`). No mode is required: unlike Codex's
+    /// login file this one holds no secret. Opened for reading too: a file
+    /// Ration cannot read back is never overwritten, least of all by a
+    /// recovery that could not read what it replaces.
     func write(_ bytes: Data) throws {
-        let handle = try FileHandle(forUpdating: url)
-        defer { try? handle.close() }
-        try handle.truncate(atOffset: 0)
-        try handle.write(contentsOf: bytes)
-        try handle.synchronize()
+        try InPlaceFileWrite.write(bytes, to: url, readable: true)
+    }
+
+    func checkWritable() throws {
+        try InPlaceFileWrite.check(url, readable: true)
     }
 
     func modificationDate() -> Date? {

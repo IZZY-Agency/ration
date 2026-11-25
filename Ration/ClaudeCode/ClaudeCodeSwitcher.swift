@@ -96,6 +96,10 @@ struct ClaudeCodeSwitcher: Sendable {
         guard left.uuid != accountUUID else { return .alreadyActive }
         let remembered = try store.all()
         guard let target = remembered.first(where: { $0.uuid == accountUUID }) else { throw Failure.targetNotRemembered }
+        // A settings file Ration will not write (a symlink, not the user's
+        // own) is found out here, before anything is saved or the login
+        // changes: nothing to undo.
+        do { try config.checkWritable() } catch { throw Failure.failed }
         if let saved = remembered.first(where: { $0.uuid == left.uuid }) {
             // Keep the newest login of the account being left — confirmed, and
             // only if it looks like that account's (same plan).
